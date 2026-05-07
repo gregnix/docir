@@ -1,0 +1,118 @@
+#!/usr/bin/env tclsh
+# md2tilehtml -- Markdown -> Tile-HTML (2-spaltige Cheatsheet-Karten)
+#
+# Pipeline: mdparser -> DocIR -> docir::tilehtml -> HTML
+#
+# Aufruf:
+#   md2tilehtml input.md ?output.html?
+#   md2tilehtml in1.md in2.md ... -o output.html
+#
+# Optionen:
+#   -o, --output FILE      Output-HTML
+#   -t, --theme NAME       light (default), dark oder auto
+#       --title TEXT       Sheet-Titel ueberschreiben
+#       --subtitle TEXT    Subtitel ueberschreiben
+#       --lang CODE        HTML lang-Attribut (default 'de')
+#   -h, --help             Diese Hilfe
+
+set scriptDir [file dirname [file normalize [info script]]]
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+package require mdstack::parser
+package require docir
+package require docir::mdSource
+package require docir::tilehtml
+
+proc usage {} {
+    puts stderr "Aufruf: md2tilehtml input.md ?output.html?"
+    puts stderr "        md2tilehtml in1.md in2.md ... -o output.html"
+    puts stderr ""
+    puts stderr "Optionen:"
+    puts stderr "  -o, --output FILE      Output-HTML"
+    puts stderr "  -t, --theme NAME       light (default), dark, auto, solarized, sepia"
+    puts stderr "  -c, --columns N        Anzahl Spalten 1-4 (default 2)"
+    puts stderr "      --title TEXT       Sheet-Titel ueberschreiben"
+    puts stderr "      --subtitle TEXT    Subtitel ueberschreiben"
+    puts stderr "      --lang CODE        HTML lang-Attribut (default 'de')"
+    puts stderr "  -h, --help             Diese Hilfe"
+    exit 1
+}
+
+if {$argc < 1} { usage }
+
+set inputs {}
+set output ""
+set theme "light"
+set title ""
+set subtitle ""
+set lang "de"
+set columns 2
+
+set i 0
+while {$i < $argc} {
+    set arg [lindex $argv $i]
+    switch -- $arg {
+        -o - --output  { incr i; set output [lindex $argv $i] }
+        -t - --theme   { incr i; set theme [lindex $argv $i] }
+        -c - --columns { incr i; set columns [lindex $argv $i] }
+        --title        { incr i; set title [lindex $argv $i] }
+        --subtitle     { incr i; set subtitle [lindex $argv $i] }
+        --lang         { incr i; set lang [lindex $argv $i] }
+        -h - --help    { usage }
+        default        { lappend inputs $arg }
+    }
+    incr i
+}
+
+if {[llength $inputs] == 0} { usage }
+
+if {$theme ni {light dark auto solarized sepia}} {
+    puts stderr "Fehler: -theme muss light/dark/auto/solarized/sepia sein, war: '$theme'"
+    exit 2
+}
+
+# 2-Args Spezialfall: in.md out.html
+if {$output eq "" && [llength $inputs] == 2 && \
+    [string match "*.html" [lindex $inputs 1]]} {
+    set output [lindex $inputs 1]
+    set inputs [lrange $inputs 0 0]
+}
+
+if {$output eq ""} {
+    if {[llength $inputs] == 1} {
+        set output [file rootname [lindex $inputs 0]].html
+    } else {
+        set output "tile-output.html"
+    }
+}
+
+puts "md2tilehtml: [llength $inputs] input(s) -> $output (theme: $theme)"
+
+set renderOpts [list -theme $theme -lang $lang -columns $columns]
+if {$title ne ""} { lappend renderOpts -title $title }
+if {$subtitle ne ""} { lappend renderOpts -subtitle $subtitle }
+
+if {[llength $inputs] == 1} {
+    set inFile [lindex $inputs 0]
+    set fh [open $inFile r]
+    fconfigure $fh -encoding utf-8
+    set md [read $fh]
+    close $fh
+    set ast [::mdstack::parser::parse $md]
+    set ir  [::docir::md::fromAst $ast]
+    ::docir::tilehtml::render $ir $output {*}$renderOpts
+} else {
+    set combinedIr {}
+    foreach inFile $inputs {
+        set fh [open $inFile r]
+        fconfigure $fh -encoding utf-8
+        set md [read $fh]
+        close $fh
+        set ast [::mdstack::parser::parse $md]
+        set ir  [::docir::md::fromAst $ast]
+        foreach node $ir { lappend combinedIr $node }
+    }
+    ::docir::tilehtml::render $combinedIr $output {*}$renderOpts
+}
+
+puts "OK: $output"

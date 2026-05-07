@@ -1,0 +1,149 @@
+#!/usr/bin/env tclsh
+# md2tilepdf -- Markdown -> Tile-PDF (2-spaltige Cheatsheet-Karten)
+#
+# Pipeline: mdparser -> DocIR -> docir::tilepdf -> PDF
+#
+# Aufruf:
+#   md2tilepdf input.md ?output.pdf?
+#   md2tilepdf input1.md input2.md ... -o output.pdf
+#
+# Optionen:
+#   -o, --output FILE      Output-PDF
+#   -t, --theme NAME       light (default) oder dark
+#       --title TEXT       Titel des ersten Sheets ueberschreiben
+#       --subtitle TEXT    Subtitel des ersten Sheets ueberschreiben
+#   -h, --help             Diese Hilfe
+
+set scriptDir [file dirname [file normalize [info script]]]
+
+# Eigene Module (Entwicklungs-Modus aus Repo)
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+package require mdstack::parser
+package require docir
+package require docir::mdSource
+package require docir::tilepdf
+
+# --- CLI-Args ---
+proc usage {} {
+    puts stderr "Aufruf: md2tilepdf input.md ?output.pdf?"
+    puts stderr "        md2tilepdf in1.md in2.md ... -o output.pdf"
+    puts stderr ""
+    puts stderr "Optionen:"
+    puts stderr "  -o, --output FILE      Output-PDF"
+    puts stderr "  -t, --theme NAME       light (default) oder dark"
+    puts stderr "      --title TEXT       Sheet-Titel ueberschreiben"
+    puts stderr "      --subtitle TEXT    Sheet-Subtitel ueberschreiben"
+    puts stderr "  -h, --help             Diese Hilfe"
+    puts stderr ""
+    puts stderr "Konvertiert ein oder mehrere Markdown-Dateien zu einem"
+    puts stderr "2-spaltigen Tile-PDF (Cheatsheet-Stil)."
+    exit 1
+}
+
+if {$argc < 1} { usage }
+
+# Parse Args
+set inputs {}
+set output ""
+set theme "light"
+set title ""
+set subtitle ""
+
+set i 0
+while {$i < $argc} {
+    set arg [lindex $argv $i]
+    switch -- $arg {
+        -o - --output {
+            incr i
+            if {$i >= $argc} { usage }
+            set output [lindex $argv $i]
+        }
+        -t - --theme {
+            incr i
+            if {$i >= $argc} { usage }
+            set theme [lindex $argv $i]
+        }
+        --title {
+            incr i
+            if {$i >= $argc} { usage }
+            set title [lindex $argv $i]
+        }
+        --subtitle {
+            incr i
+            if {$i >= $argc} { usage }
+            set subtitle [lindex $argv $i]
+        }
+        -h - --help {
+            usage
+        }
+        default {
+            lappend inputs $arg
+        }
+    }
+    incr i
+}
+
+if {[llength $inputs] == 0} { usage }
+
+# Theme validieren
+if {$theme ni {light dark}} {
+    puts stderr "Fehler: -theme muss 'light' oder 'dark' sein, war: '$theme'"
+    exit 2
+}
+
+# Spezialfall: genau 2 Inputs, der zweite endet auf .pdf -> Output
+if {$output eq "" && [llength $inputs] == 2 && \
+    [string match "*.pdf" [lindex $inputs 1]]} {
+    set output [lindex $inputs 1]
+    set inputs [lrange $inputs 0 0]
+}
+
+# Output ableiten falls nicht gegeben
+if {$output eq ""} {
+    if {[llength $inputs] == 1} {
+        set output [file rootname [lindex $inputs 0]].pdf
+    } else {
+        set output "tile-output.pdf"
+    }
+}
+
+# --- Pipeline ---
+puts "md2tilepdf: [llength $inputs] input(s) -> $output (theme: $theme)"
+
+# Render-Optionen aufbauen
+set renderOpts [list -theme $theme]
+if {$title ne ""} { lappend renderOpts -title $title }
+if {$subtitle ne ""} { lappend renderOpts -subtitle $subtitle }
+
+# Wenn nur 1 Input: einfacher Fall
+if {[llength $inputs] == 1} {
+    set inFile [lindex $inputs 0]
+    set fh [open $inFile r]
+    fconfigure $fh -encoding utf-8
+    set md [read $fh]
+    close $fh
+
+    set ast [::mdstack::parser::parse $md]
+    set ir  [::docir::md::fromAst $ast]
+    ::docir::tilepdf::render $ir $output {*}$renderOpts
+} else {
+    # Mehrere Inputs: alle DocIR-Streams concat
+    # H1 jeder MD startet ein neues Sheet automatisch (siehe _streamToSheets)
+    set combinedIr {}
+    foreach inFile $inputs {
+        set fh [open $inFile r]
+        fconfigure $fh -encoding utf-8
+        set md [read $fh]
+        close $fh
+
+        set ast [::mdstack::parser::parse $md]
+        set ir  [::docir::md::fromAst $ast]
+        foreach node $ir {
+            lappend combinedIr $node
+        }
+    }
+    ::docir::tilepdf::render $combinedIr $output {*}$renderOpts
+}
+
+puts "OK: $output"

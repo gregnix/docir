@@ -1,0 +1,114 @@
+#!/usr/bin/env tclsh
+# md2tilemd -- Markdown -> Tile-strukturiertes Markdown
+#
+# Pipeline: mdparser -> DocIR -> docir::tilemd -> MD
+#
+# Aufruf:
+#   md2tilemd input.md ?output.md?
+#   md2tilemd in1.md in2.md ... -o output.md
+#
+# Optionen:
+#   -o, --output FILE      Output-MD
+#       --title TEXT       Sheet-Titel ueberschreiben
+#       --subtitle TEXT    Subtitel ueberschreiben
+#       --no-toc           Kein Inhaltsverzeichnis (default: auto bei Multi)
+#       --no-hr            Kein --- nach Sections (default: ja)
+#   -h, --help             Diese Hilfe
+
+set scriptDir [file dirname [file normalize [info script]]]
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+package require mdstack::parser
+package require docir
+package require docir::mdSource
+package require docir::tilemd
+
+proc usage {} {
+    puts stderr "Aufruf: md2tilemd input.md ?output.md?"
+    puts stderr "        md2tilemd in1.md in2.md ... -o output.md"
+    puts stderr ""
+    puts stderr "Optionen:"
+    puts stderr "  -o, --output FILE      Output-MD"
+    puts stderr "      --title TEXT       Sheet-Titel ueberschreiben"
+    puts stderr "      --subtitle TEXT    Subtitel ueberschreiben"
+    puts stderr "      --no-toc           Kein Inhaltsverzeichnis"
+    puts stderr "      --no-hr            Kein --- nach Sections"
+    puts stderr "  -h, --help             Diese Hilfe"
+    puts stderr ""
+    puts stderr "Konvertiert MD-Dateien zu Tile-strukturiertem Markdown:"
+    puts stderr "  H1=Sheet, H2=Tile-Section mit Body je nach Type"
+    puts stderr "  (code/code-intro/hint/list/table/image)."
+    exit 1
+}
+
+if {$argc < 1} { usage }
+
+set inputs {}
+set output ""
+set title ""
+set subtitle ""
+set toc auto
+set hr true
+
+set i 0
+while {$i < $argc} {
+    set arg [lindex $argv $i]
+    switch -- $arg {
+        -o - --output  { incr i; set output [lindex $argv $i] }
+        --title        { incr i; set title [lindex $argv $i] }
+        --subtitle     { incr i; set subtitle [lindex $argv $i] }
+        --no-toc       { set toc false }
+        --no-hr        { set hr false }
+        -h - --help    { usage }
+        default        { lappend inputs $arg }
+    }
+    incr i
+}
+
+if {[llength $inputs] == 0} { usage }
+
+# 2-Args Spezialfall
+if {$output eq "" && [llength $inputs] == 2 && \
+    [string match "*.md" [lindex $inputs 1]]} {
+    set output [lindex $inputs 1]
+    set inputs [lrange $inputs 0 0]
+}
+
+if {$output eq ""} {
+    if {[llength $inputs] == 1} {
+        set output [file rootname [lindex $inputs 0]].tile.md
+    } else {
+        set output "tile-output.md"
+    }
+}
+
+puts "md2tilemd: [llength $inputs] input(s) -> $output"
+
+set renderOpts [list -toc $toc -hr $hr]
+if {$title ne ""} { lappend renderOpts -title $title }
+if {$subtitle ne ""} { lappend renderOpts -subtitle $subtitle }
+
+if {[llength $inputs] == 1} {
+    set inFile [lindex $inputs 0]
+    set fh [open $inFile r]
+    fconfigure $fh -encoding utf-8
+    set md [read $fh]
+    close $fh
+    set ast [::mdstack::parser::parse $md]
+    set ir  [::docir::md::fromAst $ast]
+    ::docir::tilemd::render $ir $output {*}$renderOpts
+} else {
+    set combinedIr {}
+    foreach inFile $inputs {
+        set fh [open $inFile r]
+        fconfigure $fh -encoding utf-8
+        set md [read $fh]
+        close $fh
+        set ast [::mdstack::parser::parse $md]
+        set ir  [::docir::md::fromAst $ast]
+        foreach node $ir { lappend combinedIr $node }
+    }
+    ::docir::tilemd::render $combinedIr $output {*}$renderOpts
+}
+
+puts "OK: $output"
