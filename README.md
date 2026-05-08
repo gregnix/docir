@@ -156,7 +156,6 @@ cd tests
 tclsh run-all-tests.tcl
 ```
 
-Current status: **728 tests passing**.
 
 PDF tests need [pdf4tcl](https://sourceforge.net/projects/pdf4tcl/) and
 [pdf4tcllib](https://github.com/gregnix/pdf4tcllib) installed. Tests
