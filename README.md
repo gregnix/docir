@@ -157,7 +157,7 @@ tclsh run-all-tests.tcl
 ```
 
 
-PDF tests need [pdf4tcl](https://sourceforge.net/projects/pdf4tcl/) and
+PDF tests need [pdf4tcl](https://github.com/gregnix/pdf4tcl) and
 [pdf4tcllib](https://github.com/gregnix/pdf4tcllib) installed. Tests
 skip cleanly when these packages are missing.
 
