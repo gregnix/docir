@@ -187,9 +187,9 @@ tests) led to it being extracted into its own repo in May 2026. On
 sub-directory layout (`docir-roff` → `docir::roff`).
 
 In the same week the tile renderers were added (tilepdf, tilehtml,
-tilemd) — adapted from Greg's `cheatsheet-0.1.tm` layout algorithm.
+tilemd).
 Tile = two-column cheatsheet style, atomic sections, section-type
 classification (`code`, `code-intro`, `hint`, `list`, `table`, `image`)
 unified across all three tile renderers (via `docir::tilecommon`).
 
-See CHANGES.md for the detailed history.
+

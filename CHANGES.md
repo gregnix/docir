@@ -2,8 +2,6 @@
 
 ## 2026-05-07 — Spec consolidation, pkgIndex refactor, tile renderer family
 
-A big day with three threads.
-
 ### Spec & validation
 
 - **DocIR 0.5: `irSchemaVersion`** as a required field on `doc_meta`
@@ -41,8 +39,7 @@ A big day with three threads.
   `docir::roffSource`, `docir::rendererTk` (because hyphens in module
   names confuse Tcl's version parser).
 - **mdstack big-bang namespace refactor**: `::mdparser` → `::mdstack::parser`,
-  `::mdtext` → `::mdstack::text`, etc. All 14 mdstack modules converted
-  via 3-pass sed across ~432 files.
+  `::mdtext` → `::mdstack::text`, etc. 
 
 ### Tile renderer family
 
@@ -167,7 +164,3 @@ validator, own tests, use by multiple application repos) and a name
 clash with mdstack's `docir-md` source, DocIR was extracted into its
 own repo.
 
-The split established the naming convention `docir-FORMAT` (sink) vs
-`docir-FORMAT-source` (source) and the loader mechanism with 7 search
-strategies (later replaced by the standard Tcl `auto_path` mechanism on
-2026-05-07).
