@@ -1,149 +1,193 @@
 # DocIR — Changelog
 
-## 2026-05-13 — Canvas-Demo
-
-**Affected consumers:** keine. Reine Demo-/Doku-Addition.
-
-### Added
-
-- **`demo/canvas_demo.tcl`** (193 LOC) -- runable Demo das die Pipeline
-  nroff -> `docir::roffSource` -> DocIR -> `docir::canvas::render`
-  zeigt. Sucht eine echte canvas.n in mehreren Standard-Pfaden
-  (tcltk-manindex/manpages-nroff, src/manpages-nroff, src/doc/tk/doc,
-  src/tk/tk/doc, demo/canvas.n), Fallback auf eingebautes Mini-IR via
-  `--builtin`.
-- **`demo/canvas_demo_data.tcl`** (43 LOC) -- IR-Daten fuer den
-  Builtin-Modus (kein Tk-Bezug, nur Procs).
-- **`demo/canvas.n`** -- Tk's canvas(n) Manpage (87 KB) als
-  Fallback-Quelle wenn kein sibling `man-viewer` mit Manpage-Korpus
-  vorhanden ist.
+## 2026-05-14 — Documentation correction in md-0.1.tm
 
 ### Documentation
 
-- **`README.md`** -- neue "Demos"-Sektion zwischen "Regenerating
-  pkgIndex.tcl" und "Tests".
+- **`lib/tm/docir/md-0.1.tm`** header comment updated. The previous
+  text claimed that `docir::md` (sink) and `docir::mdSource` (source)
+  could NOT be loaded simultaneously. In fact both coexist without
+  issue since the split into separate packages — they write into the
+  same namespace `::docir::md::*` but with disjoint procedures
+  (`render` vs. `fromAst`). A Markdown → DocIR → Markdown roundtrip
+  is therefore possible.
 
-## 2026-05-13 — Konvergenz mit cheatsheets (tilepdf-Erweiterung)
+## 2026-05-14 — Robust font pipeline for older pdf4tcl versions
 
-**Affected consumers:** cheatsheets-Repo wird in dieser Session zum
-Adapter umgebaut. Andere Konsumenten (man-viewer, mdstack, mdhelp4)
-unbeeinflusst -- nur Added/Fixed, keine API-Breakage.
-
-### Added
-
-- **`docir::csdSource 0.1`** (`lib/tm/docir/csdSource-0.1.tm`) --
-  neue DocIR-Source fuer CSD-Format (Tcl-deklarative Cheatsheet-Defs).
-  Mappt CSD-Dict auf Sheets-Liste die `docir::tilepdf::renderSheets`
-  konsumiert. Public API: `docir::csd::toSheet`,
-  `docir::csd::toSheets`.
-
-- **`docir::tilepdf::renderSheets`** -- alternative Public API neben
-  `render`. Nimmt eine fertige Sheets-Liste statt eines DocIR-Streams.
-  Bypass des Schema-Checks und der streamToSheets-Klassifizierung.
-  Wird vom neuen cheatsheet-Adapter und vom csdSource-Pfad genutzt.
-
-- **`docir::tilehtml::renderSheets`** und **`docir::tilemd::renderSheets`** --
-  analog zu tilepdf, gibt der Tile-Renderer-Family eine konsistente
-  alternative API. Damit kann `docir::csdSource` ueber alle drei
-  Tile-Sinks (PDF/HTML/MD) genutzt werden. Bei `tilehtml` werden
-  Themes (`light/dark/auto/solarized/sepia`) und Spaltenzahl (1-4) als
-  Optionen weitergereicht; bei `tilemd` die TOC-Option und `-hr`.
-
-### Fixed (kritisch -- aus cheatsheet-0.1.tm portiert)
-
-- **Pagination-Bug in `docir::tilepdf::_renderSheet`/`_renderSection`:**
-  - `_renderSection` nahm `y col` als call-by-value -- konnte keine
-    Sections splitten die ueber Spalten gehen. Jetzt mit
-    `upvar yVar colVar` analog cheatsheet-0.1.tm.
-  - Per-item Spalten-Split in allen 6 Section-Typen (table, code,
-    code-intro, hint, list, image): Pre-measure pro Row/Line/Item,
-    bei Ueberlauf `_col`-Wechsel und `(cont.)`-Section.
-  - `max_iter=24`-Spinning-Loop in `_renderSheet` entfernt -- ersetzt
-    durch eine `minNeed`-Heuristik analog cheatsheet's `render`.
-  - Konstante `max_iter` aus `C`-Array entfernt.
-
-  Vorher: Sections die laenger als eine Spalte waren produzierten
-  bis zu 12 leere Seiten + abgeschnittenen Content.
-  Jetzt: sauber per-item ueber Spalten verteilt.
-
-### Added (Unicode-Font-Pipeline -- aus cheatsheet-0.1.tm portiert)
-
-- **`docir::tilepdf::_setupFonts`** -- registriert beim PDF-Start
-  Unicode-TTF-Fonts (UniSans/UniSansBold/UniSansOblique/UniMono) via
-  `::pdf4tcl::loadBaseTrueTypeFont` + `::pdf4tcl::createFontSpecCID`.
-- **`docir::tilepdf::_tryLoadFont`** + **`_fontProblem`** -- robust
-  gegen fehlende TTFs (sucht durch Standard-Pfade unter Linux/macOS/
-  Windows).
-- **`Style(fontMode)`** mit den Werten `strict` (default, Exception
-  bei Font-Problem), `warn` (stderr-Warnung + Fallback auf
-  Helvetica/Courier), `silent` (still Fallback).
-- **`F`-Array** mit Slots `prop`/`propBold`/`propOblique`/`mono`,
-  ersetzt vorher hardcoded `Helvetica`/`Helvetica-Bold`/`Courier` in
-  `_header`, `_section`, `_row`, `_code`, `_listItem`, `_image`,
-  `_fontFor`.
-
-  Vorher: Unicode-Zeichen wie `→`, `←`, `…` wurden in PDF nicht
-  gerendert (nur ASCII via Helvetica/Courier).
-  Jetzt: korrekt mit DejaVu-Sans/Mono falls verfuegbar.
-
-### Vorteile dieser Konvergenz
-
-- cheatsheets als Adapter -- 459 LOC weniger zu pflegen.
-- Bugfixes wirken jetzt fuer beide Pfade (Markdown-Tile UND CSD-Tile).
-- Tile-Renderer-Features (Themes, code-intro, image) sind sofort fuer
-  CSDs verfuegbar.
-- Tilehtml/tilemd profitieren nicht von Pagination/Font-Fix (HTML/MD
-  kennen keine Pagination und Unicode geht in HTML/MD sowieso) -- der
-  Fix ist tilepdf-only.
-
-## 2026-05-13 — Repo-Hygiene + Test-Setup Fixes
-
-**Affected consumers:** keine API-Aenderung; nur Repo-Aufraeumen, Test-
-Stabilitaet und kleinere Tooling-Verbesserungen. Konsumenten
-(man-viewer, mdstack, mdhelp) brauchen nichts anzupassen.
-
-### Removed
-
-- **`lib/tm/docir/pdf-0.1.tm.bak`** -- alter Backup, neue Version ist
-  `pdf-0.2.tm`. `.bak` zusaetzlich in `.gitignore`.
-- **`tests/test-toc.pdf`** -- Test-Output war versehentlich versioniert
-  (gitignore hat `*.pdf`).
+**Affected consumers:** no public API change. Callers that explicitly
+set `Style(fontMode) strict` keep their behavior — only the default
+changed from `strict` to `warn`.
 
 ### Fixed
 
-- **`lib/tm/pkgIndex.tcl`** -- der Eintrag fuer `docir::pdf 0.1` zeigte
-  auf die nicht mehr existierende `pdf-0.1.tm`. Via
-  `tools/generate-pkgindex.tcl` neu generiert (jetzt nur noch
-  `docir::pdf 0.2`).
+- **`lib/tm/docir/tilepdf-0.1.tm`** — older pdf4tcl without
+  `::pdf4tcl::createFontSpecCID` caused tests to crash. Resolution:
+  - **Capability check before font loading.** `_setupFonts` now
+    explicitly checks whether both required procs
+    (`loadBaseTrueTypeFont` and `createFontSpecCID`) are available,
+    and otherwise falls back cleanly to standard PDF fonts
+    (Helvetica / Courier) instead of crashing at call time.
+  - **Default `fontMode` changed from `strict` to `warn`.** A
+    missing Unicode font pipeline is now a warning rather than an
+    error; rendering continues with fallback fonts. Cheatsheet
+    consumers preferring strict mode can opt in explicitly via
+    `cheatsheet::setStyle fontMode strict`.
+
+### Background
+
+The 2026-05-14 test-runner report showed six failures in
+`test-docir-pdf.tcl` and `test-docir-tilepdf.tcl` exclusively due to
+`::pdf4tcl::createFontSpecCID`. The procedure is a newer addition in
+pdf4tcl; systems with older versions (before CID-font support)
+crashed without a capability check.
+
+## 2026-05-13 — Canvas demo
+
+**Affected consumers:** none. Demo and documentation addition only.
+
+### Added
+
+- **`demo/canvas_demo.tcl`** (193 LOC) — runnable demo showing the
+  pipeline nroff → `docir::roffSource` → DocIR →
+  `docir::canvas::render`. Searches for a real `canvas.n` in several
+  standard paths (tcltk-manindex/manpages-nroff, src/manpages-nroff,
+  src/doc/tk/doc, src/tk/tk/doc, demo/canvas.n), with a fallback to
+  a built-in mini IR via `--builtin`.
+- **`demo/canvas_demo_data.tcl`** (43 LOC) — IR data for the
+  built-in mode (no Tk dependencies, procedures only).
+- **`demo/canvas.n`** — Tk's `canvas(n)` manpage (87 KB) as a
+  fallback source when no sibling `man-viewer` with a manpage corpus
+  is present.
+
+### Documentation
+
+- **`README.md`** — new "Demos" section between "Regenerating
+  pkgIndex.tcl" and "Tests".
+
+## 2026-05-13 — Convergence with cheatsheets (tilepdf extension)
+
+**Affected consumers:** the cheatsheets repo is converted to an
+adapter in this session. Other consumers (man-viewer, mdstack,
+mdhelp) are unaffected — only Added/Fixed, no API break.
+
+### Added
+
+- **`docir::csdSource 0.1`** (`lib/tm/docir/csdSource-0.1.tm`) —
+  new DocIR source for the CSD format (Tcl-declarative cheatsheet
+  definitions). Maps a CSD dict to a sheets list consumed by
+  `docir::tilepdf::renderSheets`. Public API: `docir::csd::toSheet`,
+  `docir::csd::toSheets`.
+
+- **`docir::tilepdf::renderSheets`** — alternative public API
+  alongside `render`. Accepts a prepared sheets list instead of a
+  DocIR stream. Bypasses the schema check and
+  `streamToSheets` classification. Used by the new cheatsheet
+  adapter and the `csdSource` path.
+
+- **`docir::tilehtml::renderSheets`** and **`docir::tilemd::renderSheets`** —
+  analogous to tilepdf, giving the tile renderer family a consistent
+  alternative API. `docir::csdSource` can now feed all three tile
+  sinks (PDF / HTML / MD). For `tilehtml`, themes
+  (`light` / `dark` / `auto` / `solarized` / `sepia`) and column count
+  (1–4) are forwarded as options; for `tilemd`, the TOC option and
+  `-hr`.
+
+### Fixed (critical — ported from cheatsheet-0.1.tm)
+
+- **Pagination bug in `docir::tilepdf::_renderSheet`/`_renderSection`:**
+  - `_renderSection` took `y col` by value — could not split
+    sections that span columns. Now uses `upvar yVar colVar`
+    analogous to `cheatsheet-0.1.tm`.
+  - Per-item column split in all six section types (table, code,
+    code-intro, hint, list, image): pre-measure per row/line/item,
+    on overflow `_col` switch and `(cont.)` section.
+  - `max_iter=24` spinning loop in `_renderSheet` removed —
+    replaced by a `minNeed` heuristic analogous to cheatsheet's
+    `render`.
+  - Constant `max_iter` removed from the `C` array.
+
+  Before: sections longer than one column produced up to 12 blank
+  pages plus truncated content. After: cleanly distributed
+  per-item across columns.
+
+### Added (Unicode font pipeline — ported from cheatsheet-0.1.tm)
+
+- **`docir::tilepdf::_setupFonts`** — at PDF start, registers
+  Unicode TTF fonts (UniSans / UniSansBold / UniSansOblique /
+  UniMono) via `::pdf4tcl::loadBaseTrueTypeFont` +
+  `::pdf4tcl::createFontSpecCID`.
+- **`docir::tilepdf::_tryLoadFont`** and **`_fontProblem`** —
+  robust against missing TTFs (searches through standard paths on
+  Linux / macOS / Windows).
+- **`Style(fontMode)`** with values `strict` (default, raise on
+  font problem), `warn` (stderr warning + fallback to
+  Helvetica / Courier), `silent` (silent fallback).
+- **`F` array** with slots `prop` / `propBold` / `propOblique` /
+  `mono`, replacing hardcoded `Helvetica` / `Helvetica-Bold` /
+  `Courier` in `_header`, `_section`, `_row`, `_code`,
+  `_listItem`, `_image`, `_fontFor`.
+
+  Before: Unicode characters such as `→`, `←`, `…` did not render
+  in the PDF (only ASCII via Helvetica / Courier). After: rendered
+  correctly with DejaVu Sans / Mono when available.
+
+### Benefits of this convergence
+
+- Cheatsheets becomes an adapter — 459 fewer LOC to maintain.
+- Bug fixes now apply to both paths (Markdown-tile and CSD-tile).
+- Tile renderer features (themes, code-intro, image) are immediately
+  available to CSDs.
+- `tilehtml` and `tilemd` do not benefit from the pagination/font
+  fix (HTML/MD have no pagination, and Unicode works in HTML/MD
+  anyway) — the fix is `tilepdf`-only.
+
+## 2026-05-13 — Repo hygiene + test setup fixes
+
+**Affected consumers:** no API change; only repo cleanup, test
+stability, and minor tooling improvements. Consumers (man-viewer,
+mdstack, mdhelp) need no adjustments.
+
+### Removed
+
+- **`lib/tm/docir/pdf-0.1.tm.bak`** — old backup; the new version is
+  `pdf-0.2.tm`. `.bak` added to `.gitignore`.
+- **`tests/test-toc.pdf`** — test output was accidentally
+  version-controlled (gitignore has `*.pdf`).
+
+### Fixed
+
+- **`lib/tm/pkgIndex.tcl`** — the entry for `docir::pdf 0.1` pointed
+  at the no-longer-existing `pdf-0.1.tm`. Regenerated via
+  `tools/generate-pkgindex.tcl` (now only `docir::pdf 0.2`).
 - **`tests/test-setup.tcl`**:
-  - `pdf-0.1.tm` (existiert nicht) durch `pdf-0.2.tm` ersetzt.
-  - `pdf-0.2.tm` und `tilepdf-0.1.tm` (beide brauchen externes `pdf4tcl`)
-    jetzt mit `catch` gesourced -- Tests skippen sich selbst statt mit
-    Stack-Trace abzubrechen.
-  - `roff-0.1.tm` und `tilehtml-0.1.tm` ergaenzt (fehlten).
-  - `tcl::tm::path add` damit auch `package require docir::*` aus den
-    Tests funktioniert (war noetig fuer einige Tests).
-- **`tests/run-all-tests.tcl`** -- Crashende Test-Files lassen den Runner
-  jetzt weiterlaufen statt mit "child process exited abnormally"
-  abzubrechen. Wird als 1 Fail mit "(crashed)"-Marker gezaehlt.
-- **`tests/test-validator.tcl`** -- File-level Skip wenn `nroffparser`
-  nicht installiert ist (alle 13 Tests brauchen es).
+  - `pdf-0.1.tm` (does not exist) replaced by `pdf-0.2.tm`.
+  - `pdf-0.2.tm` and `tilepdf-0.1.tm` (both require external
+    `pdf4tcl`) now sourced with `catch` — tests skip themselves
+    instead of aborting with a stack trace.
+  - `roff-0.1.tm` and `tilehtml-0.1.tm` added (were missing).
+  - `tcl::tm::path add` so that `package require docir::*` also
+    works from tests (needed by some tests).
+- **`tests/run-all-tests.tcl`** — crashing test files now let the
+  runner continue instead of aborting with "child process exited
+  abnormally". Counted as one failure with a "(crashed)" marker.
+- **`tests/test-validator.tcl`** — file-level skip when
+  `nroffparser` is not installed (all 13 tests require it).
 
 ### Changed
 
-- **`bin/md2tilepdf`, `md2tilehtml`, `md2tilemd`** -- `-h`/`--help`
-  wird jetzt VOR `package require` ausgewertet. Damit funktioniert die
-  Hilfe auch ohne installierte Deps (vorher: Stack-Trace).
-  Plus Hinweis `Benoetigt: ...` in der Usage.
+- **`bin/md2tilepdf`, `md2tilehtml`, `md2tilemd`** — `-h`/`--help`
+  is now evaluated **before** `package require`, so the help works
+  even without installed dependencies (previously: stack trace).
+  Plus a "Requires: ..." note in the usage line.
 
 ### Test status
 
-Ohne externe Parser (nroffparser/mdstack/pdf4tcl): **473 von 509 Tests
-passing**. Mit allen Deps installiert: bis zu 728 Tests (Stand README,
-nicht verifiziert in dieser Cleanup-Session).
+Without external parsers (nroffparser / mdstack / pdf4tcl):
+**473 of 509 tests passing**. With all dependencies installed:
+up to 728 tests (per README, not verified in this cleanup session).
 
-Failende Test-Files ohne Deps (alle wegen externem Parser-Aufruf in
-einzelnen Tests innerhalb der Datei):
+Failing test files without deps (all due to external parser calls
+within individual tests):
 `test-docir.tcl`, `test-docir-html.tcl`, `test-docir-svg.tcl`,
 `test-docir-md.tcl`, `test-docir-roff.tcl`.
 

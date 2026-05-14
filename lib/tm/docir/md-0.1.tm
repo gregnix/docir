@@ -3,16 +3,16 @@
 # Wandelt eine DocIR-Sequenz in eine Markdown-Datei um. Sechste Senke
 # im DocIR-Hub (neben tk, html, svg, pdf, canvas).
 #
-# Naming-Konflikt: mdstack hat ebenfalls ein "docir-md"-Paket, das in
-# die UMGEKEHRTE Richtung mappt (Markdown → DocIR via
-# docir::md::fromAst). Beide Module koennen NICHT gleichzeitig in
-# einen Tcl-Interpreter geladen werden — das erste 'package require
-# docir-md' gewinnt. In der Praxis ist das kein Problem, weil:
-#  - mdstack-Demos brauchen nur 'fromAst'
-#  - man-viewer-Exports brauchen nur 'render'
-#  - Ein Roundtrip Markdown→DocIR→Markdown ist (noch) kein Use-Case.
-# Falls es spaeter doch einer wird: dann muessen die Funktionen in
-# unterschiedliche Pakete oder eines der beiden umbenannt werden.
+# Verhaeltnis zu docir::mdSource: dies hier ist die SENKE (DocIR -> MD,
+# `docir::md::render`). Die QUELLE (MD-AST -> DocIR, `docir::md::fromAst`)
+# lebt im separaten Paket `docir::mdSource`. Beide Module schreiben in
+# den gleichen Namespace `::docir::md::*`, aber mit unterschiedlichen
+# Procs -- sie koennen problemlos GLEICHZEITIG geladen werden:
+#
+#   package require docir::md          ;# Sink (DocIR -> MD)
+#   package require docir::mdSource    ;# Source (MD-AST -> DocIR)
+#
+# Ein Roundtrip Markdown -> DocIR -> Markdown ist damit moeglich.
 #
 # Public API:
 #   docir::md::render ir ?options?

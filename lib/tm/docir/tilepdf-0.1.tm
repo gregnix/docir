@@ -36,8 +36,11 @@ namespace eval docir::tilepdf {
 
     # Style-Konfiguration: fontMode entscheidet was passiert wenn TTF
     # nicht ladbar (strict=throw, warn=stderr+fallback, silent=fallback).
+    # Default warn -- ein fehlendes Unicode-Font soll Rendering nicht
+    # blockieren. Cheatsheets-Workflow setzt strict wenn Unicode-Fonts
+    # zwingend benoetigt werden.
     variable Style
-    array set Style {fontMode strict}
+    array set Style {fontMode warn}
 
     # Font-Mapping (gefuellt von _setupFonts).
     # F(prop)/F(propBold)/F(propOblique)/F(mono) zeigen entweder auf
@@ -600,6 +603,23 @@ proc docir::tilepdf::_setupFonts {pdf} {
 
     set mode strict
     if {[info exists Style(fontMode)]} { set mode $Style(fontMode) }
+
+    # Capability-Check: pdf4tcl muss BEIDE Procs haben fuer Unicode-Fonts.
+    # Aeltere pdf4tcl-Versionen kennen z.B. createFontSpecCID nicht --
+    # in dem Fall fallen wir lautlos zurueck auf Standard-PDF-Fonts.
+    # Im strict-Mode bleibt das ein Fehler.
+    set missingApis {}
+    if {[info commands ::pdf4tcl::loadBaseTrueTypeFont] eq ""} {
+        lappend missingApis "loadBaseTrueTypeFont"
+    }
+    if {[info commands ::pdf4tcl::createFontSpecCID] eq ""} {
+        lappend missingApis "createFontSpecCID"
+    }
+    if {[llength $missingApis] > 0} {
+        _fontProblem $mode \
+            "pdf4tcl-API fuer Unicode-Fonts unvollstaendig (fehlt: [join $missingApis {, }]); Fallback auf Standard-PDF-Fonts"
+        return
+    }
 
     set propCandidates {
         /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
