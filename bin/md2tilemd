@@ -16,12 +16,6 @@
 #   -h, --help             Diese Hilfe
 
 set scriptDir [file dirname [file normalize [info script]]]
-::tcl::tm::path add [file join $scriptDir .. lib tm]
-
-package require mdstack::parser
-package require docir
-package require docir::mdSource
-package require docir::tilemd
 
 proc usage {} {
     puts stderr "Aufruf: md2tilemd input.md ?output.md?"
@@ -38,10 +32,22 @@ proc usage {} {
     puts stderr "Konvertiert MD-Dateien zu Tile-strukturiertem Markdown:"
     puts stderr "  H1=Sheet, H2=Tile-Section mit Body je nach Type"
     puts stderr "  (code/code-intro/hint/list/table/image)."
+    puts stderr ""
+    puts stderr "Benoetigt: mdstack::parser, docir, docir::tilemd."
     exit 1
 }
 
-if {$argc < 1} { usage }
+if {$argc < 1 || [lsearch -exact $argv "--help"] >= 0 \
+        || [lsearch -exact $argv "-h"] >= 0} {
+    usage
+}
+
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+package require mdstack::parser
+package require docir
+package require docir::mdSource
+package require docir::tilemd
 
 set inputs {}
 set output ""

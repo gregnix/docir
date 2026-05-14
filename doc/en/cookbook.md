@@ -1,7 +1,7 @@
 # DocIR Cookbook (EN)
 
 Practical examples for using DocIR. For the formal specification, see
-`docir-spec.md`. 
+`docir-spec.md`. For the German version, see `../de/cookbook.md`.
 
 ## Contents
 

@@ -1,4 +1,4 @@
-# docir-pdf-0.1.tm -- DocIR → PDF Renderer
+# docir-pdf-0.2.tm -- DocIR → PDF Renderer
 #
 # Wandelt eine DocIR-Sequenz in ein PDF-Dokument um. Nutzt
 # pdf4tcl (>=0.9) als Low-Level-Backend und pdf4tcllib (>=0.2)
@@ -8,16 +8,25 @@
 # Public API:
 #   docir::pdf::render ir outputPath ?options?
 #       options: dict mit
-#         paper       a4|letter|...      (default a4)
-#         margin      Int (pt)           (default 56 ≈ 20mm)
-#         fontSize    Int                (default 11)
-#         title       String             (default: aus DocIR)
-#         author      String             (default "")
-#         sansFont    Pfad zu TTF        (optional, sonst pdf4tcllib-Default)
+#         paper          a4|letter|...      (default a4)
+#         margin         Int (pt)           (default 56 ≈ 20mm)
+#         fontSize       Int                (default 11)
+#         title          String             (default: aus DocIR)
+#         author         String             (default "")
+#         sansFont       Pfad zu TTF        (optional, sonst pdf4tcllib-Default)
 #         sansBoldFont, sansItalicFont, sansBoldItalicFont, monoFont
-#         header      String             (Header-Template, %p = Pagenumber)
-#         footer      String             (Footer-Template, %p = Pagenumber)
-#         theme       Theme-Name         (optional, via mdstack::theme::toPdfOpts)
+#         header         String             (Header-Template, %p = Pagenumber)
+#         footer         String             (Footer-Template, %p = Pagenumber)
+#         theme          Theme-Name         (optional, via mdstack::theme::toPdfOpts)
+#
+#         # NEU in 0.2:
+#         generateToc    Bool   (default 0) Inhaltsverzeichnis am Anfang
+#         tocTitle       String (default "Inhaltsverzeichnis")
+#         tocDepth       Int    (default 2) Heading-Level bis zu welchem TOC-Eintraege
+#         generateIndex  Bool   (default 0) Stichwortverzeichnis am Ende
+#         indexTitle     String (default "Stichwortverzeichnis")
+#         indexLevel     Int    (default 3) Heading-Level der als Index-Eintrag gilt
+#         bookmarks      Bool   (default 1) PDF-Outline-Bookmarks bei Headings
 #       Returns: nichts (schreibt nach outputPath)
 #
 #   docir::pdf::renderToHandle pdfHandle ir ?options?
@@ -25,8 +34,19 @@
 #       Caller ist verantwortlich fuer pdf4tcl::new / startPage / write / destroy.
 #       Nuetzlich um DocIR in einen vorhandenen PDF-Workflow einzuspeisen
 #       (z.B. mehrere Dokumente in eine Datei oder mit Header/Footer).
+#
+# Architektur fuer TOC + Index (0.2):
+#   - Single-Pass-Rendering
+#   - Headings werden waehrend des Renders in st(headingsSeen) gesammelt
+#     mit Seitennummer und y-Position
+#   - Bei -bookmarks 1: pdf bookmarkAdd direkt beim Heading-Render (Sidebar)
+#   - Bei -generateToc 1: TOC-Block wird VOR den Hauptteil gerendert
+#       Limitation Single-Pass: TOC-Eintraege haben keine Seitenzahlen
+#       (klickbare Sidebar-Bookmarks kompensieren das)
+#   - Bei -generateIndex 1: Index-Block wird NACH dem Hauptteil gerendert
+#       Index-Eintraege haben Seitenzahlen (sind dann bekannt)
 
-package provide docir::pdf 0.1
+package provide docir::pdf 0.2
 package require docir 0.1
 
 # pdf4tcl + pdf4tcllib werden lazy beim ersten render-Aufruf geladen,
@@ -101,7 +121,15 @@ proc docir::pdf::_normalizeOptions {options} {
         theme              "" \
         colorLink          "#0066cc" \
         colorCode          "#e8e8e8" \
-        root               ""]
+        root               "" \
+        \
+        generateToc        0 \
+        tocTitle           "Inhaltsverzeichnis" \
+        tocDepth           2 \
+        generateIndex      0 \
+        indexTitle         "Stichwortverzeichnis" \
+        indexLevel         3 \
+        bookmarks          1]
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
     }
@@ -469,7 +497,11 @@ proc docir::pdf::_initState {pdf} {
         bottomY        $bottomY \
         pageNo         1 \
         headerTemplate $headerTemplate \
-        footerTemplate $footerTemplate]
+        footerTemplate $footerTemplate \
+        headingsSeen   {}]
+    # headingsSeen: Liste von dicts {level, text, page, anchor, isIndexEntry}
+    # Wird von _renderHeading bei jedem Heading befuellt. Spaeter
+    # ausgewertet von _renderToc (Vorab) und _renderIndex (Nach Hauptteil).
 }
 
 proc docir::pdf::_advanceY {dy} {
@@ -550,12 +582,31 @@ proc docir::pdf::_newPage {} {
 # ============================================================
 
 proc docir::pdf::_renderInto {pdf ir} {
+    variable opts
     _initState $pdf
     # Header für die erste Page
     _writeHeader
+
+    # TOC vor dem Hauptteil rendern (Single-Pass: ohne Seitenzahlen)
+    if {[info exists opts] && [dict exists $opts generateToc] \
+            && [dict get $opts generateToc]} {
+        set tocHeadings [_scanHeadings $ir]
+        if {[llength $tocHeadings] > 0} {
+            _renderToc $tocHeadings
+        }
+    }
+
+    # Hauptteil — befuellt nebenbei st(headingsSeen) mit Seitenzahlen
     foreach node $ir {
         _renderBlock $node
     }
+
+    # Index am Ende (Single-Pass: kennt jetzt alle Seitenzahlen)
+    if {[info exists opts] && [dict exists $opts generateIndex] \
+            && [dict get $opts generateIndex]} {
+        _renderIndex
+    }
+
     # Footer für die letzte Page (kein _newPage am Ende)
     _writeFooter
 }
@@ -721,6 +772,32 @@ proc docir::pdf::_renderHeading {node} {
     # extra space above
     _advanceY 6
     _ensureSpace [expr {[llength $lines] * $lh + 4}]
+
+    # Heading-Text als Plain-String fuer Bookmark + Tracking
+    set plainText [_inlinesToText $inlines]
+
+    # PDF-Outline-Bookmark setzen wenn aktiviert (zeigt auf aktuelle Seite)
+    # pdf4tcl-Konvention: Level 0 = Top-Level, Level 1 = Child eines L0,
+    # usw. Daher `lv - 1` (H1 in Markdown = Level 0 in pdf4tcl-Outline).
+    if {[dict get $opts bookmarks]} {
+        set bmLevel [expr {$lv - 1}]
+        if {$bmLevel < 0} { set bmLevel 0 }
+        if {[catch {$pdf bookmarkAdd -title $plainText -level $bmLevel}]} {
+            # bookmarkAdd nicht verfuegbar oder fehlerhaft — silently
+            # ignorieren, damit der Render trotzdem laeuft.
+        }
+    }
+
+    # Heading in headingsSeen registrieren (fuer TOC + Index)
+    set indexLv [dict get $opts indexLevel]
+    set anchorIdx [llength [dict get $st headingsSeen]]
+    set entry [dict create \
+        level         $lv \
+        text          $plainText \
+        page          [dict get $st pageNo] \
+        anchor        "h-$anchorIdx" \
+        isIndexEntry  [expr {$lv == $indexLv}]]
+    dict lappend st headingsSeen $entry
 
     set x [dict get $st margin]
     foreach lineSegs $lines {
@@ -1405,3 +1482,226 @@ proc docir::pdf::_renderUnknown {node reason} {
     $pdf setFillColor 0 0 0
     _advanceY [expr {$lh + 2}]
 }
+
+# ============================================================
+# TOC und Index (neu in 0.2)
+# ============================================================
+#
+# Beide procs arbeiten auf st(headingsSeen), das vom _renderHeading
+# waehrend des normalen Render-Laufs befuellt wird.
+#
+# _renderToc wird VOR dem Hauptteil aufgerufen — zu diesem Zeitpunkt
+# ist headingsSeen noch LEER. Daher generiert _renderToc keinen
+# Inhalt aus tatsaechlich gesehenen Headings, sondern aus einer
+# vorab-gescannten Liste. Wir pre-scannen die DocIR-Sequenz im
+# render-Wrapper und reichen die Heading-Liste durch.
+#
+# _renderIndex wird NACH dem Hauptteil aufgerufen — zu diesem Zeitpunkt
+# enthaelt headingsSeen alle Headings mit korrekten Seitenzahlen.
+
+# Helper: scannt DocIR-Sequenz und sammelt alle Headings als
+# Liste von dicts {level, text} (ohne page/anchor — die kommen erst
+# beim Render).
+proc docir::pdf::_scanHeadings {ir} {
+    set out {}
+    foreach node $ir {
+        if {[dict get $node type] eq "heading"} {
+            set m [dict get $node meta]
+            set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+            set text [_inlinesToText [dict get $node content]]
+            lappend out [dict create level $lv text $text]
+        }
+    }
+    return $out
+}
+
+# Rendert das TOC vor dem Hauptteil. Eingabe: vorgescannte Heading-Liste.
+# Ohne Seitenzahlen (Single-Pass-Limitation), aber hierarchisch eingerueckt.
+proc docir::pdf::_renderToc {tocHeadings} {
+    variable opts
+    variable st
+    set pdf [dict get $st pdf]
+    set fontSize [dict get $opts fontSize]
+    set tocDepth [dict get $opts tocDepth]
+    set tocTitle [dict get $opts tocTitle]
+
+    # TOC-Header (gross, fett)
+    set titleSize [expr {$fontSize + 8}]
+    set titleLh [_lineHeight $titleSize]
+    _ensureSpace [expr {$titleLh * 2}]
+
+    _setFont $titleSize bold
+    set x [dict get $st margin]
+    set y [expr {[dict get $st y] + $titleSize}]
+    $pdf text [::pdf4tcllib::unicode::sanitize $tocTitle] -x $x -y $y
+    _advanceY [expr {$titleLh + 6}]
+
+    # Linie unter Titel
+    $pdf setStrokeColor 0.5 0.5 0.5
+    $pdf setLineWidth 0.5
+    $pdf line $x [dict get $st y] [expr {$x + [dict get $st contentW]}] [dict get $st y]
+    $pdf setStrokeColor 0 0 0
+    _advanceY 8
+
+    # TOC-Eintraege rendern
+    set lh [_lineHeight $fontSize]
+    foreach h $tocHeadings {
+        set lv [dict get $h level]
+        if {$lv > $tocDepth} continue
+
+        _ensureSpace $lh
+
+        # Indent nach Level: Level 1 = 0pt, Level 2 = 12pt, ...
+        set indent [expr {($lv - 1) * 14}]
+        set entryX [expr {[dict get $st margin] + $indent}]
+
+        # Schriftgroesse: leicht reduziert mit Level
+        set entryFontSize [expr {$fontSize + (2 - $lv)}]
+        if {$entryFontSize < $fontSize - 1} { set entryFontSize [expr {$fontSize - 1}] }
+
+        if {$lv == 1} {
+            _setFont $entryFontSize bold
+        } else {
+            _setFont $entryFontSize ""
+        }
+
+        set sanitized [::pdf4tcllib::unicode::sanitize [dict get $h text]]
+
+        # Wrap falls noetig
+        set maxW [expr {[dict get $st contentW] - $indent}]
+        set wrappedLines [_wrap $sanitized $maxW]
+        foreach wline $wrappedLines {
+            _ensureSpace $lh
+            set wy [expr {[dict get $st y] + $entryFontSize}]
+            $pdf text $wline -x $entryX -y $wy
+            _advanceY $lh
+        }
+    }
+
+    # Seitenumbruch nach TOC
+    _newPage
+}
+
+# Rendert den Index am Ende. Wird AUFGERUFEN nach dem Hauptteil —
+# headingsSeen ist dann komplett mit korrekten Seitenzahlen.
+proc docir::pdf::_renderIndex {} {
+    variable opts
+    variable st
+    set pdf [dict get $st pdf]
+    set fontSize [dict get $opts fontSize]
+    set indexTitle [dict get $opts indexTitle]
+
+    # Nur Index-Eintraege (Begriffe auf indexLevel)
+    set entries {}
+    foreach h [dict get $st headingsSeen] {
+        if {[dict get $h isIndexEntry]} {
+            lappend entries [list \
+                [dict get $h text] \
+                [dict get $h page]]
+        }
+    }
+    if {[llength $entries] == 0} {
+        return
+    }
+
+    # Alphabetisch sortieren (case-insensitive)
+    set entries [lsort -dictionary -index 0 $entries]
+
+    # Neue Seite fuer Index
+    _newPage
+
+    # Index-Titel
+    set titleSize [expr {$fontSize + 8}]
+    set titleLh [_lineHeight $titleSize]
+    _ensureSpace [expr {$titleLh * 2}]
+
+    _setFont $titleSize bold
+    set x [dict get $st margin]
+    set y [expr {[dict get $st y] + $titleSize}]
+    $pdf text [::pdf4tcllib::unicode::sanitize $indexTitle] -x $x -y $y
+    _advanceY [expr {$titleLh + 6}]
+
+    # Linie unter Titel
+    $pdf setStrokeColor 0.5 0.5 0.5
+    $pdf setLineWidth 0.5
+    $pdf line $x [dict get $st y] [expr {$x + [dict get $st contentW]}] [dict get $st y]
+    $pdf setStrokeColor 0 0 0
+    _advanceY 8
+
+    # Bookmark fuer Index selbst (Top-Level)
+    if {[dict get $opts bookmarks]} {
+        catch {$pdf bookmarkAdd -title $indexTitle -level 0}
+    }
+
+    # Eintraege rendern, gruppiert nach Anfangsbuchstaben
+    set lh [_lineHeight $fontSize]
+    set lastInitial ""
+
+    # Spaltenbreite fuer Seitennummer: rechtsbuendig
+    set pageColW 32
+
+    foreach e $entries {
+        lassign $e text page
+
+        # Anfangsbuchstabe (mit Umlaut-Normalisierung)
+        set initial [string toupper [string index $text 0]]
+        switch -- $initial {
+            "Ä" { set initial "A" }
+            "Ö" { set initial "O" }
+            "Ü" { set initial "U" }
+        }
+
+        # Buchstaben-Header bei Wechsel
+        if {$initial ne $lastInitial} {
+            _advanceY 4
+            _ensureSpace [expr {$lh * 2}]
+            _setFont [expr {$fontSize + 2}] bold
+            set hy [expr {[dict get $st y] + $fontSize + 2}]
+            $pdf text $initial -x $x -y $hy
+            _advanceY [expr {$lh + 2}]
+            set lastInitial $initial
+        }
+
+        _ensureSpace $lh
+
+        # Eintrag: Text links, Seitennummer rechts mit gepunkteter Fuehrungslinie
+        _setFont $fontSize ""
+
+        set sanitized [::pdf4tcllib::unicode::sanitize $text]
+        set ey [expr {[dict get $st y] + $fontSize}]
+        set entryX [expr {$x + 8}]
+
+        # Maximalbreite fuer Text (Seitennummer-Spalte freihalten)
+        set maxTextW [expr {[dict get $st contentW] - $pageColW - 12}]
+
+        # Bei zu langem Text: kuerzen mit "..."
+        set displayText $sanitized
+        set tw [$pdf getStringWidth $displayText]
+        if {$tw > $maxTextW} {
+            while {$tw > $maxTextW && [string length $displayText] > 4} {
+                set displayText [string range $displayText 0 end-2]
+                set tw [$pdf getStringWidth "${displayText}..."]
+            }
+            set displayText "${displayText}..."
+        }
+
+        $pdf text $displayText -x $entryX -y $ey
+
+        # Seitennummer rechtsbuendig
+        set pageX [expr {$x + [dict get $st contentW] - $pageColW}]
+        set pageStr "$page"
+        $pdf text $pageStr -x [expr {$pageX + $pageColW}] -y $ey -align right
+
+        _advanceY $lh
+    }
+}
+
+# ============================================================
+# Render-Wrapper mit TOC + Index Unterstuetzung
+# ============================================================
+
+# Patch: render und renderToHandle erweitert um TOC + Index Phasen.
+# Bei -generateToc wird _renderToc vor _renderInto gerufen
+# (mit pre-scanned Heading-Liste).
+# Bei -generateIndex wird _renderIndex nach _renderInto gerufen
+# (nutzt die im Render gesammelten Headings + Seitenzahlen).

@@ -50,7 +50,9 @@ foreach testFile $testFiles {
     }
 
     puts "Running $testFile..."
-    set output [exec tclsh $testPath 2>@1]
+    # Crashende Tests duerfen den Runner nicht stoppen -- mit catch
+    # fangen und als "Failed: 1, Crashed" zaehlen.
+    set rc [catch {exec tclsh $testPath 2>@1} output]
 
     # Passed/Failed aus Ausgabe extrahieren
     set p 0; set f 0
@@ -59,7 +61,13 @@ foreach testFile $testFiles {
     incr totalPassed $p
     incr totalFailed $f
 
-    if {$f > 0} {
+    if {$rc != 0 && $p == 0 && $f == 0} {
+        # Crash ohne Passed/Failed-Markers -- als 1 Fail zaehlen
+        incr totalFailed
+        lappend failedFiles "${testFile} (crashed)"
+        puts "  ✗ CRASHED:"
+        puts $output
+    } elseif {$f > 0} {
         lappend failedFiles $testFile
         puts $output
     } else {

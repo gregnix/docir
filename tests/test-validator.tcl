@@ -21,6 +21,17 @@ set testDir [file dirname [file normalize [info script]]]
 source -encoding utf-8 [file join $testDir test-framework.tcl]
 source -encoding utf-8 [file join $testDir test-setup.tcl]
 
+# Diese Suite testet ausschliesslich nroffparser::validate. Ohne den
+# externen nroffparser ist hier nichts zu pruefen -- sauber skippen
+# statt mit "invalid command name nroffparser::validate" zu kraschen.
+if {![haveParser nroffparser]} {
+    puts "Skipping test-validator.tcl: nroffparser not installed"
+    puts "Passed: 0"
+    puts "Failed: 0"
+    puts "Total:  0 (skipped)"
+    exit 0
+}
+
 # ============================================================
 # A. Grundverhalten
 # ============================================================

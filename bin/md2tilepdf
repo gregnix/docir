@@ -16,15 +16,8 @@
 
 set scriptDir [file dirname [file normalize [info script]]]
 
-# Eigene Module (Entwicklungs-Modus aus Repo)
-::tcl::tm::path add [file join $scriptDir .. lib tm]
-
-package require mdstack::parser
-package require docir
-package require docir::mdSource
-package require docir::tilepdf
-
-# --- CLI-Args ---
+# --help/-h vor dem package require auswerten, damit das Tool auch ohne
+# installierte Deps eine sinnvolle Antwort gibt.
 proc usage {} {
     puts stderr "Aufruf: md2tilepdf input.md ?output.pdf?"
     puts stderr "        md2tilepdf in1.md in2.md ... -o output.pdf"
@@ -38,10 +31,25 @@ proc usage {} {
     puts stderr ""
     puts stderr "Konvertiert ein oder mehrere Markdown-Dateien zu einem"
     puts stderr "2-spaltigen Tile-PDF (Cheatsheet-Stil)."
+    puts stderr ""
+    puts stderr "Benoetigt: mdstack::parser, docir, docir::tilepdf, pdf4tcl."
     exit 1
 }
 
-if {$argc < 1} { usage }
+if {$argc < 1 || [lsearch -exact $argv "--help"] >= 0 \
+        || [lsearch -exact $argv "-h"] >= 0} {
+    usage
+}
+
+# Eigene Module (Entwicklungs-Modus aus Repo)
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+package require mdstack::parser
+package require docir
+package require docir::mdSource
+package require docir::tilepdf
+
+# --- CLI-Args ---
 
 # Parse Args
 set inputs {}

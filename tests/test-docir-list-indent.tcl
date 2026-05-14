@@ -53,9 +53,8 @@ if {[catch {package require docir::md}] == 0} {
     }
 }
 
-if {[catch {package require pdf4tcl}]    == 0 && \
-    [catch {package require pdf4tcllib}] == 0 && \
-    [catch {package require docir::pdf}] == 0} {
+if {[catch {package require docir::pdf}] == 0 && \
+    [catch {package require pdf4tcl}] == 0} {
     test "pdf.list.indent_renders_no_error" {
         set tmpDir [file join [pwd] tmp-pdf-indent]
         file mkdir $tmpDir

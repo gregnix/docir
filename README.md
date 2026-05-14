@@ -149,6 +149,29 @@ make pkgindex
 tclsh tools/generate-pkgindex.tcl lib/tm --write
 ```
 
+## Demos
+
+The `demo/` directory contains small runnable examples:
+
+| Demo | What it shows | Run |
+|------|---------------|-----|
+| `quickstart.tcl` | Smallest possible end-to-end use of the DocIR pipeline | `tclsh demo/quickstart.tcl` |
+| `canvas_demo.tcl` | `docir::canvas` sink: renders a Tk-Manpage (canvas.n) onto a Tk canvas widget. Demonstrates the path nroff -> `docir::roffSource` -> DocIR -> `docir::canvas::render`. | `wish demo/canvas_demo.tcl` |
+| `tile-examples/` | Tile-renderer samples (cheatsheet-style 2-column output via tilepdf / tilehtml / tilemd) | `tclsh demo/tile-examples/<file>.tcl` |
+
+The `canvas_demo.tcl` demo expects `nroffparser` from a sibling
+`man-viewer/` repo. Without it, pass `--builtin` to use a small
+hand-coded IR:
+
+```bash
+wish demo/canvas_demo.tcl --builtin       # eingebautes DocIR
+wish demo/canvas_demo.tcl                 # echte canvas.n (autodetected)
+wish demo/canvas_demo.tcl /pfad/zu/foo.n  # explizite nroff-Datei
+```
+
+The bundled `demo/canvas.n` is a copy of Tk's canvas(n) manpage and
+serves as a fallback when no sibling-`man-viewer` is present.
+
 ## Tests
 
 ```bash
@@ -156,10 +179,24 @@ cd tests
 tclsh run-all-tests.tcl
 ```
 
+Current status:
 
-PDF tests need [pdf4tcl](https://github.com/gregnix/pdf4tcl) and
-[pdf4tcllib](https://github.com/gregnix/pdf4tcllib) installed. Tests
-skip cleanly when these packages are missing.
+- **473 tests passing** without external parsers (DocIR-only).
+- Up to **728 tests** with all deps installed (`nroffparser`,
+  `mdstack::parser`, `pdf4tcl`).
+
+The runner is dependency-tolerant: test-files that cannot find their
+required parser skip themselves (see `test-validator.tcl` for the
+pattern). Crashing tests are reported as failures but do not stop the
+overall run.
+
+## API stability
+
+DocIR sits between several consumer repos (man-viewer, mdstack, mdhelp).
+Whenever the public spec changes (`doc/en/docir-spec.md`) or a sink
+signature changes, the entry in `CHANGES.md` carries an explicit
+**"Affected consumers"** line listing which repos need adjustment.
+Cleanup-only or internal refactors note "no API change" instead.
 
 ## DocIR spec
 
@@ -186,9 +223,9 @@ tests) led to it being extracted into its own repo in May 2026. On
 sub-directory layout (`docir-roff` → `docir::roff`).
 
 In the same week the tile renderers were added (tilepdf, tilehtml,
-tilemd).
+tilemd) — adapted from Greg's `cheatsheet-0.1.tm` layout algorithm.
 Tile = two-column cheatsheet style, atomic sections, section-type
 classification (`code`, `code-intro`, `hint`, `list`, `table`, `image`)
 unified across all three tile renderers (via `docir::tilecommon`).
 
-
+See CHANGES.md for the detailed history.

@@ -16,12 +16,6 @@
 #   -h, --help             Diese Hilfe
 
 set scriptDir [file dirname [file normalize [info script]]]
-::tcl::tm::path add [file join $scriptDir .. lib tm]
-
-package require mdstack::parser
-package require docir
-package require docir::mdSource
-package require docir::tilehtml
 
 proc usage {} {
     puts stderr "Aufruf: md2tilehtml input.md ?output.html?"
@@ -35,10 +29,22 @@ proc usage {} {
     puts stderr "      --subtitle TEXT    Subtitel ueberschreiben"
     puts stderr "      --lang CODE        HTML lang-Attribut (default 'de')"
     puts stderr "  -h, --help             Diese Hilfe"
+    puts stderr ""
+    puts stderr "Benoetigt: mdstack::parser, docir, docir::tilehtml."
     exit 1
 }
 
-if {$argc < 1} { usage }
+if {$argc < 1 || [lsearch -exact $argv "--help"] >= 0 \
+        || [lsearch -exact $argv "-h"] >= 0} {
+    usage
+}
+
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+package require mdstack::parser
+package require docir
+package require docir::mdSource
+package require docir::tilehtml
 
 set inputs {}
 set output ""

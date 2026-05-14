@@ -3,10 +3,11 @@
 
 package ifneeded docir                            0.1      [list source -encoding utf-8 [file join $dir docir-0.1.tm]]
 package ifneeded docir::canvas                    0.1      [list source -encoding utf-8 [file join $dir docir canvas-0.1.tm]]
+package ifneeded docir::csdSource                 0.1      [list source -encoding utf-8 [file join $dir docir csdSource-0.1.tm]]
 package ifneeded docir::html                      0.1      [list source -encoding utf-8 [file join $dir docir html-0.1.tm]]
 package ifneeded docir::md                        0.1      [list source -encoding utf-8 [file join $dir docir md-0.1.tm]]
 package ifneeded docir::mdSource                  0.1      [list source -encoding utf-8 [file join $dir docir mdSource-0.1.tm]]
-package ifneeded docir::pdf                       0.1      [list source -encoding utf-8 [file join $dir docir pdf-0.1.tm]]
+package ifneeded docir::pdf                       0.2      [list source -encoding utf-8 [file join $dir docir pdf-0.2.tm]]
 package ifneeded docir::rendererTk                0.1      [list source -encoding utf-8 [file join $dir docir rendererTk-0.1.tm]]
 package ifneeded docir::roff                      0.1      [list source -encoding utf-8 [file join $dir docir roff-0.1.tm]]
 package ifneeded docir::roffSource                0.1      [list source -encoding utf-8 [file join $dir docir roffSource-0.1.tm]]

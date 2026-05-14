@@ -38,7 +38,7 @@ package require docir 0.1
 package require docir::tilecommon 0.1
 
 namespace eval docir::tilemd {
-    namespace export render
+    namespace export render renderSheets
 }
 
 # ---------------------------------------------------------------------------
@@ -187,6 +187,23 @@ proc docir::tilemd::render {ir outFile args} {
         return -code error "docir::tilemd: keine Sheets im IR-Stream"
     }
 
+    return [renderSheets $sheets $outFile -toc $opts(-toc) -hr $opts(-hr)]
+}
+
+# renderSheets: alternative Public API -- fertige Sheets-Liste, schreibt MD.
+proc docir::tilemd::renderSheets {sheets outFile args} {
+    array set opts {-toc auto -hr true}
+    foreach {k v} $args {
+        if {![info exists opts($k)]} {
+            return -code error "docir::tilemd::renderSheets: unknown option $k"
+        }
+        set opts($k) $v
+    }
+
+    if {[llength $sheets] == 0} {
+        return -code error "docir::tilemd::renderSheets: leere Sheets-Liste"
+    }
+
     # TOC-Entscheidung: auto = wenn 2+ Sheets
     set showToc 0
     if {$opts(-toc) eq "auto"} {
@@ -205,7 +222,6 @@ proc docir::tilemd::render {ir outFile args} {
     set first 1
     foreach sheet $sheets {
         if {!$first} {
-            # Sheet-Trenner (manche MD-Renderer nutzen das fuer Print-Page-Break)
             append md "\n<!-- pagebreak -->\n\n"
         }
         append md [_renderSheet $sheet $rOpts]

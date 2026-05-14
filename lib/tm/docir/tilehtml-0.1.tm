@@ -25,7 +25,7 @@ package require docir 0.1
 package require docir::tilecommon 0.1
 
 namespace eval docir::tilehtml {
-    namespace export render
+    namespace export render renderSheets
 }
 
 # ---------------------------------------------------------------------------
@@ -553,6 +553,31 @@ proc docir::tilehtml::render {ir outFile args} {
         set opts($k) $v
     }
 
+    set err [::docir::checkSchemaVersion $ir]
+    if {$err ne ""} {
+        return -code error "docir::tilehtml: $err"
+    }
+
+    set sheets [::docir::tile::streamToSheets $ir $opts(-title) $opts(-subtitle)]
+    if {[llength $sheets] == 0} {
+        return -code error "docir::tilehtml: keine Sheets im IR-Stream"
+    }
+
+    return [renderSheets $sheets $outFile \
+        -theme $opts(-theme) -lang $opts(-lang) -columns $opts(-columns)]
+}
+
+# renderSheets: alternative Public API -- nimmt eine fertige Sheets-Liste
+# (z.B. von docir::csd::toSheets) und schreibt HTML.
+proc docir::tilehtml::renderSheets {sheets outFile args} {
+    array set opts {-theme light -lang de -columns 2}
+    foreach {k v} $args {
+        if {![info exists opts($k)]} {
+            return -code error "docir::tilehtml::renderSheets: unknown option $k"
+        }
+        set opts($k) $v
+    }
+
     if {$opts(-theme) ni {light dark auto solarized sepia}} {
         return -code error \
             "docir::tilehtml: unknown theme '$opts(-theme)' (use light, dark, auto, solarized, sepia)"
@@ -563,14 +588,8 @@ proc docir::tilehtml::render {ir outFile args} {
             "docir::tilehtml: -columns muss zwischen 1 und 4 sein, war: $opts(-columns)"
     }
 
-    set err [::docir::checkSchemaVersion $ir]
-    if {$err ne ""} {
-        return -code error "docir::tilehtml: $err"
-    }
-
-    set sheets [::docir::tile::streamToSheets $ir $opts(-title) $opts(-subtitle)]
     if {[llength $sheets] == 0} {
-        return -code error "docir::tilehtml: keine Sheets im IR-Stream"
+        return -code error "docir::tilehtml::renderSheets: leere Sheets-Liste"
     }
 
     # Title fuer <title>-Tag

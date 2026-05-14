@@ -34,6 +34,23 @@ package require pdf4tcl
 
 namespace eval docir::tilepdf {
 
+    # Style-Konfiguration: fontMode entscheidet was passiert wenn TTF
+    # nicht ladbar (strict=throw, warn=stderr+fallback, silent=fallback).
+    variable Style
+    array set Style {fontMode strict}
+
+    # Font-Mapping (gefuellt von _setupFonts).
+    # F(prop)/F(propBold)/F(propOblique)/F(mono) zeigen entweder auf
+    # Unicode-TTF (UniSans/UniSansBold/UniSansOblique/UniMono) oder
+    # Standard-Fonts (Helvetica/Helvetica-Bold/Helvetica-Oblique/Courier).
+    variable F
+    array set F {
+        prop        Helvetica
+        propBold    Helvetica-Bold
+        propOblique Helvetica-Oblique
+        mono        Courier
+    }
+
     # Layout-Konstanten — 1:1 aus cheatsheet-0.1.tm (A4 Portrait, 2 Spalten)
     variable C
     array set C {
@@ -50,7 +67,6 @@ namespace eval docir::tilepdf {
         page_w    595
         page_h    842
         div_x     297
-        max_iter  24
     }
 
     # Themes: light (default) und dark
@@ -97,7 +113,7 @@ namespace eval docir::tilepdf {
     # Aktuelles Theme
     variable currentTheme light
 
-    namespace export render
+    namespace export render renderSheets
 }
 
 # ---------------------------------------------------------------------------
@@ -171,9 +187,16 @@ proc docir::tilepdf::_setTheme {theme} {
 proc docir::tilepdf::_tokenize {text} {
     return [docir::tile::tokenize $text]
 }
-# _fontFor: mapped Token-Type auf pdf4tcl Font-Namen
+# _fontFor: mapped Token-Type auf pdf4tcl Font-Namen (via F-Array, das
+# bei _setupFonts mit Unicode-TTF gefuellt wird falls verfuegbar).
 proc docir::tilepdf::_fontFor {type} {
-    return [docir::tile::fontFor $type]
+    variable F
+    switch $type {
+        bold    { return $F(propBold)    }
+        italic  { return $F(propOblique) }
+        code    { return $F(mono)        }
+        default { return $F(prop)        }
+    }
 }
 # _drawRichLine: rendert eine Zeile mit Mixed-Fonts, mit Word-Wrap.
 # Returns y nach der gerenderten Zeile(n).
@@ -237,12 +260,13 @@ proc docir::tilepdf::_drawRichLine {pdf text x y maxWidth fontSize lineHeight} {
 proc docir::tilepdf::_header {pdf title subtitle} {
     variable C
     variable COL
+    variable F
     $pdf setFillColor $COL(header_r) $COL(header_g) $COL(header_b)
-    $pdf setFont 16 Helvetica-Bold
+    $pdf setFont 16 $F(propBold)
     $pdf setTextPosition $C(col1_x) 30
     $pdf text $title
     if {$subtitle ne ""} {
-        $pdf setFont 10 Helvetica
+        $pdf setFont 10 $F(prop)
         $pdf setFillColor $COL(sub_r) $COL(sub_g) $COL(sub_b)
         $pdf setTextPosition $C(col1_x) 44
         $pdf text $subtitle
@@ -260,10 +284,11 @@ proc docir::tilepdf::_divider {pdf} {
 proc docir::tilepdf::_section {pdf title y col} {
     variable C
     variable COL
+    variable F
     $pdf setFillColor $COL(sec_r) $COL(sec_g) $COL(sec_b)
     $pdf rectangle $col $y $C(col_w) $C(sec_h) -filled 1
     $pdf setFillColor $COL(sec_txt_r) $COL(sec_txt_g) $COL(sec_txt_b)
-    $pdf setFont 11 Helvetica-Bold
+    $pdf setFont 11 $F(propBold)
     $pdf setTextPosition [expr {$col + 6}] [expr {$y + 14}]
     $pdf text $title
     return [expr {$y + $C(sec_h) + 2}]
@@ -272,7 +297,8 @@ proc docir::tilepdf::_section {pdf title y col} {
 proc docir::tilepdf::_row {pdf label value y col {mono 0}} {
     variable C
     variable COL
-    $pdf setFont 8 Helvetica-Bold
+    variable F
+    $pdf setFont 8 $F(propBold)
     $pdf setFillColor $COL(lbl_r) $COL(lbl_g) $COL(lbl_b)
     set lx [expr {$col + 4}]
     $pdf drawTextBox $lx [expr {$y+1}] [expr {$C(val_off)-6}] 200 \
@@ -282,11 +308,11 @@ proc docir::tilepdf::_row {pdf label value y col {mono 0}} {
     set vx [expr {$col + $C(val_off)}]
     set vw [expr {$C(col_w) - $C(val_off) - 4}]
     if {$mono} {
-        $pdf setFont 8 Courier
+        $pdf setFont 8 $F(mono)
     } else {
-        $pdf setFont 8 Helvetica
+        $pdf setFont 8 $F(prop)
     }
-    variable COL; $pdf setFillColor $COL(fg_r) $COL(fg_g) $COL(fg_b)
+    $pdf setFillColor $COL(fg_r) $COL(fg_g) $COL(fg_b)
     $pdf drawTextBox $vx [expr {$y+1}] $vw 200 \
         $value -align left -linesvar nlinesV
     if {![info exists nlinesV] || $nlinesV < 1} { set nlinesV 1 }
@@ -299,7 +325,8 @@ proc docir::tilepdf::_row {pdf label value y col {mono 0}} {
 proc docir::tilepdf::_code {pdf line y col} {
     variable C
     variable COL
-    $pdf setFont 8 Courier
+    variable F
+    $pdf setFont 8 $F(mono)
     $pdf setFillColor $COL(fg_r) $COL(fg_g) $COL(fg_b)
     set vx [expr {$col + 4}]
     set vw [expr {$C(col_w) - 8}]
@@ -320,7 +347,8 @@ proc docir::tilepdf::_hint {pdf text y col} {
 proc docir::tilepdf::_listItem {pdf text y col} {
     variable C
     variable COL
-    $pdf setFont 8 Helvetica
+    variable F
+    $pdf setFont 8 $F(prop)
     $pdf setFillColor $COL(fg_r) $COL(fg_g) $COL(fg_b)
     set vx [expr {$col + 8}]
     set vw [expr {$C(col_w) - 12}]
@@ -395,6 +423,7 @@ proc docir::tilepdf::_sectionHeight {section} {
 proc docir::tilepdf::_image {pdf url alt y col} {
     variable C
     variable COL
+    variable F
 
     set vx [expr {$col + 4}]
     set vw [expr {$C(col_w) - 8}]
@@ -434,7 +463,7 @@ proc docir::tilepdf::_image {pdf url alt y col} {
     # Alt-Text als kleine Caption darunter (optional, nur wenn vorhanden)
     set newY [expr {$y + $drawH + 2}]
     if {$alt ne ""} {
-        $pdf setFont 7 Helvetica-Oblique
+        $pdf setFont 7 $F(propOblique)
         $pdf setFillColor $COL(sub_r) $COL(sub_g) $COL(sub_b)
         $pdf drawTextBox $vx [expr {$newY+1}] $vw 30 $alt -align center -linesvar capL
         if {![info exists capL] || $capL < 1} { set capL 1 }
@@ -443,23 +472,42 @@ proc docir::tilepdf::_image {pdf url alt y col} {
     return $newY
 }
 
-proc docir::tilepdf::_renderSection {pdf section y col} {
-    set title   [dict get $section title]
-    set type    [dict get $section type]
-    set content [dict get $section content]
+proc docir::tilepdf::_renderSection {pdf section yVar colVar title subtitle} {
+    variable C
+    upvar 1 $yVar y
+    upvar 1 $colVar col
 
-    set y [_section $pdf $title $y $col]
+    set secTitle [dict get $section title]
+    set type     [dict get $section type]
+    set content  [dict get $section content]
+
+    set y [_section $pdf $secTitle $y $col]
 
     switch $type {
         table {
             foreach row $content {
                 set label [lindex $row 0]
                 set value [lindex $row 1]
-                set y [_row $pdf $label $value $y $col 0]
+                set m 0
+                if {[llength $row] >= 3} { set m [lindex $row 2] }
+                # Pre-measure und Spalte wechseln wenn n\u00f6tig
+                set est [expr {max(1, int(ceil([string length $value] / 42.0)))}]
+                set rowH [expr {max($C(row_h), $est * 10 + 3)}]
+                if {$y + $rowH > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
+                set y [_row $pdf $label $value $y $col $m]
             }
         }
         code {
             foreach line $content {
+                set est [expr {max(1, int(ceil([string length $line] / 48.0)))}]
+                set lineH [expr {max($C(code_h), $est * 10 + 2)}]
+                if {$y + $lineH > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
                 set y [_code $pdf $line $y $col]
             }
         }
@@ -467,19 +515,43 @@ proc docir::tilepdf::_renderSection {pdf section y col} {
             # Intro mit Helvetica (hint-Style), Code mit Courier
             set intro [dict get $section intro]
             foreach line $intro {
+                set est [expr {max(1, int(ceil([string length $line] / 35.0)))}]
+                set hintH [expr {$est * 10 + 10}]
+                if {$y + $hintH > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
                 set y [_hint $pdf $line $y $col]
             }
             foreach line $content {
+                set est [expr {max(1, int(ceil([string length $line] / 48.0)))}]
+                set lineH [expr {max($C(code_h), $est * 10 + 2)}]
+                if {$y + $lineH > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
                 set y [_code $pdf $line $y $col]
             }
         }
         hint {
             foreach line $content {
+                set est [expr {max(1, int(ceil([string length $line] / 35.0)))}]
+                set hintH [expr {$est * 10 + 10}]
+                if {$y + $hintH > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
                 set y [_hint $pdf $line $y $col]
             }
         }
         list {
             foreach item $content {
+                set est [expr {max(1, int(ceil(([string length $item] + 2) / 40.0)))}]
+                set itemH [expr {max($C(row_h), $est * 10)}]
+                if {$y + $itemH > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
                 set y [_listItem $pdf $item $y $col]
             }
         }
@@ -487,6 +559,11 @@ proc docir::tilepdf::_renderSection {pdf section y col} {
             # content: Liste von {url alt title}
             foreach img $content {
                 lassign $img url alt ttl
+                # Bilder schwer vorab zu vermessen -- konservativ: 80px reservieren
+                if {$y + 80 > $C(y_max)} {
+                    set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
+                    set y [_section $pdf "$secTitle (cont.)" $y $col]
+                }
                 set y [_image $pdf $url $alt $y $col]
             }
         }
@@ -494,6 +571,115 @@ proc docir::tilepdf::_renderSection {pdf section y col} {
     set y [_sep $pdf $y $col]
     return $y
 }
+
+# ---------------------------------------------------------------------------
+# Unicode-Font-Pipeline (portiert aus cheatsheet-0.1.tm, 2026-05-13)
+# ---------------------------------------------------------------------------
+#
+# Versucht UniSans/UniSansBold/UniSansOblique/UniMono als CID-Fonts zu
+# registrieren. Bei Erfolg werden im F-Array die Slots auf die
+# Unicode-Namen umgestellt; bei Misserfolg fallback auf die Standard-
+# Helvetica/Courier (kein Unicode, aber immer da).
+#
+# Mode (Style(fontMode)):
+#   strict (default) -- bei Fehler: Exception werfen
+#   warn             -- bei Fehler: stderr-Warnung + Fallback
+#   silent           -- bei Fehler: still Fallback
+
+proc docir::tilepdf::_setupFonts {pdf} {
+    variable F
+    variable Style
+
+    # Defaults: Standard-PDF-Fonts (kein Unicode, aber immer verfuegbar).
+    array set F {
+        prop        Helvetica
+        propBold    Helvetica-Bold
+        propOblique Helvetica-Oblique
+        mono        Courier
+    }
+
+    set mode strict
+    if {[info exists Style(fontMode)]} { set mode $Style(fontMode) }
+
+    set propCandidates {
+        /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+        /usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf
+        /usr/share/fonts/TTF/DejaVuSans.ttf
+        /Library/Fonts/Arial.ttf
+        c:/windows/fonts/arial.ttf
+    }
+    set boldCandidates {
+        /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+        /usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf
+        /usr/share/fonts/TTF/DejaVuSans-Bold.ttf
+        /Library/Fonts/Arial Bold.ttf
+        c:/windows/fonts/arialbd.ttf
+    }
+    set obliqueCandidates {
+        /usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf
+        /usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf
+        /usr/share/fonts/TTF/DejaVuSans-Oblique.ttf
+    }
+    set monoCandidates {
+        /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+        /usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf
+        /usr/share/fonts/TTF/DejaVuSansMono.ttf
+        c:/windows/fonts/cour.ttf
+    }
+
+    _tryLoadFont $mode prop        UniSans        $propCandidates
+    _tryLoadFont $mode propBold    UniSansBold    $boldCandidates
+    _tryLoadFont $mode propOblique UniSansOblique $obliqueCandidates
+    _tryLoadFont $mode mono        UniMono        $monoCandidates
+}
+
+# Versucht ein Font-Mapping zu setzen. pdf4tcl-Pipeline:
+#   1. loadBaseTrueTypeFont <BaseName> <ttf-pfad>
+#   2. createFontSpecCID    <BaseName> <SpecName>
+# Bei Problemen wird je nach $mode geworfen (strict), gewarnt (warn)
+# oder still gefallen-back (silent).
+proc docir::tilepdf::_tryLoadFont {mode slot fontName candidates} {
+    variable F
+
+    set path ""
+    foreach p $candidates {
+        if {[file exists $p] && [file readable $p]} {
+            set path $p
+            break
+        }
+    }
+    if {$path eq ""} {
+        _fontProblem $mode "kein TTF gefunden fuer slot=$slot (probiert: [join $candidates {, }])"
+        return
+    }
+
+    set baseName "${fontName}Base"
+
+    if {[catch {::pdf4tcl::loadBaseTrueTypeFont $baseName $path} err]} {
+        _fontProblem $mode "loadBaseTrueTypeFont $baseName aus $path schlug fehl: $err"
+        return
+    }
+
+    if {[catch {::pdf4tcl::createFontSpecCID $baseName $fontName} err]} {
+        _fontProblem $mode "createFontSpecCID $baseName $fontName schlug fehl: $err"
+        return
+    }
+
+    set F($slot) $fontName
+}
+
+proc docir::tilepdf::_fontProblem {mode msg} {
+    switch -- $mode {
+        strict { error "docir::tilepdf font setup (strict): $msg" }
+        warn   { puts stderr "docir::tilepdf: WARN -- $msg" }
+        silent { }
+        default { error "docir::tilepdf font setup: unbekannter mode=$mode (erwartet strict|warn|silent)" }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Sheet-Rendering
+# ---------------------------------------------------------------------------
 
 # Ein Sheet (= 1 Page mit Titel) rendern
 proc docir::tilepdf::_renderSheet {pdf sheet} {
@@ -519,11 +705,15 @@ proc docir::tilepdf::_renderSheet {pdf sheet} {
 
     foreach section $sections {
         set need [_sectionHeight $section]
-        # Wenn die Section nicht in die aktuelle Spalte passt -> wechsel
-        for {set i 0} {$i < $C(max_iter) && $y + $need > $C(y_max)} {incr i} {
+        # Section header sollte mit mindestens etwas Content in dieselbe
+        # Spalte; wenn nichtmal das passt, gleich Spalte wechseln.
+        # Wenn die ganze Section nicht in eine Spalte passt, kein Problem
+        # -- _renderSection splittet jetzt automatisch via upvar y col.
+        set minNeed [expr {min($need, $C(sec_h) + 40)}]
+        if {$y + $minNeed > $C(y_max)} {
             set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
         }
-        set y [_renderSection $pdf $section $y $col]
+        _renderSection $pdf $section y col $title $subtitle
     }
 
     $pdf endPage
@@ -549,15 +739,35 @@ proc docir::tilepdf::render {ir outFile args} {
         return -code error "docir::tilepdf: $err"
     }
 
-    # Theme aktivieren (befuellt COL)
-    _setTheme $opts(-theme)
-
     set sheets [_streamToSheets $ir $opts(-title) $opts(-subtitle)]
     if {[llength $sheets] == 0} {
         return -code error "docir::tilepdf: keine Sheets im IR-Stream"
     }
 
+    return [renderSheets $sheets $outFile -theme $opts(-theme)]
+}
+
+# renderSheets: alternative Public API -- nimmt eine fertige Sheets-Liste
+# (z.B. von docir::csd::toSheets). Bypass des DocIR-Schema-Checks und
+# der streamToSheets-Klassifizierung -- der Aufrufer ist schon im
+# Sheet-Format.
+proc docir::tilepdf::renderSheets {sheets outFile args} {
+    array set opts {-theme light}
+    foreach {k v} $args {
+        if {![info exists opts($k)]} {
+            return -code error "docir::tilepdf::renderSheets: unknown option $k"
+        }
+        set opts($k) $v
+    }
+
+    if {[llength $sheets] == 0} {
+        return -code error "docir::tilepdf::renderSheets: leere Sheets-Liste"
+    }
+
+    _setTheme $opts(-theme)
+
     set pdf [::pdf4tcl::new %AUTO% -paper a4 -orient true]
+    _setupFonts $pdf
     foreach sheet $sheets {
         _renderSheet $pdf $sheet
     }
