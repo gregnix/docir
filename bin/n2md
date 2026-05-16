@@ -1,0 +1,162 @@
+#!/usr/bin/env tclsh
+# n2md -- nroff → Markdown via DocIR-Pipeline
+#
+# Pipeline:
+#   nroffparser::parse  → AST
+#   docir::roffSource   → DocIR
+#   docir::md::render   → Markdown
+#
+# Aufruf:
+#   n2md input.n ?output.md?
+#
+# Optionen:
+#   -o, --output FILE    Output-MD (Default: stdout)
+#       --link-mode MODE local|online (Default: local)
+#       --list-marker M  Bullet-Marker: -, +, * (Default: -)
+#   -h, --help           Diese Hilfe
+#
+# Benoetigt:
+#   nroffparser    (typischerweise im man-viewer-Repo)
+#   docir + docir::roffSource + docir::md (im selben Repo wie dieses Tool)
+#
+# Nroffparser-Lokalisierung:
+#   1. $NROFFPARSER_PATH       Env-Variable mit Pfad zum tm-Verzeichnis
+#   2. ../man-viewer/lib/tm    Sibling-Repo
+#   3. ~/lib/tcltk/man-viewer/lib/tm
+#   4. System tm-Pfade (falls installiert)
+
+set scriptDir [file dirname [file normalize [info script]]]
+
+proc usage {} {
+    puts stderr "Aufruf: n2md input.n ?output.md?"
+    puts stderr ""
+    puts stderr "Optionen:"
+    puts stderr "  -o, --output FILE      Output-MD (Default: stdout)"
+    puts stderr "      --link-mode MODE   local|online (Default: local)"
+    puts stderr "      --list-marker M    Bullet: -, +, * (Default: -)"
+    puts stderr "  -h, --help             Diese Hilfe"
+    puts stderr ""
+    puts stderr "Konvertiert nroff (.n / .3 / .1) zu Markdown via DocIR-Pipeline."
+    puts stderr ""
+    puts stderr "Benoetigt: nroffparser, docir, docir::roffSource, docir::md."
+    puts stderr "Nroffparser wird in folgender Reihenfolge gesucht:"
+    puts stderr "  1. \$NROFFPARSER_PATH"
+    puts stderr "  2. ../man-viewer/lib/tm"
+    puts stderr "  3. ~/lib/tcltk/man-viewer/lib/tm"
+    puts stderr "  4. System tm-Pfade"
+    exit 1
+}
+
+if {$argc < 1 || [lsearch -exact $argv "--help"] >= 0 \
+        || [lsearch -exact $argv "-h"] >= 0} {
+    usage
+}
+
+# Pfad-Setup
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+
+# Nroffparser-Lokalisierung
+set nroffparserCandidates [list]
+if {[info exists ::env(NROFFPARSER_PATH)]} {
+    lappend nroffparserCandidates $::env(NROFFPARSER_PATH)
+}
+lappend nroffparserCandidates \
+    [file normalize [file join $scriptDir .. .. man-viewer lib tm]] \
+    [file normalize [file join $::env(HOME) lib tcltk man-viewer lib tm]]
+
+set nroffparserFound 0
+foreach p $nroffparserCandidates {
+    if {[file isdirectory $p]} {
+        ::tcl::tm::path add $p
+        set nroffparserFound 1
+        break
+    }
+}
+
+if {[catch {package require nroffparser} err]} {
+    puts stderr "ERROR: nroffparser not found"
+    puts stderr "  Tried: $nroffparserCandidates"
+    puts stderr "  Set NROFFPARSER_PATH or install nroffparser to one of these locations."
+    exit 2
+}
+
+if {[catch {package require docir} err]} {
+    puts stderr "ERROR: docir not found ($err)"
+    exit 2
+}
+
+if {[catch {package require docir::roffSource} err]} {
+    puts stderr "ERROR: docir::roffSource not found ($err)"
+    exit 2
+}
+
+if {[catch {package require docir::md} err]} {
+    puts stderr "ERROR: docir::md not found ($err)"
+    exit 2
+}
+
+# Argumente parsen
+set inputs {}
+set output ""
+set linkMode "local"
+set listMarker "-"
+
+set i 0
+while {$i < $argc} {
+    set arg [lindex $argv $i]
+    switch -- $arg {
+        -o - --output        { incr i; set output [lindex $argv $i] }
+        --link-mode          { incr i; set linkMode [lindex $argv $i] }
+        --list-marker        { incr i; set listMarker [lindex $argv $i] }
+        -h - --help          { usage }
+        default              { lappend inputs $arg }
+    }
+    incr i
+}
+
+if {[llength $inputs] == 0} { usage }
+
+# 2-Args Spezialfall: input.n output.md
+if {$output eq "" && [llength $inputs] == 2 \
+        && [string match "*.md" [lindex $inputs 1]]} {
+    set output [lindex $inputs 1]
+    set inputs [lrange $inputs 0 0]
+}
+
+if {[llength $inputs] != 1} {
+    puts stderr "ERROR: exactly one input file expected, got [llength $inputs]"
+    usage
+}
+
+set inputFile [lindex $inputs 0]
+if {![file exists $inputFile]} {
+    puts stderr "ERROR: input not found: $inputFile"
+    exit 2
+}
+
+# Pipeline
+set fh [open $inputFile r]
+fconfigure $fh -encoding utf-8
+set source [read $fh]
+close $fh
+
+set ast [nroffparser::parse $source]
+set ir  [docir::roff::fromAst $ast]
+set md  [docir::md::render $ir [dict create listMarker $listMarker]]
+
+# Output
+if {$output eq ""} {
+    puts -nonewline $md
+} else {
+    set outDir [file dirname $output]
+    if {![file isdirectory $outDir]} {
+        file mkdir $outDir
+    }
+    set fh [open $output w]
+    fconfigure $fh -encoding utf-8
+    puts -nonewline $fh $md
+    close $fh
+    puts stderr "wrote: $output"
+}
+
+exit 0

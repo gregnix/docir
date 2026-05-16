@@ -1,5 +1,53 @@
 # DocIR — Changelog
 
+## 2026-05-16 — Plain-text sink, n2md CLI, math + mermaid in renderers
+
+### Added
+
+- **`lib/tm/docir/txt-0.1.tm`** — new plain-text sink (`docir::txt`).
+  Seventh sink in the DocIR hub (after tk, html, md, svg, pdf, canvas).
+  Renders blocks to clean plain text with word-wrap, ASCII tables,
+  indented code blocks, `$$...$$` math blocks, `> ` blockquotes, and
+  configurable options (`lineWidth`, `bulletChar`, `codeIndent`,
+  `linkStyle`, `showImageUrls`).
+- **`bin/n2md`** — new CLI that converts nroff to Markdown via the
+  DocIR pipeline (nroffparser → roffSource → md). Locates
+  nroffparser via `$NROFFPARSER_PATH`, sibling `../man-viewer/lib/tm`,
+  or `~/lib/tcltk/man-viewer/lib/tm`. Exits with code 2 if any
+  dependency is missing, with a clear error message.
+- **`tests/test-docir-txt.tcl`** — 15 tests covering headings,
+  paragraphs, lists, tables, code/math blocks, links, footnotes,
+  images, and empty-doc-header skipping.
+
+### Changed
+
+- **`lib/tm/docir/mdSource-0.1.tm`** maps new mdparser AST nodes:
+  - `math_block` → DocIR `pre` with `meta {kind math display 1}`
+  - `math` inline → DocIR `math` inline with `display` flag
+- **`lib/tm/docir/md-0.1.tm`** (sink):
+  - `_renderPre` recognizes `kind=math` and renders as `$$...$$`
+  - `_renderInline` renders `math` inline as `$...$` or `$$...$$`
+- **`lib/tm/docir/html-0.1.tm`** (sink):
+  - `_renderPre` recognizes `kind=math` → `<div class="math display">`
+  - `_renderPre` recognizes `language=mermaid` → `<pre class="mermaid">`
+    (instead of `<pre><code class="language-mermaid">`)
+  - `_renderInline` renders `math` inline as
+    `<span class="math inline|display">` (Pandoc/KaTeX/MathJax convention)
+  - New render options: `enableMermaid` (default 0) and `enableMath`
+    (default 0). When set, the renderer injects CDN script tags for
+    mermaid.js / KaTeX in the document head. Strictly opt-in — no
+    automatic network requests.
+
+### Compatibility
+
+- All existing tests pass (125/126, same pre-existing fail as before).
+- No public API changes. New code paths trigger only on new AST node
+  types (`math`, `math_block`) or new option keys (`enableMermaid`,
+  `enableMath`). Existing consumers see identical output for
+  identical input.
+
+---
+
 ## 2026-05-14 — Documentation correction in md-0.1.tm
 
 ### Documentation

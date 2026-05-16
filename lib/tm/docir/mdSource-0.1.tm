@@ -73,6 +73,15 @@ proc docir::md::_mapBlock {block} {
         image        { return [list [docir::md::_mapImageBlock $block]] }
         footnote_section { return [docir::md::_mapFootnoteSection $block] }
         footnote_def { return {} }
+        math_block   {
+            # Display-Math als Pre-Block mit kind=math kennzeichnen.
+            # HTML-Sink kann es als <div class="math display"> rendern,
+            # MD-Sink als $$...$$, TXT-Sink als eingerueckter Text.
+            return [list [dict create \
+                type pre \
+                content [dict get $block content] \
+                meta [dict create kind math display 1]]]
+        }
         default      {
             # Unbekannter Block-Typ (image, video, ...). Wenn er
             # 'content' hat, als paragraph mit recursiv verarbeiteten
@@ -393,6 +402,13 @@ proc docir::md::_mapInlines {inlines} {
                 set id  [expr {[dict exists $inline id]  ? [dict get $inline id]  : ""}]
                 set num [expr {[dict exists $inline num] ? [dict get $inline num] : $id}]
                 lappend result [dict create type footnote_ref text $num id $id]
+            }
+            math {
+                # mdparser: {type math display 0|1 text "..."}
+                # DocIR: math inline mit display-Flag
+                set txt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+                set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
+                lappend result [dict create type math text $txt display $disp]
             }
             default {
                 # Unbekannter Inline-Typ (span, strike, mark, ...).

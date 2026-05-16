@@ -59,6 +59,8 @@ proc docir::html::render {ir {options {}}} {
         viewport    1 \
         includeToc  0 \
         linkMode    "local" \
+        enableMermaid 0 \
+        enableMath  0 \
         part        ""]
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
@@ -207,6 +209,33 @@ proc docir::html::_wrapDocument {title toc body} {
         set viewportMeta "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n"
     }
 
+    # Optional: Mermaid + Math via CDN-Scripts. Strikt opt-in damit
+    # docir::html nicht "von selbst" ins Netz greift. Anwender muss
+    # enableMermaid=1 / enableMath=1 setzen.
+    set extraScripts ""
+    if {[dict get $opts enableMermaid]} {
+        append extraScripts \
+            "<script src=\"https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js\"></script>\n"
+        append extraScripts \
+            "<script>mermaid.initialize({startOnLoad:true});</script>\n"
+    }
+    if {[dict get $opts enableMath]} {
+        append extraScripts \
+            "<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css\"/>\n"
+        append extraScripts \
+            "<script defer src=\"https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js\"></script>\n"
+        append extraScripts \
+            "<script defer src=\"https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js\"\n"
+        append extraScripts \
+            "    onload=\"renderMathInElement(document.body, {delimiters:\[\n"
+        append extraScripts \
+            "        {left:'\$\$',right:'\$\$',display:true},\n"
+        append extraScripts \
+            "        {left:'\$',right:'\$',display:false}\n"
+        append extraScripts \
+            "    \]});\"></script>\n"
+    }
+
     set head "<!DOCTYPE html>
 <html lang=\"[_escapeAttr $lang]\">
 <head>
@@ -216,7 +245,7 @@ ${viewportMeta}<title>$escTitle</title>
 $themeCss
 $cssExtra
 </style>
-</head>
+${extraScripts}</head>
 <body>
 "
     set tail "
@@ -465,9 +494,27 @@ proc docir::html::_renderPre {node level} {
     # u.s.w. — das ist Konvention für code-Blöcke). Aber: wenn der
     # Inhalt aus echten formatierten Inlines besteht, behalten wir die
     # Tags. Fuer "kind=code" purer Text.
+    if {$kind eq "math"} {
+        # Display-Math: <div class="math display">$$...$$</div>
+        # Browser laedt KaTeX/MathJax separat.
+        set content [dict get $node content]
+        if {[string is list $content] && [llength $content] > 0 \
+                && [catch {dict get [lindex $content 0] type}] == 0} {
+            set txt [_inlinesToText $content]
+        } else {
+            set txt $content
+        }
+        set escTxt [_escapeHtml $txt]
+        return "$ind<div class=\"math display\">\$\$${escTxt}\$\$</div>\n"
+    }
     if {$kind eq "code" || $kind eq "example"} {
         set txt [_inlinesToText [dict get $node content]]
         set escTxt [_escapeHtml $txt]
+        # Mermaid: <pre class="mermaid"> -- erlaubt einbettung von
+        # mermaid.js fuer Diagramm-Rendering im Browser.
+        if {[string tolower $lang] eq "mermaid"} {
+            return "$ind<pre class=\"mermaid\">$escTxt</pre>\n"
+        }
         if {$lang ne ""} {
             return "$ind<pre><code class=\"language-[_escapeAttr $lang]\">$escTxt</code></pre>\n"
         }
@@ -782,6 +829,19 @@ proc docir::html::_renderInline {inline} {
             set id [expr {[dict exists $inline id] ? [dict get $inline id] : ""}]
             set escId [_escapeAttr $id]
             return "<sup class=\"footnote-ref\"><a href=\"#fn-$escId\" id=\"fnref-$escId\">$escTxt</a></sup>"
+        }
+        math {
+            # Pandoc-Konvention fuer KaTeX/MathJax-Integration:
+            # <span class="math inline">$...$</span> bzw.
+            # <span class="math display">$$...$$</span>
+            # Der Browser laedt KaTeX/MathJax separat und rendert sie.
+            set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
+            set raw [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+            set escRaw [_escapeHtml $raw]
+            if {$disp} {
+                return "<span class=\"math display\">\$\$${escRaw}\$\$</span>"
+            }
+            return "<span class=\"math inline\">\$${escRaw}\$</span>"
         }
         default {
             # Unbekannter Inline-Typ — Text bewahren mit data-Attribut

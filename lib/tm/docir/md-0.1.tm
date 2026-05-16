@@ -185,10 +185,23 @@ proc docir::md::_renderParagraph {node} {
 
 proc docir::md::_renderPre {node} {
     set m [dict get $node meta]
+    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : ""}]
     set lang [expr {[dict exists $m language] ? [dict get $m language] : ""}]
 
     # Im Code-Block: Inline-Liste als plain text (kein Markdown-Escaping)
-    set txt [_inlinesToText [dict get $node content]]
+    set content [dict get $node content]
+    if {[string is list $content] && [llength $content] > 0 \
+            && [catch {dict get [lindex $content 0] type}] == 0} {
+        set txt [_inlinesToText $content]
+    } else {
+        # Reiner String (z.B. von math_block via mdSource)
+        set txt $content
+    }
+
+    # Math-Display-Block als $$...$$ ausgeben
+    if {$kind eq "math"} {
+        return "\$\$\n$txt\n\$\$\n\n"
+    }
 
     return "```$lang\n$txt\n```\n\n"
 }
@@ -483,6 +496,14 @@ proc docir::md::_renderInline {inline} {
             # [^id] in Markdown
             set id [expr {[dict exists $inline id] ? [dict get $inline id] : ""}]
             return "\[^$id\]"
+        }
+        math {
+            # Pandoc-Style math: $...$ (inline) oder $$...$$ (display)
+            set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
+            if {$disp} {
+                return "\$\$${txt}\$\$"
+            }
+            return "\$${txt}\$"
         }
         default {
             # Unbekannter Inline-Typ — Text bewahren mit HTML-Kommentar-Marker

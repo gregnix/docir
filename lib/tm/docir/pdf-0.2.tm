@@ -294,6 +294,17 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                 set marker [expr {[dict exists $inline text] ? [dict get $inline text] : "?"}]
                 lappend segs [list "\[$marker\]" $parentStyle ""]
             }
+            math {
+                # Inline-Math: $...$ als monospace, raw LaTeX
+                # (kein PDF-LaTeX-Rendering ohne externe Engine).
+                set txt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+                set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
+                if {$disp} {
+                    lappend segs [list "\$\$${txt}\$\$" code ""]
+                } else {
+                    lappend segs [list "\$${txt}\$" code ""]
+                }
+            }
             default {
                 if {$text ne ""} {
                     lappend segs [list $text $parentStyle ""]
@@ -866,6 +877,42 @@ proc docir::pdf::_renderPre {node} {
     set pdf [dict get $st pdf]
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
+
+    # Math-Block: Raw-LaTeX mit $$...$$ Wrapper -- kein PDF-LaTeX-Rendering
+    # ohne externe Engine. Wir markieren mit $$ um den Math-Inhalt visuell
+    # vom normalen Code-Block zu trennen.
+    set m [dict get $node meta]
+    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : ""}]
+    if {$kind eq "math"} {
+        set content [dict get $node content]
+        if {[string is list $content] && [llength $content] > 0 \
+                && [catch {dict get [lindex $content 0] type}] == 0} {
+            set txt [_inlinesToText $content]
+        } else {
+            set txt $content
+        }
+        set lines [concat {$$} [split $txt "\n"] {$$}]
+        _setFont $fontSize mono
+        set x [dict get $st margin]
+        set padding 4
+        set rectH [expr {[llength $lines] * $lh + 2 * $padding}]
+        _ensureSpace $rectH
+        set yTop [dict get $st y]
+        # Math-Block-Hintergrund: leicht andere Farbe als Code
+        $pdf setFillColor 0.95 0.94 0.88
+        $pdf rectangle $x $yTop [dict get $st contentW] $rectH \
+            -filled true -stroke false
+        $pdf setFillColor 0 0 0
+        _advanceY $padding
+        foreach line $lines {
+            set y [expr {[dict get $st y] + $fontSize}]
+            $pdf text [::pdf4tcllib::unicode::sanitize $line] -x [expr {$x + 4}] -y $y
+            _advanceY $lh
+        }
+        _advanceY $padding
+        _advanceY 4
+        return
+    }
 
     set txt [_inlinesToText [dict get $node content]]
     set lines [split $txt "\n"]
