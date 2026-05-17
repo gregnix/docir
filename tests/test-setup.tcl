@@ -18,6 +18,10 @@ set libDir [file join $projectRoot lib tm]
 if {[lsearch -exact $::auto_path $libDir] < 0} {
     lappend ::auto_path $libDir
 }
+# Plus: tm::path damit `.tm`-Module via `package require` ladbar sind
+# (auto_path allein reicht fuer Tk packages, aber Tcl-Module brauchen
+# tm::path).
+::tcl::tm::path add $libDir
 
 # DocIR-Module direkt sourcen — Tests laufen aus dem Repo, die Pfade
 # sind also bekannt. Tk-abhaengige Module (canvas, rendererTk) und
@@ -26,6 +30,7 @@ if {[lsearch -exact $::auto_path $libDir] < 0} {
 source -encoding utf-8 [file join $libDir docir-0.1.tm]
 # Module ohne externe Deps (Pflicht)
 foreach mod {
+    util-0.1.tm
     tilecommon-0.1.tm
     roffSource-0.1.tm
     mdSource-0.1.tm
@@ -35,6 +40,7 @@ foreach mod {
     roff-0.1.tm
     tilehtml-0.1.tm
     tilemd-0.1.tm
+    txt-0.1.tm
 } {
     set p [file join $libDir docir $mod]
     if {[file exists $p]} {

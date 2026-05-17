@@ -29,6 +29,10 @@ if {!$hasPdf4tcllib} {
 # Beides braucht docir-pdf jetzt
 set canRender [expr {$hasPdf4tcl && $hasPdf4tcllib}]
 
+# Temp-Dir plattform-unabhaengig via docir::util
+package require docir::util
+set ::TMPBASE [docir::util::tmpdir]
+
 # ============================================================
 # A. Modul-Loading und API
 # ============================================================
@@ -48,7 +52,7 @@ test "pdf.render_without_pdf4tcl_errors_clearly" {
     # nicht mehr in den ensure-Zweig — dann triviale Pseudo-Assertion.
     if {[catch {package present pdf4tcl}]} {
         # pdf4tcl nicht da → echter Test
-        set caught [catch {docir::pdf::render {} /tmp/_nonexistent.pdf} err]
+        set caught [catch {docir::pdf::render {} [file join $::TMPBASE _nonexistent.pdf]} err]
         assert $caught "render without pdf4tcl errors"
         assert [string match "*pdf4tcl*" $err] "error mentions pdf4tcl"
     } else {
@@ -64,7 +68,7 @@ test "pdf.render_without_pdf4tcl_errors_clearly" {
 if {$canRender} {
 
 test "pdf.render_writes_file" {
-    set out [file join /tmp "docir-pdf-test-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-test-[pid].pdf"]
     catch {file delete $out}
 
     set ir [list \
@@ -86,7 +90,7 @@ test "pdf.render_writes_file" {
 }
 
 test "pdf.render_handles_all_block_types" {
-    set out [file join /tmp "docir-pdf-allblocks-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-allblocks-[pid].pdf"]
     catch {file delete $out}
 
     set ir [list \
@@ -119,7 +123,7 @@ test "pdf.render_handles_all_block_types" {
 }
 
 test "pdf.render_paginates_long_content" {
-    set out [file join /tmp "docir-pdf-paginate-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-paginate-[pid].pdf"]
     catch {file delete $out}
 
     set ir {}
@@ -144,7 +148,7 @@ test "pdf.render_paginates_long_content" {
 }
 
 test "pdf.render_handles_empty_ir" {
-    set out [file join /tmp "docir-pdf-empty-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-empty-[pid].pdf"]
     catch {file delete $out}
     docir::pdf::render {} $out
     assert [file exists $out] "PDF for empty IR still created"
@@ -152,7 +156,7 @@ test "pdf.render_handles_empty_ir" {
 }
 
 test "pdf.render_handles_unknown_block_no_crash" {
-    set out [file join /tmp "docir-pdf-unknown-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-unknown-[pid].pdf"]
     catch {file delete $out}
     set ir [list [dict create type weirdtype content {} meta {}]]
     set caught [catch {docir::pdf::render $ir $out} err]
@@ -161,7 +165,7 @@ test "pdf.render_handles_unknown_block_no_crash" {
 }
 
 test "pdf.render_handles_blank_without_content" {
-    set out [file join /tmp "docir-pdf-blank-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-blank-[pid].pdf"]
     catch {file delete $out}
     # blank ohne content-Feld
     set ir [list \
@@ -174,7 +178,7 @@ test "pdf.render_handles_blank_without_content" {
 }
 
 test "pdf.render_options_paper_size" {
-    set out [file join /tmp "docir-pdf-letter-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-letter-[pid].pdf"]
     catch {file delete $out}
     set ir [list [dict create type heading content {{type text text "X"}} meta {level 1}]]
     docir::pdf::render $ir $out [dict create paper letter]
@@ -183,7 +187,7 @@ test "pdf.render_options_paper_size" {
 }
 
 test "pdf.render_options_metadata_title" {
-    set out [file join /tmp "docir-pdf-title-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-title-[pid].pdf"]
     catch {file delete $out}
     set ir [list [dict create type heading content {{type text text "X"}} meta {level 1}]]
     docir::pdf::render $ir $out [dict create title "My Title" author "Tester"]
@@ -201,7 +205,7 @@ test "pdf.full_pipeline_nroff_to_pdf" {
     package require nroffparser
     package require docir::roffSource
 
-    set out [file join /tmp "docir-pdf-pipeline-[pid].pdf"]
+    set out [file join $::TMPBASE "docir-pdf-pipeline-[pid].pdf"]
     catch {file delete $out}
 
     set nroff {.TH foo n 1.0 Test
@@ -239,7 +243,7 @@ test "spec.pdf.block.image_fallback" {
     # Image mit nicht-existenter URL → Fallback-Marker (kein Crash)
     set ir [list [dict create type image content {} \
         meta [dict create url "/nonexistent.png" alt "Fallback test"]]]
-    set tmpFile [file join /tmp test-pdf-image.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-image.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     if {$rc} {
         puts stderr "PDF render failed: $err"
@@ -259,7 +263,7 @@ test "spec.pdf.block.footnote_section" {
                     content [list [dict create type text text "Note text."]] \
                     meta [dict create id "fn1" num "1"]]] \
             meta {}]]
-    set tmpFile [file join /tmp test-pdf-fn.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-fn.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     if {$rc} {
         puts stderr "PDF render failed: $err"
@@ -280,7 +284,7 @@ test "spec.pdf.block.div_transparent" {
             [dict create type paragraph \
                 content [list [dict create type text text "Body in div."]] meta {}]] \
         meta [dict create class "warning"]]]
-    set tmpFile [file join /tmp test-pdf-div.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-div.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     assert [expr {$rc == 0}] "PDF mit div rendert ohne Crash"
     assert [file exists $tmpFile] "PDF-Datei wurde erzeugt"
@@ -294,7 +298,7 @@ test "spec.pdf.header_footer.simple" {
             meta [dict create level 1]] \
         [dict create type paragraph content [list [dict create type text text "Body."]] \
             meta {}]]
-    set tmpFile [file join /tmp test-pdf-hf.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-hf.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile [dict create \
         header "Test Doc" \
         footer "Page %p"]} err]
@@ -304,7 +308,7 @@ test "spec.pdf.header_footer.simple" {
 
     # PDF in Text konvertieren (wenn pdftotext verfügbar)
     if {[auto_execok pdftotext] ne ""} {
-        set txtFile [file join /tmp test-pdf-hf.txt]
+        set txtFile [file join $::TMPBASE test-pdf-hf.txt]
         if {[catch {exec pdftotext $tmpFile $txtFile} ex]} {
             puts stderr "pdftotext failed: $ex"
         } else {
@@ -326,7 +330,7 @@ test "spec.pdf.header_footer.multipage" {
         lappend ir [dict create type paragraph \
             content [list [dict create type text text "Paragraph $i."]] meta {}]
     }
-    set tmpFile [file join /tmp test-pdf-multipage.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-multipage.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile [dict create \
         header "Header" \
         footer "Page %p"]} err]
@@ -334,7 +338,7 @@ test "spec.pdf.header_footer.multipage" {
 
     # Page-count + Header/Footer-Verifikation
     if {[auto_execok pdftotext] ne ""} {
-        set txtFile [file join /tmp test-pdf-multipage.txt]
+        set txtFile [file join $::TMPBASE test-pdf-multipage.txt]
         if {[catch {exec pdftotext $tmpFile $txtFile} ex]} {
             puts stderr "pdftotext failed: $ex"
         } else {
@@ -360,7 +364,7 @@ test "spec.pdf.theme.colorCode_applied" {
         [dict create type pre \
             content [list [dict create type text text "code line"]] \
             meta [dict create kind code]]]
-    set tmpFile [file join /tmp test-pdf-theme.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-theme.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile [dict create \
         colorCode "#ff0000"]} err]
     if {$rc} { puts stderr "PDF render failed: $err" }
@@ -403,7 +407,7 @@ test "spec.pdf.inline.styles_render" {
             [dict create type text text " and "] \
             [dict create type code text "code"] \
             [dict create type text text "."]] meta {}]]
-    set tmpFile [file join /tmp test-pdf-inline.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-inline.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     if {$rc} { puts stderr "PDF render failed: $err" }
     assert [expr {$rc == 0}] "Per-Inline-Styles rendern ohne Crash"
@@ -426,7 +430,7 @@ test "spec.pdf.inline.hyperlink_added" {
         [dict create type paragraph content [list \
             [dict create type text text "Visit "] \
             [dict create type link text "site" href "https://example.com"]] meta {}]]
-    set tmpFile [file join /tmp test-pdf-link.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-link.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     assert [expr {$rc == 0}] "Link rendert"
 
@@ -449,7 +453,7 @@ test "spec.pdf.inline.strike_renders" {
             [dict create type text text "Some "] \
             [dict create type strike text "deleted"] \
             [dict create type text text " text."]] meta {}]]
-    set tmpFile [file join /tmp test-pdf-strike.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-strike.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     if {$rc} { puts stderr "PDF render failed: $err" }
     assert [expr {$rc == 0}] "Strike rendert ohne Crash"
@@ -461,7 +465,7 @@ test "spec.pdf.image.embeds_with_root" {
     # Pfad-Auflösung gegen opts.root.
 
     # Test-PNG erzeugen (40x40 rotes Bild) — minimaler PNG via Tcl
-    set tmpDir [file join /tmp test-pdf-img-[pid]]
+    set tmpDir [file join $::TMPBASE test-pdf-img-[pid]]
     file mkdir $tmpDir
 
     # Minimaler PNG (1x1 pixel rot): hardcoded bytes
@@ -498,7 +502,7 @@ test "spec.pdf.image.fallback_when_missing" {
     set ir [list \
         [dict create type image content {} \
             meta [dict create url "/nonexistent/foo.png" alt "Missing"]]]
-    set tmpFile [file join /tmp test-pdf-imgmiss.pdf]
+    set tmpFile [file join $::TMPBASE test-pdf-imgmiss.pdf]
     set rc [catch {::docir::pdf::render $ir $tmpFile} err]
     assert [expr {$rc == 0}] "PDF mit fehlendem Image rendert (Fallback)"
     file delete -force $tmpFile

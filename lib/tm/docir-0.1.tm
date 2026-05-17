@@ -14,11 +14,13 @@ namespace eval ::docir {
         doc_meta doc_header heading paragraph pre list listItem blank hr
         table tableRow tableCell
         image footnote_section footnote_def div
+        math_block
     }
     # Gültige Inline-Typen
     variable inlineTypes {
         text strong emphasis underline strike code link
         image linebreak span footnote_ref
+        math
     }
     # IR-Schema-Versionen die dieser Validator/Hub verarbeiten kann.
     # Wird von docir::schemaVersion / docir::checkSchemaVersion benutzt.

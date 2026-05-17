@@ -1,0 +1,136 @@
+#!/usr/bin/env tclsh
+# md2html -- Markdown -> HTML via DocIR-Pipeline
+#
+# Mit Optionen fuer KaTeX (Math-Rendering) und Mermaid (Diagramme).
+# Browser benoetigt diese JS-Libraries fuer das Rendering. Ohne sie
+# bleibt $E = mc^2$ als Plain-Text und ```mermaid als Code-Block.
+#
+# Aufruf:
+#   md2html input.md ?-o output.html? ?options?
+#
+# Optionen:
+#   -o, --output FILE      Output-HTML (Default: stdout)
+#       --katex            KaTeX-CDN fuer Math-Rendering einbinden
+#       --mermaid          Mermaid-CDN fuer Diagramm-Rendering
+#       --all              KaTeX + Mermaid (empfohlen)
+#       --title TEXT       <title>-Tag
+#       --toc              Table of Contents
+#   -h, --help
+
+set scriptDir [file dirname [file normalize [info script]]]
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+# Falls als Sibling-Repo installiert:
+foreach p [list \
+    [file normalize [file join $scriptDir .. .. mdstack lib]] \
+    [file normalize [file join $::env(HOME) lib tcltk mdstack lib]] \
+    [file normalize [file join $::env(HOME) lib tcltk docir lib tm]]] {
+    if {[file isdirectory $p]} { ::tcl::tm::path add $p }
+}
+
+proc usage {} {
+    puts stderr {Aufruf: md2html input.md ?-o output.html? ?options?
+
+Optionen:
+  -o, --output FILE   Output-HTML (Default: stdout)
+      --katex         KaTeX-CDN fuer Math-Rendering
+      --mermaid       Mermaid-CDN fuer Diagramm-Rendering
+      --all           Beide (empfohlen)
+      --title TEXT    <title>-Tag (Default: Dateiname)
+      --toc           Table of Contents
+  -h, --help
+
+Beispiele:
+  md2html demo.md --all -o demo.html
+  md2html demo.md --katex -o demo.html       # nur Math
+  md2html demo.md > demo.html                # ohne Rendering}
+    exit 1
+}
+
+if {$argc < 1 || "-h" in $argv || "--help" in $argv} { usage }
+
+if {[catch {
+    package require mdstack::parser
+    package require docir
+    package require docir::mdSource
+    package require docir::md
+    package require docir::html
+} err]} {
+    puts stderr "ERROR loading packages: $err"
+    exit 2
+}
+
+set inputFile ""
+set output ""
+set enableMath 0
+set enableMermaid 0
+set title ""
+set includeToc 0
+
+set i 0
+while {$i < $argc} {
+    set arg [lindex $argv $i]
+    switch -- $arg {
+        -o - --output  { incr i; set output [lindex $argv $i] }
+        --katex        { set enableMath 1 }
+        --mermaid      { set enableMermaid 1 }
+        --all          { set enableMath 1; set enableMermaid 1 }
+        --title        { incr i; set title [lindex $argv $i] }
+        --toc          { set includeToc 1 }
+        -h - --help    { usage }
+        default {
+            if {$inputFile eq ""} {
+                set inputFile $arg
+            } elseif {$output eq "" && [string match "*.html" $arg]} {
+                set output $arg
+            } else {
+                puts stderr "ERROR: unerwartetes Argument: $arg"
+                usage
+            }
+        }
+    }
+    incr i
+}
+
+if {$inputFile eq ""} { usage }
+if {![file exists $inputFile]} {
+    puts stderr "ERROR: Datei nicht gefunden: $inputFile"
+    exit 2
+}
+
+if {$title eq ""} { set title [file rootname [file tail $inputFile]] }
+
+set fh [open $inputFile r]
+fconfigure $fh -encoding utf-8
+set md [read $fh]
+close $fh
+
+set ast [mdstack::parser::parse $md]
+set ir  [docir::md::fromAst $ast]
+set html [docir::html::render $ir [dict create \
+    title         $title \
+    includeToc    $includeToc \
+    enableMath    $enableMath \
+    enableMermaid $enableMermaid]]
+
+if {$output eq ""} {
+    puts -nonewline $html
+} else {
+    set outDir [file dirname $output]
+    if {![file isdirectory $outDir]} { file mkdir $outDir }
+    set fh [open $output w]
+    fconfigure $fh -encoding utf-8
+    puts -nonewline $fh $html
+    close $fh
+    puts stderr "wrote: $output"
+    if {$enableMath || $enableMermaid} {
+        set parts {}
+        if {$enableMath}    { lappend parts "KaTeX" }
+        if {$enableMermaid} { lappend parts "Mermaid" }
+        puts stderr "  with: [join $parts " + "]"
+    } else {
+        puts stderr "  HINWEIS: ohne --katex/--mermaid bleiben Math und"
+        puts stderr "  Mermaid-Bloecke im Browser als Plain-Text."
+        puts stderr "  Fuer Rendering: md2html ... --all"
+    }
+}
+exit 0

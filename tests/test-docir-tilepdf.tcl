@@ -329,6 +329,16 @@ test "tilepdf.tokenize.mixed" {
 }
 
 test "tilepdf.fontFor.maps_types_to_pdf_fonts" {
+    # F-Array zuruecksetzen auf Default-Werte. Vorherige render-Tests
+    # haben _setupFonts aufgerufen, was F mit UniSans/UniMono ueberschreibt
+    # wenn DejaVu-TTFs auf dem System sind. Dieser Test prueft die
+    # statischen Defaults vor jedem _setupFonts.
+    array set ::docir::tilepdf::F {
+        prop        Helvetica
+        propBold    Helvetica-Bold
+        propOblique Helvetica-Oblique
+        mono        Courier
+    }
     assertEqual Helvetica         [::docir::tilepdf::_fontFor plain]
     assertEqual Helvetica-Bold    [::docir::tilepdf::_fontFor bold]
     assertEqual Helvetica-Oblique [::docir::tilepdf::_fontFor italic]

@@ -77,9 +77,12 @@ proc docir::md::_mapBlock {block} {
             # Display-Math als Pre-Block mit kind=math kennzeichnen.
             # HTML-Sink kann es als <div class="math display"> rendern,
             # MD-Sink als $$...$$, TXT-Sink als eingerueckter Text.
+            # Content als Text-Inline-Liste, damit DocIR-Validator nicht
+            # protestiert (content muss Inline-Liste sein, nicht String).
+            set txt [dict get $block content]
             return [list [dict create \
                 type pre \
-                content [dict get $block content] \
+                content [list [dict create type text text $txt]] \
                 meta [dict create kind math display 1]]]
         }
         default      {
