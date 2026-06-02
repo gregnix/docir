@@ -123,6 +123,11 @@ namespace eval docir::tilepdf {
 # Inline-Renderer: DocIR-Inlines -> Plain-Text (PDF-tauglich)
 # ---------------------------------------------------------------------------
 
+proc docir::tilepdf::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::tilepdf::_inlinesToText {inlines} {
     return [docir::tile::inlinesToText $inlines]
 }
@@ -407,7 +412,7 @@ proc docir::tilepdf::_sectionHeight {section} {
         table   { incr h [expr {[llength $content] * $C(row_h)}] }
         code    { incr h [expr {[llength $content] * $C(code_h)}] }
         code-intro {
-            set intro [expr {[dict exists $section intro] ? [dict get $section intro] : {}}]
+            set intro [_dictDef $section intro {}]
             incr h [expr {[llength $intro] * $C(row_h)}]
             incr h [expr {[llength $content] * $C(code_h)}]
         }

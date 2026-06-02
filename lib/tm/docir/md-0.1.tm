@@ -46,6 +46,11 @@ namespace eval ::docir::md {
 # Public API
 # ============================================================
 
+proc docir::md::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::md::render {ir {options {}}} {
     variable opts
     set opts [dict create \
@@ -130,8 +135,8 @@ proc docir::md::_renderBlock {node} {
 proc docir::md::_renderDocHeader {node} {
     set m [dict get $node meta]
     set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-    set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
-    set version [expr {[dict exists $m version] ? [dict get $m version] : ""}]
+    set section [_dictDef $m section ""]
+    set version [_dictDef $m version ""]
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
     if {$name eq ""} { return "" }
 
@@ -156,7 +161,7 @@ proc docir::md::_renderDocHeader {node} {
 proc docir::md::_renderHeading {node} {
     variable opts
     set m [dict get $node meta]
-    set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+    set lv [_dictDef $m level 1]
     set lv [expr {$lv + [dict get $opts headingShift]}]
     if {$lv < 1} { set lv 1 }
     if {$lv > 6} { set lv 6 }
@@ -167,7 +172,7 @@ proc docir::md::_renderHeading {node} {
 
 proc docir::md::_renderParagraph {node} {
     set m [dict get $node meta]
-    set class [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set class [_dictDef $m class ""]
     set txt [_renderInlines [dict get $node content]]
     if {$txt eq ""} { return "" }
 
@@ -185,8 +190,8 @@ proc docir::md::_renderParagraph {node} {
 
 proc docir::md::_renderPre {node} {
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : ""}]
-    set lang [expr {[dict exists $m language] ? [dict get $m language] : ""}]
+    set kind [_dictDef $m kind ""]
+    set lang [_dictDef $m language ""]
 
     # Im Code-Block: Inline-Liste als plain text (kein Markdown-Escaping)
     set content [dict get $node content]
@@ -209,8 +214,8 @@ proc docir::md::_renderPre {node} {
 proc docir::md::_renderList {node} {
     variable opts
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "ul"}]
-    set indentLevel [expr {[dict exists $m indentLevel] ? [dict get $m indentLevel] : 0}]
+    set kind [_dictDef $m kind "ul"]
+    set indentLevel [_dictDef $m indentLevel 0]
     # Per Indent-Level: 2 Spaces vor jedem Item (Markdown-Konvention)
     set indent [string repeat "  " $indentLevel]
 
@@ -224,8 +229,8 @@ proc docir::md::_renderList {node} {
         }
 
         set itemMeta [dict get $item meta]
-        set itemKind [expr {[dict exists $itemMeta kind] ? [dict get $itemMeta kind] : $kind}]
-        set itemTerm [expr {[dict exists $itemMeta term] ? [dict get $itemMeta term] : {}}]
+        set itemKind [_dictDef $itemMeta kind $kind]
+        set itemTerm [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
 
         set descMd [_renderInlines $itemDescInlines]
@@ -274,8 +279,8 @@ proc docir::md::_renderListItem {node} {
 }
 
 proc docir::md::_renderBlank {node} {
-    set m [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lines [expr {[dict exists $m lines] ? [dict get $m lines] : 1}]
+    set m [_dictDef $node meta {}]
+    set lines [_dictDef $m lines 1]
     if {$lines < 1} { set lines 1 }
     return [string repeat "\n" $lines]
 }
@@ -283,8 +288,8 @@ proc docir::md::_renderBlank {node} {
 proc docir::md::_renderTable {node} {
     set m [dict get $node meta]
     set columns   [expr {[dict exists $m columns]   ? [dict get $m columns]   : 0}]
-    set hasHeader [expr {[dict exists $m hasHeader] ? [dict get $m hasHeader] : 0}]
-    set alignments [expr {[dict exists $m alignments] ? [dict get $m alignments] : {}}]
+    set hasHeader [_dictDef $m hasHeader 0]
+    set alignments [_dictDef $m alignments {}]
 
     if {$columns < 1} {
         return "<!-- table without columns -->\n\n"
@@ -347,9 +352,9 @@ proc docir::md::_renderTable {node} {
 
 proc docir::md::_renderImageBlock {node} {
     set m [dict get $node meta]
-    set url [expr {[dict exists $m url] ? [dict get $m url] : ""}]
-    set alt [expr {[dict exists $m alt] ? [dict get $m alt] : ""}]
-    set title [expr {[dict exists $m title] ? [dict get $m title] : ""}]
+    set url [_dictDef $m url ""]
+    set alt [_dictDef $m alt ""]
+    set title [_dictDef $m title ""]
     set out "!\[$alt\]($url"
     if {$title ne ""} {
         append out " \"$title\""
@@ -371,7 +376,7 @@ proc docir::md::_renderFootnoteSection {node} {
 
 proc docir::md::_renderFootnoteDef {node} {
     set m [dict get $node meta]
-    set id [expr {[dict exists $m id] ? [dict get $m id] : ""}]
+    set id [_dictDef $m id ""]
     # Inhalt der Definition als Inlines rendern
     set body [_renderInlines [dict get $node content]]
     return "\[^$id\]: $body\n\n"
@@ -380,7 +385,7 @@ proc docir::md::_renderFootnoteDef {node} {
 proc docir::md::_renderDiv {node} {
     # TIP-700 div — Pandoc-Notation: ::: {.class #id} ... :::
     set m [dict get $node meta]
-    set cls [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set cls [_dictDef $m class ""]
     set id  [expr {[dict exists $m id]    ? [dict get $m id]    : ""}]
 
     set attrs ""
@@ -437,7 +442,7 @@ proc docir::md::_renderInlines {inlines} {
 proc docir::md::_renderInline {inline} {
     variable opts
     set t [dict get $inline type]
-    set txt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+    set txt [_dictDef $inline text ""]
     set escTxt [_escapeMd $txt]
 
     switch $t {
@@ -463,7 +468,7 @@ proc docir::md::_renderInline {inline} {
         link       { return [_renderLinkInline $inline] }
         image {
             # ![alt](url "title"?)
-            set url [expr {[dict exists $inline url] ? [dict get $inline url] : ""}]
+            set url [_dictDef $inline url ""]
             set out "!\[$escTxt\]($url"
             if {[dict exists $inline title] && [dict get $inline title] ne ""} {
                 set title [dict get $inline title]
@@ -481,7 +486,7 @@ proc docir::md::_renderInline {inline} {
         span {
             # TIP-700 span — Markdown hat keine Standard-Notation.
             # Wir nutzen die Pandoc-Erweiterung [text]{.class #id}
-            set cls [expr {[dict exists $inline class] ? [dict get $inline class] : ""}]
+            set cls [_dictDef $inline class ""]
             set id  [expr {[dict exists $inline id]    ? [dict get $inline id]    : ""}]
             if {$cls eq "" && $id eq ""} {
                 # Ohne Attribute ist span ein No-Op — nur den Text zurückgeben
@@ -494,12 +499,12 @@ proc docir::md::_renderInline {inline} {
         }
         footnote_ref {
             # [^id] in Markdown
-            set id [expr {[dict exists $inline id] ? [dict get $inline id] : ""}]
+            set id [_dictDef $inline id ""]
             return "\[^$id\]"
         }
         math {
             # Pandoc-Style math: $...$ (inline) oder $$...$$ (display)
-            set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
+            set disp [_dictDef $inline display 0]
             if {$disp} {
                 return "\$\$${txt}\$\$"
             }
@@ -514,7 +519,7 @@ proc docir::md::_renderInline {inline} {
 
 proc docir::md::_renderLinkInline {inline} {
     variable opts
-    set txt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+    set txt [_dictDef $inline text ""]
     set escTxt [_escapeMd $txt]
 
     set href ""
@@ -524,7 +529,7 @@ proc docir::md::_renderLinkInline {inline} {
         set href [dict get $inline href]
     } elseif {[dict exists $inline name]} {
         set name    [dict get $inline name]
-        set section [expr {[dict exists $inline section] ? [dict get $inline section] : ""}]
+        set section [_dictDef $inline section ""]
         set lr [dict get $opts linkResolve]
         if {$lr ne ""} {
             if {[catch {{*}$lr $name $section} resolved]} {

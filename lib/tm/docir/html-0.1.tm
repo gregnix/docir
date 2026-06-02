@@ -46,6 +46,11 @@ namespace eval ::docir::html {
 # Public API
 # ============================================================
 
+proc docir::html::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::html::render {ir {options {}}} {
     variable opts
     set opts [dict create \
@@ -121,7 +126,7 @@ proc docir::html::_extractTitle {ir} {
         if {$t eq "doc_header"} {
             set m [dict get $node meta]
             set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-            set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
+            set section [_dictDef $m section ""]
             if {$name ne ""} {
                 if {$section ne ""} { return "${name}(${section})" }
                 return $name
@@ -159,12 +164,12 @@ proc docir::html::_buildToc {ir} {
     foreach node $ir {
         if {[dict get $node type] ne "heading"} { continue }
         set m [dict get $node meta]
-        set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+        set lv [_dictDef $m level 1]
         if {$lv < 1} { set lv 1 }
         if {$lv > 6} { set lv 6 }
         set txt [_inlinesToText [dict get $node content]]
         if {$txt eq ""} { continue }
-        set id [expr {[dict exists $m id] ? [dict get $m id] : [_makeId $txt]}]
+        set id [_dictDef $m id [_makeId $txt]]
         lappend items [list $lv $txt $id]
     }
     if {[llength $items] == 0} { return "" }
@@ -190,7 +195,7 @@ proc docir::html::_wrapDocument {title toc body} {
     set lang     [dict get $opts lang]
     set viewport [dict get $opts viewport]
     set theme    [dict get $opts theme]
-    set cssFile  [expr {[dict exists $opts cssFile] ? [dict get $opts cssFile] : ""}]
+    set cssFile  [_dictDef $opts cssFile ""]
     set escTitle [_escapeHtml $title]
 
     # CSS-Quelle: cssFile hat Vorrang vor theme. cssFile wird inline
@@ -418,8 +423,8 @@ proc docir::html::_indent {level} {
 proc docir::html::_renderDocHeader {node level} {
     set m [dict get $node meta]
     set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-    set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
-    set version [expr {[dict exists $m version] ? [dict get $m version] : ""}]
+    set section [_dictDef $m section ""]
+    set version [_dictDef $m version ""]
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
 
     if {$name eq "" && $section eq "" && $part eq ""} { return "" }
@@ -445,13 +450,13 @@ proc docir::html::_renderDocHeader {node level} {
 
 proc docir::html::_renderHeading {node level} {
     set m [dict get $node meta]
-    set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+    set lv [_dictDef $m level 1]
     if {$lv < 1} { set lv 1 }
     if {$lv > 6} { set lv 6 }
     set inner [_renderInlines [dict get $node content]]
 
     # ID: aus meta wenn da, sonst aus dem reinen Text generieren
-    set id [expr {[dict exists $m id] ? [dict get $m id] : ""}]
+    set id [_dictDef $m id ""]
     if {$id eq ""} {
         set txt [_inlinesToText [dict get $node content]]
         if {$txt ne ""} {
@@ -468,7 +473,7 @@ proc docir::html::_renderHeading {node level} {
 
 proc docir::html::_renderParagraph {node level} {
     set m [dict get $node meta]
-    set class [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set class [_dictDef $m class ""]
     set inner [_renderInlines [dict get $node content]]
     set ind [_indent $level]
 
@@ -486,8 +491,8 @@ proc docir::html::_renderParagraph {node level} {
 
 proc docir::html::_renderPre {node level} {
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : ""}]
-    set lang [expr {[dict exists $m language] ? [dict get $m language] : ""}]
+    set kind [_dictDef $m kind ""]
+    set lang [_dictDef $m language ""]
     set ind [_indent $level]
 
     # In <pre> rendert man Inline-Liste als reinen Text (kein <strong>
@@ -528,8 +533,8 @@ proc docir::html::_renderPre {node level} {
 
 proc docir::html::_renderList {node level} {
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "ul"}]
-    set indentLevel [expr {[dict exists $m indentLevel] ? [dict get $m indentLevel] : 0}]
+    set kind [_dictDef $m kind "ul"]
+    set indentLevel [_dictDef $m indentLevel 0]
     set ind [_indent $level]
 
     # Welcher HTML-Tag + Klasse?
@@ -572,7 +577,7 @@ proc docir::html::_renderList {node level} {
 
 proc docir::html::_renderListItemInside {item parentTag itemTag level} {
     set m [dict get $item meta]
-    set term  [expr {[dict exists $m term] ? [dict get $m term] : {}}]
+    set term  [_dictDef $m term {}]
     set descInlines [dict get $item content]
     set ind [_indent $level]
 
@@ -596,8 +601,8 @@ proc docir::html::_renderListItem {item level} {
 }
 
 proc docir::html::_renderBlank {node level} {
-    set m [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lines [expr {[dict exists $m lines] ? [dict get $m lines] : 1}]
+    set m [_dictDef $node meta {}]
+    set lines [_dictDef $m lines 1]
     if {$lines < 1} { set lines 1 }
     set ind [_indent $level]
     set out ""
@@ -614,9 +619,9 @@ proc docir::html::_renderBlank {node level} {
 proc docir::html::_renderTable {node level} {
     set m [dict get $node meta]
     set columns   [expr {[dict exists $m columns]   ? [dict get $m columns]   : 0}]
-    set hasHeader [expr {[dict exists $m hasHeader] ? [dict get $m hasHeader] : 0}]
+    set hasHeader [_dictDef $m hasHeader 0]
     set source    [expr {[dict exists $m source]    ? [dict get $m source]    : ""}]
-    set alignments [expr {[dict exists $m alignments] ? [dict get $m alignments] : {}}]
+    set alignments [_dictDef $m alignments {}]
     set ind [_indent $level]
 
     set tableClass docir-table
@@ -686,9 +691,9 @@ proc docir::html::_renderTable {node level} {
 proc docir::html::_renderImageBlock {node level} {
     set ind [_indent $level]
     set m [dict get $node meta]
-    set url [expr {[dict exists $m url] ? [dict get $m url] : ""}]
-    set alt [expr {[dict exists $m alt] ? [dict get $m alt] : ""}]
-    set title [expr {[dict exists $m title] ? [dict get $m title] : ""}]
+    set url [_dictDef $m url ""]
+    set alt [_dictDef $m alt ""]
+    set title [_dictDef $m title ""]
     set escUrl [_escapeAttr $url]
     set escAlt [_escapeAttr $alt]
 
@@ -726,7 +731,7 @@ proc docir::html::_renderFootnoteSection {node level} {
 proc docir::html::_renderFootnoteDef {node level} {
     set ind [_indent $level]
     set m [dict get $node meta]
-    set id [expr {[dict exists $m id] ? [dict get $m id] : ""}]
+    set id [_dictDef $m id ""]
     set escId [_escapeAttr $id]
 
     # Inhalt der Footnote als gerenderte Inlines
@@ -743,7 +748,7 @@ proc docir::html::_renderFootnoteDef {node level} {
 proc docir::html::_renderDiv {node level} {
     set ind [_indent $level]
     set m [dict get $node meta]
-    set cls [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set cls [_dictDef $m class ""]
     set id  [expr {[dict exists $m id]    ? [dict get $m id]    : ""}]
 
     set attrs ""
@@ -781,8 +786,18 @@ proc docir::html::_renderUnknown {node level reason} {
 # ============================================================
 
 proc docir::html::_renderInlines {inlines} {
+    # Tolerate a single inline dict passed where a list of inline dicts is
+    # expected (a flattened table cell): {type text text "x"} is treated as
+    # {{type text text "x"}}. A proper inline list's first element is itself a
+    # dict, so its string value is never the bare word "type" -- this makes the
+    # check unambiguous.
+    if {[lindex $inlines 0] eq "type"} { set inlines [list $inlines] }
     set out ""
     foreach i $inlines {
+        # Skip anything that is not a well-formed inline dict, so one malformed
+        # cell degrades instead of crashing the whole export -- the Tk preview is
+        # tolerant in the same way.
+        if {[catch {dict get $i type}]} continue
         append out [_renderInline $i]
     }
     return $out
@@ -790,7 +805,7 @@ proc docir::html::_renderInlines {inlines} {
 
 proc docir::html::_renderInline {inline} {
     set t [dict get $inline type]
-    set txt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+    set txt [_dictDef $inline text ""]
     set escTxt [_escapeHtml $txt]
 
     switch $t {
@@ -803,7 +818,7 @@ proc docir::html::_renderInline {inline} {
         link       { return [_renderLinkInline $inline $escTxt] }
         image {
             # Inline-Image: <img src="url" alt="text" title="title"?>
-            set url [expr {[dict exists $inline url] ? [dict get $inline url] : ""}]
+            set url [_dictDef $inline url ""]
             set escUrl [_escapeAttr $url]
             set out "<img src=\"$escUrl\" alt=\"[_escapeAttr $txt]\""
             if {[dict exists $inline title]} {
@@ -826,7 +841,7 @@ proc docir::html::_renderInline {inline} {
         }
         footnote_ref {
             # <sup><a href="#fn-ID">TEXT</a></sup> mit ID = id-Feld
-            set id [expr {[dict exists $inline id] ? [dict get $inline id] : ""}]
+            set id [_dictDef $inline id ""]
             set escId [_escapeAttr $id]
             return "<sup class=\"footnote-ref\"><a href=\"#fn-$escId\" id=\"fnref-$escId\">$escTxt</a></sup>"
         }
@@ -835,8 +850,8 @@ proc docir::html::_renderInline {inline} {
             # <span class="math inline">$...$</span> bzw.
             # <span class="math display">$$...$$</span>
             # Der Browser laedt KaTeX/MathJax separat und rendert sie.
-            set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
-            set raw [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+            set disp [_dictDef $inline display 0]
+            set raw [_dictDef $inline text ""]
             set escRaw [_escapeHtml $raw]
             if {$disp} {
                 return "<span class=\"math display\">\$\$${escRaw}\$\$</span>"
@@ -860,7 +875,7 @@ proc docir::html::_renderLinkInline {inline escTxt} {
     } elseif {[dict exists $inline name]} {
         # name + section : link auflösen
         set name    [dict get $inline name]
-        set section [expr {[dict exists $inline section] ? [dict get $inline section] : ""}]
+        set section [_dictDef $inline section ""]
         set lr [dict get $opts linkResolve]
         if {$lr ne ""} {
             # Externer Resolver hat Vorrang

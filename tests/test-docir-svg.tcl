@@ -283,6 +283,7 @@ test "svg.native_schema_violation_no_crash" {
 # ============================================================
 
 test "svg.full_pipeline_nroff_native" {
+    if {[catch {package require nroffparser}]} { skip "nroffparser (man-viewer) not installed" }
     package require nroffparser
     package require docir::roffSource
 
@@ -302,6 +303,7 @@ foo \- a test
 }
 
 test "svg.full_pipeline_nroff_foreignObject" {
+    if {[catch {package require nroffparser}]} { skip "nroffparser (man-viewer) not installed" }
     package require nroffparser
     package require docir::roffSource
 

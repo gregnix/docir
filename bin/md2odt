@@ -1,0 +1,99 @@
+#!/usr/bin/env tclsh
+# md2odt -- Markdown -> ODT (OpenDocument Text) via the DocIR pipeline.
+#
+# Chain: mdstack::parser::parse  ->  docir::md::fromAst  ->  docir::odt::write
+# (the same front end as md2html, with the ODT sink at the back).
+#
+# Usage:
+#   md2odt input.md ?-o output.odt? ?--title TEXT?
+#   md2odt -o manual.odt a.md b.md c.md      # combine many .md into one .odt
+#
+# With several inputs the files are concatenated into one document; each
+# file becomes a level-1 section (its YAML title, else the file name).
+# Ordered lists come out numbered, bullet lists bulleted (odf >= 0.20).
+#
+# Needs the sibling repos odf (>= 0.20), docir and mdstack, located by
+# repos-path.tcl just like the other docir CLIs.
+
+set scriptDir [file dirname [file normalize [info script]]]
+source [file join $scriptDir .. lib repos-path.tcl]
+
+if {[catch {
+    package require mdstack::parser
+    package require docir
+    package require docir::mdSource
+    package require docir::odt
+} err]} {
+    puts stderr "ERROR loading packages: $err"
+    puts stderr "  need sibling repos: odf (>=0.20), docir, mdstack"
+    exit 2
+}
+
+proc usage {} {
+    puts stderr {Usage: md2odt input.md ?-o output.odt? ?--title TEXT?
+       md2odt -o combined.odt file1.md file2.md ...
+
+Options:
+  -o, --output FILE   output .odt (default: <first-input>.odt)
+      --title TEXT    document title (single-file mode)
+  -h, --help}
+    exit 1
+}
+
+if {$argc < 1 || "-h" in $argv || "--help" in $argv} usage
+
+set inputs {}; set output ""; set title ""
+for {set i 0} {$i < $argc} {incr i} {
+    switch -- [lindex $argv $i] {
+        -o - --output { incr i; set output [lindex $argv $i] }
+        --title       { incr i; set title  [lindex $argv $i] }
+        -h - --help   { usage }
+        default       { lappend inputs [lindex $argv $i] }
+    }
+}
+if {![llength $inputs]} usage
+foreach f $inputs {
+    if {![file exists $f]} { puts stderr "ERROR: not found: $f"; exit 2 }
+}
+if {$output eq ""} { set output "[file rootname [lindex $inputs 0]].odt" }
+
+proc slurp {path} {
+    set fh [open $path r]; fconfigure $fh -encoding utf-8
+    set s [read $fh]; close $fh; return $s
+}
+proc P {s} { return [list [dict create type text text $s]] }
+
+# Build one DocIR. Single input -> its tree as-is. Multiple -> one doc_meta,
+# then per file a level-1 heading + that file's content blocks (skip each
+# file's own doc_meta/doc_header, which the ODT sink ignores anyway).
+if {[llength $inputs] == 1} {
+    set ir [docir::md::fromAst [mdstack::parser::parse [slurp [lindex $inputs 0]]]]
+    if {$title ne ""} {
+        # replace doc_header name with the requested title (cosmetic)
+        set ir [lmap b $ir {
+            if {[dict get $b type] eq "doc_header"} { dict set b meta name $title }
+            set b
+        }]
+    }
+} else {
+    set ir [list [dict create type doc_meta content {} meta [dict create irSchemaVersion 1]]]
+    foreach f $inputs {
+        set tree [docir::md::fromAst [mdstack::parser::parse [slurp $f]]]
+        set name [file rootname [file tail $f]]
+        foreach b $tree {
+            if {[dict get $b type] eq "doc_header"} {
+                set hn [dict get $b meta name]
+                if {$hn ne ""} { set name $hn }
+            }
+        }
+        lappend ir [dict create type heading meta [dict create level 1] content [P $name]]
+        foreach b $tree {
+            if {[dict get $b type] in {doc_meta doc_header}} continue
+            lappend ir $b
+        }
+    }
+}
+
+docir::odt::write $ir $output
+puts stderr "wrote: $output ([llength $inputs] input(s))"
+exit 0

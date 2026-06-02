@@ -60,6 +60,11 @@ namespace eval ::docir::pdf {
     variable _pdf4tclLoaded 0
 }
 
+proc docir::pdf::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::pdf::_ensurePdf4tcl {} {
     variable _pdf4tclLoaded
     if {$_pdf4tclLoaded} { return }
@@ -241,7 +246,7 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
     foreach inline $inlines {
         if {![dict exists $inline type]} continue
         set type [dict get $inline type]
-        set text [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+        set text [_dictDef $inline text ""]
         switch $type {
             text {
                 lappend segs [list $text $parentStyle ""]
@@ -291,14 +296,14 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                 lappend segs [list $text $parentStyle ""]
             }
             footnote_ref {
-                set marker [expr {[dict exists $inline text] ? [dict get $inline text] : "?"}]
+                set marker [_dictDef $inline text "?"]
                 lappend segs [list "\[$marker\]" $parentStyle ""]
             }
             math {
                 # Inline-Math: $...$ als monospace, raw LaTeX
                 # (kein PDF-LaTeX-Rendering ohne externe Engine).
-                set txt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
-                set disp [expr {[dict exists $inline display] ? [dict get $inline display] : 0}]
+                set txt [_dictDef $inline text ""]
+                set disp [_dictDef $inline display 0]
                 if {$disp} {
                     lappend segs [list "\$\$${txt}\$\$" code ""]
                 } else {
@@ -728,8 +733,8 @@ proc docir::pdf::_renderDocHeader {node} {
 
     set m [dict get $node meta]
     set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-    set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
-    set version [expr {[dict exists $m version] ? [dict get $m version] : ""}]
+    set section [_dictDef $m section ""]
+    set version [_dictDef $m version ""]
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
 
     set parts {}
@@ -767,7 +772,7 @@ proc docir::pdf::_renderHeading {node} {
     set baseFontSize [dict get $opts fontSize]
 
     set m [dict get $node meta]
-    set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+    set lv [_dictDef $m level 1]
     if {$lv < 1} { set lv 1 }
     if {$lv > 6} { set lv 6 }
     set bonus [list 0 6 4 2 1 0 0]
@@ -835,7 +840,7 @@ proc docir::pdf::_renderParagraph {node} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set class [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set class [_dictDef $m class ""]
 
     set indent 0
     set baseStyle "normal"
@@ -882,7 +887,7 @@ proc docir::pdf::_renderPre {node} {
     # ohne externe Engine. Wir markieren mit $$ um den Math-Inhalt visuell
     # vom normalen Code-Block zu trennen.
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : ""}]
+    set kind [_dictDef $m kind ""]
     if {$kind eq "math"} {
         set content [dict get $node content]
         if {[string is list $content] && [llength $content] > 0 \
@@ -952,8 +957,8 @@ proc docir::pdf::_renderList {node} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "ul"}]
-    set indentLevel [expr {[dict exists $m indentLevel] ? [dict get $m indentLevel] : 0}]
+    set kind [_dictDef $m kind "ul"]
+    set indentLevel [_dictDef $m indentLevel 0]
     # Indent: 12pt pro Level (Standard fuer geschachtelte Listen)
     set indentX [expr {$indentLevel * 12}]
 
@@ -973,8 +978,8 @@ proc docir::pdf::_renderList {node} {
         }
 
         set itemMeta [dict get $item meta]
-        set itemKind [expr {[dict exists $itemMeta kind] ? [dict get $itemMeta kind] : $kind}]
-        set itemTerm [expr {[dict exists $itemMeta term] ? [dict get $itemMeta term] : {}}]
+        set itemKind [_dictDef $itemMeta kind $kind]
+        set itemTerm [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
 
         switch $itemKind {
@@ -1085,8 +1090,8 @@ proc docir::pdf::_renderBlank {node} {
     variable opts
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
-    set m [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lines [expr {[dict exists $m lines] ? [dict get $m lines] : 1}]
+    set m [_dictDef $node meta {}]
+    set lines [_dictDef $m lines 1]
     if {$lines < 1} { set lines 1 }
     _advanceY [expr {$lh * $lines / 2}]
 }
@@ -1119,7 +1124,7 @@ proc docir::pdf::_renderTable {node} {
 
     set m [dict get $node meta]
     set columns   [expr {[dict exists $m columns]   ? [dict get $m columns]   : 0}]
-    set hasHeader [expr {[dict exists $m hasHeader] ? [dict get $m hasHeader] : 0}]
+    set hasHeader [_dictDef $m hasHeader 0]
 
     if {$columns < 1} {
         _renderUnknown $node "table without columns"
@@ -1244,7 +1249,7 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
             lappend imageInlines $inl
         } elseif {$t eq "text"} {
             # Whitespace-only counts not as non-image
-            set txt [expr {[dict exists $inl text] ? [dict get $inl text] : ""}]
+            set txt [_dictDef $inl text ""]
             if {[string trim $txt] ne ""} {
                 set hasNonImage 1
             }
@@ -1280,8 +1285,8 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
     set totalW 0
     set maxH 0
     foreach inl $imageInlines {
-        set url [expr {[dict exists $inl url] ? [dict get $inl url] : ""}]
-        set alt [expr {[dict exists $inl alt] ? [dict get $inl alt] : ""}]
+        set url [_dictDef $inl url ""]
+        set alt [_dictDef $inl alt ""]
         set resolved [_resolveImagePath $url]
         if {$resolved eq "" || ![file exists $resolved] || ![file readable $resolved]} {
             # Kann nicht laden — alt-text als fallback
@@ -1359,8 +1364,8 @@ proc docir::pdf::_renderImageBlock {node} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set url [expr {[dict exists $m url] ? [dict get $m url] : ""}]
-    set alt [expr {[dict exists $m alt] ? [dict get $m alt] : ""}]
+    set url [_dictDef $m url ""]
+    set alt [_dictDef $m alt ""]
 
     # Pfad gegen opts.root auflösen
     set resolvedPath [_resolveImagePath $url]
@@ -1490,7 +1495,7 @@ proc docir::pdf::_renderFootnoteDef {node} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set num [expr {[dict exists $m num] ? [dict get $m num] : "?"}]
+    set num [_dictDef $m num "?"]
 
     set body [_inlinesToText [dict get $node content]]
     set fullText "\[$num\] $body"
@@ -1554,7 +1559,7 @@ proc docir::pdf::_scanHeadings {ir} {
     foreach node $ir {
         if {[dict get $node type] eq "heading"} {
             set m [dict get $node meta]
-            set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+            set lv [_dictDef $m level 1]
             set text [_inlinesToText [dict get $node content]]
             lappend out [dict create level $lv text $text]
         }

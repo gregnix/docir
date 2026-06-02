@@ -11,6 +11,9 @@
 
 set testDir [file dirname [file normalize [info script]]]
 set projectRoot [file dirname $testDir]
+
+# Unified sibling-repo paths (odf, mdstack, man-viewer): one place for all.
+source [file join $projectRoot lib repos-path.tcl]
 set libDir [file join $projectRoot lib tm]
 
 # pkgIndex.tcl ist in $libDir -- damit Tests, die statt source
@@ -76,7 +79,25 @@ catch {package require mdstack::parser}
 catch {package require nroffparser}
 catch {package require mvdebug}
 
+# Skip-stub: if the optional man-viewer parser is not installed, any test that
+# calls into nroffparser should *skip*, not die with "invalid command name".
+# The stubs never fake a result -- they raise the DOCIR_SKIP signal the test
+# framework recognises. A marker variable lets haveParser report it as absent so
+# whole-file guards (e.g. test-validator) skip cleanly. When nroffparser IS
+# installed none of this is defined.
+if {[info commands ::nroffparser::parse] eq ""} {
+    namespace eval ::nroffparser {}
+    variable ::nroffparser::__stub 1
+    foreach __cmd {parse validate validateAST} {
+        proc ::nroffparser::$__cmd {args} {
+            skip "nroffparser (man-viewer) not installed"
+        }
+    }
+    unset __cmd
+}
+
 # Helper fuer Tests die externe Parser brauchen.
 proc haveParser {ns} {
+    if {[info exists ::${ns}::__stub]} { return 0 }
     return [expr {[namespace exists ::$ns] && [info commands ::${ns}::parse] ne ""}]
 }

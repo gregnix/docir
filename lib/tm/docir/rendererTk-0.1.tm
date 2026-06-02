@@ -26,6 +26,11 @@ namespace eval ::docir::renderer::tk {
 #   Ermöglicht dem Aufrufer TOC-Aufbau und Anchor-Marks.
 # ============================================================
 
+proc docir::renderer::tk::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::renderer::tk::setHeadingCallback {cmd} {
     set ::docir::renderer::tk::headingCallback $cmd
 }
@@ -54,8 +59,8 @@ proc docir::renderer::tk::render {textWidget ir {options {}}} {
     variable headingCallback
 
     set fontSize   [expr {[dict exists $options fontSize]   ? [dict get $options fontSize]   : 12}]
-    set fontFamily [expr {[dict exists $options fontFamily] ? [dict get $options fontFamily] : "TkDefaultFont"}]
-    set monoFamily [expr {[dict exists $options monoFamily] ? [dict get $options monoFamily] : "TkFixedFont"}]
+    set fontFamily [_dictDef $options fontFamily "TkDefaultFont"]
+    set monoFamily [_dictDef $options monoFamily "TkFixedFont"]
     set darkMode   [expr {[dict exists $options darkMode]   ? [dict get $options darkMode]   : 0}]
     set colors     [expr {[dict exists $options colors]     ? [dict get $options colors]     : {}}]
 
@@ -87,15 +92,15 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
     foreach node $ir {
         set type    [dict get $node type]
-        set content [expr {[dict exists $node content] ? [dict get $node content] : {}}]
+        set content [_dictDef $node content {}]
         set meta    [expr {[dict exists $node meta]    ? [dict get $node meta]    : {}}]
 
         switch $type {
 
             doc_header {
                 set name    [expr {[dict exists $meta name]    ? [dict get $meta name]    : ""}]
-                set section [expr {[dict exists $meta section] ? [dict get $meta section] : ""}]
-                set version [expr {[dict exists $meta version] ? [dict get $meta version] : ""}]
+                set section [_dictDef $meta section ""]
+                set version [_dictDef $meta version ""]
                 set part    [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]
                 if {$name ne ""} {
                     set title $name
@@ -113,9 +118,9 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
             }
 
             heading {
-                set lvl [expr {[dict exists $meta level] ? [dict get $meta level] : 1}]
+                set lvl [_dictDef $meta level 1]
                 set tag "heading$lvl"
-                set startIdx [$textWidget index "end"]
+                set startIdx [$textWidget index "end-1c"]
                 # Mark für TOC-Navigation setzen
                 set headText ""
                 foreach inline $content {
@@ -156,7 +161,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
             list {
                 set kind [expr {[dict exists $meta kind]        ? [dict get $meta kind]        : "tp"}]
-                set il   [expr {[dict exists $meta indentLevel] ? [dict get $meta indentLevel] : 0}]
+                set il   [_dictDef $meta indentLevel 0]
                 set lvl  [expr {min($il, 4)}]
                 set itemTag [expr {$lvl > 0 ? "ipItem$lvl" : "ipItem"}]
 
@@ -164,9 +169,9 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                     # listItem-Node (neu) oder legacy {term desc}
                     if {[dict exists $item type] && [dict get $item type] eq "listItem"} {
                         set itemMeta [dict get $item meta]
-                        set term [expr {[dict exists $itemMeta term] ? [dict get $itemMeta term] : {}}]
+                        set term [_dictDef $itemMeta term {}]
                         set desc [dict get $item content]
-                        set itemKind [expr {[dict exists $itemMeta kind] ? [dict get $itemMeta kind] : $kind}]
+                        set itemKind [_dictDef $itemMeta kind $kind]
                     } elseif {[dict exists $item type]} {
                         # Schema-Verletzung: getypter Knoten der nicht listItem ist.
                         # Häufigster Fall: nested 'list' direkt im list.content
@@ -286,8 +291,8 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
             image {
                 # Block-Image: image insert + caption
-                set url [expr {[dict exists $meta url] ? [dict get $meta url] : ""}]
-                set alt [expr {[dict exists $meta alt] ? [dict get $meta alt] : ""}]
+                set url [_dictDef $meta url ""]
+                set alt [_dictDef $meta alt ""]
                 if {$url ne "" && [file exists $url] && [file readable $url]} {
                     if {[catch {image create photo -file $url} imgName] == 0} {
                         $textWidget insert end "\n" normal
@@ -312,7 +317,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 foreach def [dict get $node content] {
                     if {[dict get $def type] ne "footnote_def"} continue
                     set defMeta [dict get $def meta]
-                    set num [expr {[dict exists $defMeta num] ? [dict get $defMeta num] : "?"}]
+                    set num [_dictDef $defMeta num "?"]
                     $textWidget insert end "\[$num\] " footnoteSection
                     docir::renderer::tk::_insertInlines $textWidget [dict get $def content] footnoteSection
                     $textWidget insert end "\n" normal
@@ -322,7 +327,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
             footnote_def {
                 # top-level footnote_def (selten — meist innerhalb section)
-                set num [expr {[dict exists $meta num] ? [dict get $meta num] : "?"}]
+                set num [_dictDef $meta num "?"]
                 $textWidget insert end "\[$num\] " footnoteSection
                 docir::renderer::tk::_insertInlines $textWidget $content footnoteSection
                 $textWidget insert end "\n" normal
@@ -336,59 +341,92 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
             }
 
             table {
-                # Tabelle als ausgerichtete Spalten im Text-Widget rendern.
-                # Tk-text hat keine echten Tabellen — wir bauen eine
-                # monospaced-Repräsentation mit gleicher Spaltenbreite,
-                # damit die Spalten optisch ausgerichtet sind.
-                set rows [dict get $node content]
-                set numCols [expr {[dict exists $meta columns] ? [dict get $meta columns] : 1}]
+                set _tmode [_dictDef $options tablemode "ascii"]
+                if {$_tmode eq "frame"} {
+                    docir::renderer::tk::_renderTableFrame $textWidget $node $meta $options
+                } else {
+                # Variante A: Monospace-Tabelle mit Box-Rahmen. Tk-text hat
+                # keine echten Tabellen; in Monospace stimmt die Ausrichtung,
+                # Box-Zeichen geben Rahmen, Kopfzeile fett. Inline-Formatting
+                # in Zellen wird zugunsten der Ausrichtung zu Plain-Text.
+                set rows    [dict get $node content]
+                set numCols [_dictDef $meta columns 1]
+                if {$numCols < 1} { set numCols 1 }
 
-                # 1) Spaltenbreiten berechnen (Plain-Text-Länge pro Zelle)
-                set colWidths [lrepeat $numCols 0]
+                # Plain-Text-Gitter + Header-Flags
+                set grid {}
                 foreach row $rows {
+                    set cells {}
                     set ci 0
                     foreach cell [dict get $row content] {
                         if {$ci >= $numCols} break
-                        set txt ""
+                        set t ""
                         foreach inl [dict get $cell content] {
-                            if {[dict exists $inl text]} { append txt [dict get $inl text] }
+                            if {[dict exists $inl text]} { append t [dict get $inl text] }
                         }
-                        set len [string length $txt]
-                        if {$len > [lindex $colWidths $ci]} {
-                            lset colWidths $ci $len
-                        }
+                        lappend cells [string map [list \n " " \t " "] $t]
+                        incr ci
+                    }
+                    while {[llength $cells] < $numCols} { lappend cells "" }
+                    set rmeta [_dictDef $row meta {}]
+                    set isHead [expr {[dict exists $rmeta kind] && [dict get $rmeta kind] eq "header"}]
+                    lappend grid [list $isHead $cells]
+                }
+
+                # Spaltenbreiten (Zeichen)
+                set colW [lrepeat $numCols 1]
+                foreach g $grid {
+                    set ci 0
+                    foreach c [lindex $g 1] {
+                        if {[string length $c] > [lindex $colW $ci]} { lset colW $ci [string length $c] }
                         incr ci
                     }
                 }
 
-                # 2) Zeilen rendern. Zellen-Inhalte werden mit ihren
-                #    Inline-Tags (z.B. strong) eingefügt, das Auffüll-
-                #    Padding kommt als Plain-Text danach.
+                # Monospace-Font aus dem pre-Tag ableiten (+ fette Variante)
+                set mf [$textWidget tag cget pre -font]
+                if {$mf eq ""} { set mf TkFixedFont }
+                array set _fa [font actual $mf]
+                $textWidget tag configure tableBox  -font [list $_fa(-family) $_fa(-size)]
+                $textWidget tag configure tableHead -font [list $_fa(-family) $_fa(-size) bold]
+                array unset _fa
+
+                # Rahmenlinien
+                set top "\u250c"; set sep "\u251c"; set bot "\u2514"
+                for {set i 0} {$i < $numCols} {incr i} {
+                    set bar [string repeat "\u2500" [expr {[lindex $colW $i] + 2}]]
+                    append top $bar; append sep $bar; append bot $bar
+                    if {$i < $numCols - 1} {
+                        append top "\u252c"; append sep "\u253c"; append bot "\u2534"
+                    } else {
+                        append top "\u2510"; append sep "\u2524"; append bot "\u2518"
+                    }
+                }
+
+                set ind "  "
                 $textWidget insert end "\n" normal
-                foreach row $rows {
-                    $textWidget insert end "  " normal
+                $textWidget insert end "$ind$top\n" tableBox
+                set prevHead 0; set first 1
+                foreach g $grid {
+                    lassign $g isHead cells
+                    if {!$first && $prevHead && !$isHead} {
+                        $textWidget insert end "$ind$sep\n" tableBox
+                    }
+                    set tag [expr {$isHead ? "tableHead" : "tableBox"}]
+                    $textWidget insert end "$ind\u2502" tableBox
                     set ci 0
-                    foreach cell [dict get $row content] {
-                        if {$ci >= $numCols} break
-                        # Plain-Text der Zelle für Längen-Berechnung
-                        set cellTxt ""
-                        foreach inl [dict get $cell content] {
-                            if {[dict exists $inl text]} { append cellTxt [dict get $inl text] }
-                        }
-                        # Zelle inklusive Inline-Formatting einfügen
-                        docir::renderer::tk::_insertInlines $textWidget [dict get $cell content]
-                        # Padding bis zur Spaltenbreite + Trenn-Spaces.
-                        # Letzte Spalte braucht kein Padding.
-                        if {$ci < $numCols - 1} {
-                            set padLen [expr {[lindex $colWidths $ci] - [string length $cellTxt] + 3}]
-                            if {$padLen < 1} { set padLen 1 }
-                            $textWidget insert end [string repeat " " $padLen] normal
-                        }
+                    foreach c $cells {
+                        set w [lindex $colW $ci]
+                        $textWidget insert end " [format "%-${w}s" $c] " $tag
+                        $textWidget insert end "\u2502" tableBox
                         incr ci
                     }
                     $textWidget insert end "\n" normal
+                    set prevHead $isHead; set first 0
                 }
+                $textWidget insert end "$ind$bot\n" tableBox
                 $textWidget insert end "\n" normal
+                }
             }
 
             default {
@@ -397,7 +435,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                     continue
                 }
                 # paragraph mit class=blockquote
-                set cls [expr {[dict exists $meta class] ? [dict get $meta class] : ""}]
+                set cls [_dictDef $meta class ""]
                 if {$cls eq "blockquote"} {
                     $textWidget insert end "  │ " blockquoteBar
                     docir::renderer::tk::_insertInlines $textWidget $content blockquote
@@ -413,6 +451,75 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 # _insertInlines – Inline-Sequenz in Text-Widget einfügen
 # ============================================================
 
+# Variant B: a real embedded Tk table (ttk widgets in a grid) instead of the
+# monospace box. Enabled via options "tablemode frame". Cell content is reduced
+# to plain text (same tradeoff as the box variant); column alignments from
+# meta.alignments are honoured. Grid lines come from a 1px container background
+# showing through between cells.
+proc docir::renderer::tk::_renderTableFrame {textWidget node meta options} {
+    variable tableCounter
+    if {![info exists tableCounter]} { set tableCounter 0 }
+    set rows    [dict get $node content]
+    set numCols [_dictDef $meta columns 1]
+    if {$numCols < 1} { set numCols 1 }
+    set aligns  [_dictDef $meta alignments {}]
+
+    # theme: reuse the text widget's own colours so light/dark match
+    set bodyBg [$textWidget cget -background]
+    set fg     [$textWidget cget -foreground]
+    set line   [expr {[dict exists $options darkMode] && [dict get $options darkMode] ? "#555555" : "#bbbbbb"}]
+    set headBg [expr {[dict exists $options darkMode] && [dict get $options darkMode] ? "#2d2d2d" : "#f0f0f0"}]
+    set fontSize   [expr {[dict exists $options fontSize]   ? [dict get $options fontSize]   : 12}]
+    set fontFamily [_dictDef $options fontFamily "TkDefaultFont"]
+    set cellFont [list $fontFamily $fontSize]
+    set headFont [list $fontFamily $fontSize bold]
+
+    set tf $textWidget.tbl[incr tableCounter]
+    catch {destroy $tf}
+    # container background = grid-line colour; cells leave a 1px gap to show it
+    frame $tf -background $line -borderwidth 0
+
+    set r 0
+    foreach row $rows {
+        set rmeta [_dictDef $row meta {}]
+        set isHead [expr {[dict exists $rmeta kind] && [dict get $rmeta kind] eq "header"}]
+        set c 0
+        foreach cell [dict get $row content] {
+            if {$c >= $numCols} break
+            set txt ""
+            foreach inl [dict get $cell content] {
+                if {[dict exists $inl text]} { append txt [dict get $inl text] }
+            }
+            set txt [string map [list \t " "] $txt]
+            switch -- [lindex $aligns $c] {
+                center  { set anchor n;  set just center }
+                right   { set anchor ne; set just right }
+                default { set anchor nw; set just left }
+            }
+            set lbl $tf.c${r}_${c}
+            label $lbl -text $txt -justify $just -anchor $anchor -wraplength 360 \
+                -padx 6 -pady 3 -background [expr {$isHead ? $headBg : $bodyBg}] \
+                -foreground $fg -font [expr {$isHead ? $headFont : $cellFont}]
+            grid $lbl -row $r -column $c -sticky nsew -padx 1 -pady 1
+            incr c
+        }
+        # pad short rows so the grid stays rectangular
+        while {$c < $numCols} {
+            set lbl $tf.c${r}_${c}
+            label $lbl -text "" -background [expr {$isHead ? $headBg : $bodyBg}] -padx 6 -pady 3
+            grid $lbl -row $r -column $c -sticky nsew -padx 1 -pady 1
+            incr c
+        }
+        incr r
+    }
+    for {set c 0} {$c < $numCols} {incr c} { grid columnconfigure $tf $c -weight 1 }
+
+    $textWidget insert end "\n" normal
+    $textWidget window create end -window $tf -padx 2 -pady 2
+    $textWidget insert end "\n\n" normal
+    return
+}
+
 proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}} {
     variable linkCallback
     variable linkTagCounter
@@ -421,7 +528,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
     foreach inline $inlines {
         if {![dict exists $inline type]} continue
         set itype [dict get $inline type]
-        set text  [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+        set text  [_dictDef $inline text ""]
 
         switch $itype {
             text      { $textWidget insert end $text $defaultTag }
@@ -435,7 +542,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 # span: zeigt Text mit class als Tag-Name "span_class".
                 # Wir konfigurieren keinen speziellen Style — kann der
                 # Konsument tun via $textWidget tag configure span_FOO.
-                set cls [expr {[dict exists $inline class] ? [dict get $inline class] : ""}]
+                set cls [_dictDef $inline class ""]
                 set spanTag $defaultTag
                 if {$cls ne ""} {
                     set spanTag "span_$cls"
@@ -446,8 +553,8 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 # Inline-Image. Tk-Text kann Bilder via image create einbetten.
                 # Wir versuchen das Bild lokal zu laden; bei Fehlschlag
                 # fallback auf "[image: alt]" Plain-Text.
-                set url [expr {[dict exists $inline url] ? [dict get $inline url] : ""}]
-                set alt [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+                set url [_dictDef $inline url ""]
+                set alt [_dictDef $inline text ""]
                 if {$url ne "" && [file exists $url] && [file readable $url]} {
                     if {[catch {image create photo -file $url} imgName] == 0} {
                         $textWidget image create end -image $imgName -align center
@@ -463,13 +570,13 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
             footnote_ref {
                 # Hochgestellt mit kleinerer Schrift via footnoteRef-Tag.
                 # Format: [N]
-                set id [expr {[dict exists $inline id] ? [dict get $inline id] : ""}]
-                set num [expr {[dict exists $inline text] ? [dict get $inline text] : "?"}]
+                set id [_dictDef $inline id ""]
+                set num [_dictDef $inline text "?"]
                 $textWidget insert end "\[$num\]" footnoteRef
             }
             link {
                 set name    [expr {[dict exists $inline name]    ? [dict get $inline name]    : $text}]
-                set section [expr {[dict exists $inline section] ? [dict get $inline section] : "n"}]
+                set section [_dictDef $inline section "n"]
                 set href    [expr {[dict exists $inline href]    ? [dict get $inline href]    : ""}]
                 # Eindeutiger Tag-Counter (ein Link kann mehrfach vorkommen)
                 set tagName "link_[incr linkTagCounter]"
@@ -506,12 +613,9 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
                      ($darkMode ? "#1e1e1e" : "#ffffff")}]
     set fg     [expr {[dict exists $colors fg]     ? [dict get $colors fg]     : \
                      ($darkMode ? "#d4d4d4" : "#000000")}]
-    set headFg [expr {[dict exists $colors headFg] ? [dict get $colors headFg] : \
-                     ($darkMode ? "#9cdcfe" : "#003366")}]
-    set codeBg [expr {[dict exists $colors codeBg] ? [dict get $colors codeBg] : \
-                     ($darkMode ? "#2d2d2d" : "#f0f0f0")}]
-    set linkFg [expr {[dict exists $colors linkFg] ? [dict get $colors linkFg] : \
-                     ($darkMode ? "#4ec9b0" : "#0066cc")}]
+    set headFg [_dictDef $colors headFg [expr {$darkMode ? "#9cdcfe" : "#003366"}]]
+    set codeBg [_dictDef $colors codeBg [expr {$darkMode ? "#2d2d2d" : "#f0f0f0"}]]
+    set linkFg [_dictDef $colors linkFg [expr {$darkMode ? "#4ec9b0" : "#0066cc"}]]
 
     # Link-Farbe in Namespace-Variable speichern (für renderInlines)
     set ::docir::renderer::tk::currentLinkFg $linkFg

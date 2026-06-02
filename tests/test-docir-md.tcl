@@ -371,6 +371,7 @@ test "md.list_with_non_listitem_no_crash" {
 # ============================================================
 
 test "md.full_pipeline_nroff" {
+    if {[catch {package require nroffparser}]} { skip "nroffparser (man-viewer) not installed" }
     package require nroffparser
     package require docir::roffSource
 

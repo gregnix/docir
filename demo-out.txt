@@ -1,0 +1,30 @@
+DOCIR::ODT DEMO
+===============
+
+Ein Absatz mit *fett*, _kursiv_, Code und einem Link (()).
+
+Liste
+-----
+
+- Eintrag A
+- Eintrag B
+- Eintrag C
+
+Tabelle
+-------
+
+| Modul            | Rolle  | Notiz          |
+|------------------|--------|----------------|
+| docir::odt       | Senke  | DocIR nach ODT |
+| docir::odtSource | Quelle | ODT nach DocIR |
+
+Codeblock
+---------
+
+    package require docir::odt
+    docir::odt::write $ir out.odt
+
+Bild
+----
+
+[image: ]

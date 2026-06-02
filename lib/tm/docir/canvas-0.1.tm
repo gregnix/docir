@@ -45,6 +45,11 @@ namespace eval ::docir::canvas {
 # Public API
 # ============================================================
 
+proc docir::canvas::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::canvas::render {canvas ir {options {}}} {
     variable st
 
@@ -218,8 +223,8 @@ proc docir::canvas::_renderDocHeader {node tag} {
     set canvas [dict get $st canvas]
     set m [dict get $node meta]
     set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-    set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
-    set version [expr {[dict exists $m version] ? [dict get $m version] : ""}]
+    set section [_dictDef $m section ""]
+    set version [_dictDef $m version ""]
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
 
     set parts {}
@@ -254,7 +259,7 @@ proc docir::canvas::_renderHeading {node tag} {
     variable st
     set canvas [dict get $st canvas]
     set m [dict get $node meta]
-    set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+    set lv [_dictDef $m level 1]
     if {$lv < 1} { set lv 1 }
     if {$lv > 6} { set lv 6 }
 
@@ -286,7 +291,7 @@ proc docir::canvas::_renderParagraph {node tag} {
     variable st
     set canvas [dict get $st canvas]
     set m [dict get $node meta]
-    set class [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set class [_dictDef $m class ""]
     set txt [_inlinesToText [dict get $node content]]
     if {$txt eq ""} { return }
 
@@ -348,7 +353,7 @@ proc docir::canvas::_renderList {node tag} {
     set fontSize [dict get $opts fontSize]
 
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "ul"}]
+    set kind [_dictDef $m kind "ul"]
 
     set ord 1
     foreach item [dict get $node content] {
@@ -360,8 +365,8 @@ proc docir::canvas::_renderList {node tag} {
         }
 
         set itemMeta [dict get $item meta]
-        set itemKind [expr {[dict exists $itemMeta kind] ? [dict get $itemMeta kind] : $kind}]
-        set itemTerm [expr {[dict exists $itemMeta term] ? [dict get $itemMeta term] : {}}]
+        set itemKind [_dictDef $itemMeta kind $kind]
+        set itemTerm [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
         set descTxt [_inlinesToText $itemDescInlines]
         set termTxt [_inlinesToText $itemTerm]
@@ -445,8 +450,8 @@ proc docir::canvas::_renderBlank {node tag} {
     variable st
     set opts [dict get $st opts]
     set fontSize [dict get $opts fontSize]
-    set m [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lines [expr {[dict exists $m lines] ? [dict get $m lines] : 1}]
+    set m [_dictDef $node meta {}]
+    set lines [_dictDef $m lines 1]
     if {$lines < 1} { set lines 1 }
     _advanceY [expr {$fontSize * $lines / 2}]
 }
@@ -475,7 +480,7 @@ proc docir::canvas::_renderTable {node tag} {
 
     set m [dict get $node meta]
     set columns   [expr {[dict exists $m columns]   ? [dict get $m columns]   : 0}]
-    set hasHeader [expr {[dict exists $m hasHeader] ? [dict get $m hasHeader] : 0}]
+    set hasHeader [_dictDef $m hasHeader 0]
 
     if {$columns < 1} {
         _renderUnknown $node $tag "table without columns"
@@ -575,8 +580,8 @@ proc docir::canvas::_renderImageBlock {node tag} {
     set fontSize [dict get $opts fontSize]
 
     set m [dict get $node meta]
-    set url [expr {[dict exists $m url] ? [dict get $m url] : ""}]
-    set alt [expr {[dict exists $m alt] ? [dict get $m alt] : ""}]
+    set url [_dictDef $m url ""]
+    set alt [_dictDef $m alt ""]
 
     # Bild laden wenn möglich
     set imgLoaded 0
@@ -654,7 +659,7 @@ proc docir::canvas::_renderFootnoteDef {node tag} {
     set fontSize [dict get $opts fontSize]
 
     set m [dict get $node meta]
-    set num [expr {[dict exists $m num] ? [dict get $m num] : "?"}]
+    set num [_dictDef $m num "?"]
 
     set body [_inlinesToText [dict get $node content]]
     set fullText "\[$num\] $body"

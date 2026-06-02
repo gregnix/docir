@@ -40,6 +40,11 @@ namespace eval ::docir::svg {
 # Public API
 # ============================================================
 
+proc docir::svg::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::svg::render {ir {options {}}} {
     variable opts
     set opts [dict create \
@@ -272,8 +277,8 @@ proc docir::svg::_layoutDocHeader {node x y contentWidth} {
 
     set m [dict get $node meta]
     set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-    set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
-    set version [expr {[dict exists $m version] ? [dict get $m version] : ""}]
+    set section [_dictDef $m section ""]
+    set version [_dictDef $m version ""]
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
 
     set parts {}
@@ -298,7 +303,7 @@ proc docir::svg::_layoutHeading {node x y contentWidth} {
     variable opts
     set baseFontSize [dict get $opts fontSize]
     set m [dict get $node meta]
-    set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+    set lv [_dictDef $m level 1]
     if {$lv < 1} { set lv 1 }
     if {$lv > 6} { set lv 6 }
 
@@ -333,7 +338,7 @@ proc docir::svg::_layoutParagraph {node x y contentWidth} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set class [expr {[dict exists $m class] ? [dict get $m class] : ""}]
+    set class [_dictDef $m class ""]
 
     # Plaintext rendern (mit minimaler Inline-Formatierung
     # über tspan-Spans wenn nötig). Erstmal: alles als ein Block.
@@ -395,7 +400,7 @@ proc docir::svg::_layoutList {node x y contentWidth} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "ul"}]
+    set kind [_dictDef $m kind "ul"]
 
     set svg ""
     set yCur $y
@@ -413,8 +418,8 @@ proc docir::svg::_layoutList {node x y contentWidth} {
         }
 
         set itemMeta  [dict get $item meta]
-        set itemKind  [expr {[dict exists $itemMeta kind] ? [dict get $itemMeta kind] : $kind}]
-        set itemTerm  [expr {[dict exists $itemMeta term] ? [dict get $itemMeta term] : {}}]
+        set itemKind  [_dictDef $itemMeta kind $kind]
+        set itemTerm  [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
 
         switch $itemKind {
@@ -503,8 +508,8 @@ proc docir::svg::_layoutBlank {node x y contentWidth} {
     variable opts
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
-    set m [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lines [expr {[dict exists $m lines] ? [dict get $m lines] : 1}]
+    set m [_dictDef $node meta {}]
+    set lines [_dictDef $m lines 1]
     if {$lines < 1} { set lines 1 }
     return [list [expr {$y + $lines * $lh / 2}] ""]
 }
@@ -524,7 +529,7 @@ proc docir::svg::_layoutTable {node x y contentWidth} {
 
     set m [dict get $node meta]
     set columns   [expr {[dict exists $m columns]   ? [dict get $m columns]   : 0}]
-    set hasHeader [expr {[dict exists $m hasHeader] ? [dict get $m hasHeader] : 0}]
+    set hasHeader [_dictDef $m hasHeader 0]
 
     if {$columns < 1} {
         return [_layoutUnknown $node $x $y $contentWidth "table without columns"]
@@ -584,8 +589,8 @@ proc docir::svg::_layoutImageBlock {node x y contentWidth} {
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
     set m [dict get $node meta]
-    set url [expr {[dict exists $m url] ? [dict get $m url] : ""}]
-    set alt [expr {[dict exists $m alt] ? [dict get $m alt] : ""}]
+    set url [_dictDef $m url ""]
+    set alt [_dictDef $m alt ""]
 
     # Default-Größe — könnte als Option exposed werden
     set imgW [expr {min($contentWidth, 200)}]
@@ -633,7 +638,7 @@ proc docir::svg::_layoutFootnoteDef {node x y contentWidth} {
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
     set m [dict get $node meta]
-    set num [expr {[dict exists $m num] ? [dict get $m num] : "?"}]
+    set num [_dictDef $m num "?"]
 
     set body [_inlinesToText [dict get $node content]]
     set fullText "\[$num\] $body"

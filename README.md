@@ -130,6 +130,25 @@ export TCLLIBPATH="$HOME/lib/tcltk/docir"   # set in ~/.profile
 
 `TCLLIBPATH` is the standard Tcl env variable that extends `auto_path`.
 
+### Running from a dev tree (sibling repos)
+
+DocIR's ODT pipeline needs the **`odf`** packages, its Markdown bridge needs
+**`mdstack`**, and the man-page source needs **`nroffparser`** (man-viewer).
+When the repos sit side by side in a dev tree, `lib/repos-path.tcl` wires them
+all onto the path in one place — checking dev-tree siblings *and* the installed
+`~/lib/tcltk/` and `/usr/local/lib/tcltk/` trees, adding only what exists:
+
+```tcl
+# from a script in bin/, tests/, or demo/
+source [file join <docir-repo>/lib repos-path.tcl]
+package require docir::odt      ;# now resolves odf transitively
+```
+
+The test runner (`tests/test-setup.tcl`) already sources it, so `make test`
+works against sibling checkouts without per-repo `TCLLIBPATH` juggling. A
+sibling that is absent simply stays absent — the dependent `package require`
+fails loudly rather than being silently faked.
+
 ### Manual
 
 ```bash

@@ -35,6 +35,11 @@ namespace eval docir::tile {
 # Inlines -> Pseudo-Markdown-Text
 # ---------------------------------------------------------------------------
 
+proc docir::tile::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::tile::inlinesToText {inlines} {
     set out ""
     foreach inline $inlines {
@@ -304,9 +309,9 @@ proc docir::tile::packSection {title content} {
                 set images {}
                 foreach b $content {
                     set bm [dict get $b meta]
-                    set url [expr {[dict exists $bm url] ? [dict get $bm url] : ""}]
-                    set alt [expr {[dict exists $bm alt] ? [dict get $bm alt] : ""}]
-                    set ttl [expr {[dict exists $bm title] ? [dict get $bm title] : ""}]
+                    set url [_dictDef $bm url ""]
+                    set alt [_dictDef $bm alt ""]
+                    set ttl [_dictDef $bm title ""]
                     if {$url ne ""} {
                         lappend images [list $url $alt $ttl]
                     }

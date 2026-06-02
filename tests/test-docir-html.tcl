@@ -253,6 +253,30 @@ test "html.table_source_class" {
     assert [string match "*class=\"docir-table docir-standardOptions\"*" $out]
 }
 
+test "html.table_cell_single_inline_dict" {
+    # Regression: a cell whose content is a single inline dict (not wrapped in a
+    # list) used to crash the whole export with "dict get $inline type". It must
+    # now render the cell text, matching the tolerant Tk preview.
+    set ir [list [dict create type table content [list \
+        [dict create type tableRow content [list \
+            [dict create type tableCell content {type text text "x"} meta {}] \
+        ] meta {}] \
+    ] meta {}]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [string match "*<td>x</td>*" $out] "single-dict cell renders its text"
+}
+
+test "html.table_cell_malformed_element_skipped" {
+    # A stray non-inline element in a cell must degrade (be skipped), not crash.
+    set ir [list [dict create type table content [list \
+        [dict create type tableRow content [list \
+            [dict create type tableCell content [list {no type here} {type text text "ok"}] meta {}] \
+        ] meta {}] \
+    ] meta {}]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [string match "*<td>ok</td>*" $out] "good run rendered, bad element skipped"
+}
+
 # ============================================================
 # H. Blank, hr, doc_header
 # ============================================================
@@ -355,7 +379,7 @@ test "html.attr_escaping_in_id" {
 # ============================================================
 
 test "html.full_pipeline_nroff_produces_valid_html" {
-    package require nroffparser
+    if {[catch {package require nroffparser}]} { skip "nroffparser (man-viewer) not installed" }
     package require docir::roffSource
 
     set nroff {.TH foo n 1.0 Test

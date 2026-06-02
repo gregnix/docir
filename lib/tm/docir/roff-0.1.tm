@@ -43,6 +43,11 @@ namespace eval ::docir::roff {
 
 # render ir ?options?
 #   options: dict mit Keys headingShift / wrapColumn / forceQuoting
+proc docir::roff::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc ::docir::roff::render {ir {options {}}} {
     variable opts
     set opts [dict create \
@@ -97,10 +102,10 @@ proc ::docir::roff::_renderBlock {node} {
 # .TH name section [date] [version] [part]
 
 proc ::docir::roff::_renderDocHeader {node} {
-    set m [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
+    set m [_dictDef $node meta {}]
     set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
-    set section [expr {[dict exists $m section] ? [dict get $m section] : ""}]
-    set version [expr {[dict exists $m version] ? [dict get $m version] : ""}]
+    set section [_dictDef $m section ""]
+    set version [_dictDef $m version ""]
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
 
     if {$name eq "" && $section eq ""} { return "" }
@@ -128,8 +133,8 @@ proc ::docir::roff::_renderDocHeader {node} {
 
 proc ::docir::roff::_renderHeading {node} {
     variable opts
-    set m  [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lv [expr {[dict exists $m level] ? [dict get $m level] : 1}]
+    set m  [_dictDef $node meta {}]
+    set lv [_dictDef $m level 1]
     incr lv [dict get $opts headingShift]
     if {$lv < 1} { set lv 1 }
 
@@ -163,8 +168,8 @@ proc ::docir::roff::_renderParagraph {node} {
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderPre {node} {
-    set m    [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "code"}]
+    set m    [_dictDef $node meta {}]
+    set kind [_dictDef $m kind "code"]
 
     # Inhalt: pre kann entweder einen text-Inline mit dem Code als
     # text-Feld haben, oder rohe Zeilen.
@@ -191,9 +196,9 @@ proc ::docir::roff::_renderPre {node} {
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderList {node} {
-    set m    [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : "tp"}]
-    set indentLevel [expr {[dict exists $m indentLevel] ? [dict get $m indentLevel] : 0}]
+    set m    [_dictDef $node meta {}]
+    set kind [_dictDef $m kind "tp"]
+    set indentLevel [_dictDef $m indentLevel 0]
 
     set out ""
     # Per Indent-Level ein .RS 4 (relative shift, 4 char)
@@ -223,8 +228,8 @@ proc ::docir::roff::_renderList {node} {
 
 # Ein einzelner listItem im Kontext eines bestimmten Listen-kind
 proc ::docir::roff::_renderListItem {item kind itemNum} {
-    set itemMeta [expr {[dict exists $item meta] ? [dict get $item meta] : {}}]
-    set term     [expr {[dict exists $itemMeta term] ? [dict get $itemMeta term] : {}}]
+    set itemMeta [_dictDef $item meta {}]
+    set term     [_dictDef $itemMeta term {}]
     set descIr   [dict get $item content]
 
     set termText [_renderInlines $term]
@@ -312,8 +317,8 @@ proc ::docir::roff::_renderOrphanedListItem {node} {
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderBlank {node} {
-    set m     [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set lines [expr {[dict exists $m lines] ? [dict get $m lines] : 1}]
+    set m     [_dictDef $node meta {}]
+    set lines [_dictDef $m lines 1]
     if {$lines < 1} { set lines 1 }
 
     if {$lines == 1} { return ".sp\n" }
@@ -336,8 +341,8 @@ proc ::docir::roff::_renderHr {node} {
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderTable {node} {
-    set m    [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set kind [expr {[dict exists $m kind] ? [dict get $m kind] : ""}]
+    set m    [_dictDef $node meta {}]
+    set kind [_dictDef $m kind ""]
 
     if {$kind eq "standardOptions"} {
         return [_renderStandardOptionsTable $node]
@@ -353,8 +358,8 @@ proc ::docir::roff::_renderTable {node} {
 # Die Tk-Konvention listet nur Options ohne Werte — sie sind
 # Cross-Referenzen.
 proc ::docir::roff::_renderStandardOptionsTable {node} {
-    set m         [expr {[dict exists $node meta] ? [dict get $node meta] : {}}]
-    set className [expr {[dict exists $m className] ? [dict get $m className] : ""}]
+    set m         [_dictDef $node meta {}]
+    set className [_dictDef $m className ""]
 
     if {$className ne ""} {
         set out ".SO $className\n"
@@ -416,8 +421,8 @@ proc ::docir::roff::_renderGenericTable {node} {
 proc ::docir::roff::_renderImageBlock {node} {
     # nroff kann keine Bilder rendern. Marker als italic-Plain-Text.
     set m [dict get $node meta]
-    set url [expr {[dict exists $m url] ? [dict get $m url] : ""}]
-    set alt [expr {[dict exists $m alt] ? [dict get $m alt] : ""}]
+    set url [_dictDef $m url ""]
+    set alt [_dictDef $m alt ""]
 
     set out ".PP\n"
     if {$alt ne "" && $url ne ""} {
@@ -449,7 +454,7 @@ proc ::docir::roff::_renderFootnoteSection {node} {
 proc ::docir::roff::_renderFootnoteDef {node} {
     # .TP "[N]"\nbody
     set m [dict get $node meta]
-    set num [expr {[dict exists $m num] ? [dict get $m num] : "?"}]
+    set num [_dictDef $m num "?"]
     set body [_renderInlines [dict get $node content]]
     set body [_protectLeadingDot $body]
 
@@ -499,7 +504,7 @@ proc ::docir::roff::_renderInlines {inlines} {
     foreach inline $inlines {
         if {![dict exists $inline type]} continue
         set itype [dict get $inline type]
-        set itext [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+        set itext [_dictDef $inline text ""]
         switch -- $itype {
             text      { append out [_escapeText $itext] }
             strong    { append out "\\fB[_escapeText $itext]\\fR" }
@@ -529,7 +534,7 @@ proc ::docir::roff::_renderInlines {inlines} {
             image {
                 # nroff kann keine Bilder rendern. Marker als
                 # Plain-Text, damit User weiß was gemeint war.
-                set url [expr {[dict exists $inline url] ? [dict get $inline url] : ""}]
+                set url [_dictDef $inline url ""]
                 if {$itext ne "" && $url ne ""} {
                     append out "\\fI\[image: [_escapeText $itext] ([_escapeText $url])\]\\fR"
                 } elseif {$itext ne ""} {
@@ -545,14 +550,14 @@ proc ::docir::roff::_renderInlines {inlines} {
                 # Hochzahl-Imitation: \u\sN\d\sR (super) wäre möglich
                 # aber nicht portabel. Einfach [N] — die Defs werden
                 # später als footnote_section gerendert.
-                set marker [expr {[dict exists $inline text] ? [dict get $inline text] : "?"}]
+                set marker [_dictDef $inline text "?"]
                 append out "\[[_escapeText $marker]\]"
             }
             link {
                 # In nroff sind Links keine eigene Konstruktion —
                 # in Tk-Manpages wird "name(section)" geschrieben.
-                set name [expr {[dict exists $inline name] ? [dict get $inline name] : $itext}]
-                set sec  [expr {[dict exists $inline section] ? [dict get $inline section] : ""}]
+                set name [_dictDef $inline name $itext]
+                set sec  [_dictDef $inline section ""]
                 # Leerer Link → komplett überspringen statt leere
                 # Bold-Tags zu schreiben ("\fB\fR" wäre kein gültiger
                 # nroff-Output)

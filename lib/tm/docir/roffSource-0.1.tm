@@ -22,6 +22,11 @@ namespace eval ::docir::roff {}
 #   DocIR-Stream (Liste von Block-Nodes)
 # ============================================================
 
+proc docir::roff::_dictDef {d k {def ""}} {
+    if {[dict exists $d $k]} { return [dict get $d $k] }
+    return $def
+}
+
 proc docir::roff::fromAst {ast} {
     set ir {}
     # doc_meta als allererster Block (irSchemaVersion seit 0.5).
@@ -37,7 +42,7 @@ proc docir::roff::fromAst {ast} {
 
     foreach node $ast {
         set type    [dict get $node type]
-        set content [expr {[dict exists $node content] ? [dict get $node content] : {}}]
+        set content [_dictDef $node content {}]
         set meta    [expr {[dict exists $node meta]    ? [dict get $node meta]    : {}}]
 
         switch $type {
@@ -49,8 +54,8 @@ proc docir::roff::fromAst {ast} {
                     content {} \
                     meta    [dict create \
                         name    [expr {[dict exists $meta name]    ? [dict get $meta name]    : ""}] \
-                        section [expr {[dict exists $meta section] ? [dict get $meta section] : ""}] \
-                        version [expr {[dict exists $meta version] ? [dict get $meta version] : ""}] \
+                        section [_dictDef $meta section ""] \
+                        version [_dictDef $meta version ""] \
                         part    [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]]]
             }
 
@@ -93,7 +98,7 @@ proc docir::roff::fromAst {ast} {
             }
 
             pre {
-                set kind [expr {[dict exists $meta kind] ? [dict get $meta kind] : "code"}]
+                set kind [_dictDef $meta kind "code"]
 
                 # Wenn wir gerade nach .SH STANDARD OPTIONS sind, versuche
                 # den pre-Block als Tabelle zu mappen. Wenn das nicht
@@ -115,11 +120,11 @@ proc docir::roff::fromAst {ast} {
 
             list {
                 set kind [expr {[dict exists $meta kind]        ? [dict get $meta kind]        : "tp"}]
-                set il   [expr {[dict exists $meta indentLevel] ? [dict get $meta indentLevel] : 0}]
+                set il   [_dictDef $meta indentLevel 0]
                 set items {}
                 foreach item $content {
-                    set term [expr {[dict exists $item term] ? [dict get $item term] : {}}]
-                    set desc [expr {[dict exists $item desc] ? [dict get $item desc] : {}}]
+                    set term [_dictDef $item term {}]
+                    set desc [_dictDef $item desc {}]
                     set termIr [docir::roff::_mapInlines $term]
                     set descIr [docir::roff::_mapInlines $desc]
                     # listItem als vollständiger DocIR-Node
@@ -135,7 +140,7 @@ proc docir::roff::fromAst {ast} {
             }
 
             blank {
-                set lines [expr {[dict exists $meta lines] ? [dict get $meta lines] : 1}]
+                set lines [_dictDef $meta lines 1]
                 lappend ir [dict create \
                     type    blank \
                     content {} \
@@ -215,7 +220,7 @@ proc docir::roff::_mapInlines {content} {
     foreach inline $content {
         if {![dict exists $inline type]} continue
         set itype [dict get $inline type]
-        set text  [expr {[dict exists $inline text] ? [dict get $inline text] : ""}]
+        set text  [_dictDef $inline text ""]
 
         switch $itype {
             text      { lappend result [dict create type text      text $text] }
@@ -224,8 +229,8 @@ proc docir::roff::_mapInlines {content} {
             underline { lappend result [dict create type underline text $text] }
             link {
                 set name    [expr {[dict exists $inline name]    ? [dict get $inline name]    : $text}]
-                set section [expr {[dict exists $inline section] ? [dict get $inline section] : "n"}]
-                set href [expr {[dict exists $inline href] ? [dict get $inline href] : ""}]
+                set section [_dictDef $inline section "n"]
+                set href [_dictDef $inline href ""]
                 lappend result [dict create type link text $text name $name section $section href $href]
             }
             default {

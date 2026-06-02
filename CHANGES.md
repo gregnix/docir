@@ -1,5 +1,119 @@
 # DocIR — Changelog
 
+## 2026-06-02 — Foreign-ODT lists, number formats, cross-format ol
+
+### Changed
+
+- **`lib/tm/docir/odtSource-0.4.tm`** — `_mapList` now inherits the kind
+  (and number format) from the enclosing list when a nested `text:list`
+  has no `text:style-name`. LibreOffice writes nested lists this way, so an
+  ordered LO list no longer degrades to bullets at the inner levels.
+- **`lib/tm/docir/odt-0.4.tm`** / **`odtSource-0.4.tm`** — ordered lists now
+  carry a number format. The IR list block may set `meta.numFormat`
+  (`1` / `a` / `A` / `i` / `I`); the sink defines one ordered list style per
+  format (`docir_ol`, `docir_ol_a`, …) and references the right one, and the
+  reader recovers it via the new `odf::style listStyleFormat`. Absent
+  `numFormat` defaults to decimal, so Markdown/HTML ordered lists are
+  unaffected.
+
+### Added
+
+- **`tests/test-odt-ol2.tcl`** — 15 checks: number-format round-trip
+  (1/a/A/i/I), nested-list kind inheritance for a style-less sublist, and
+  Markdown `1.` and HTML `<ol>` surviving as `ol` through the ODT hop. The
+  generated ODTs validate clean against odfvalidator 0.13.0.
+
+Requires `odf` 0.20 with `listStyleFormat` (and the hanging-indent list
+styles).
+
+## 2026-06-02 — Better-looking ODT (definition lists + styling)
+
+### Fixed
+
+- **`lib/tm/docir/mdSource-0.1.tm`** — `_mapDeflist` dropped every
+  definition body. The parser emits `definitions` as a list of definition
+  *groups* (each a flat inline list), but the mapper looked for a `content`
+  sub-key on the first element, found none, and produced empty list items —
+  rendering as a page full of empty bullets. Now maps the first group's
+  inlines, so definition text survives.
+
+### Changed
+
+- **`lib/tm/docir/odt-0.4.tm`** — definition lists (`meta.kind == dl`) now
+  render as a bold **term** paragraph followed by an indented definition
+  paragraph (new `_fillDeflist`, styles `DefTerm` / `DefBody`), instead of
+  bullet items. Heading styles got top/bottom spacing, `keep-with-next` and
+  a dark colour; body paragraphs get spacing + line-height (`Body` style);
+  code/pre blocks get a light background, indent and padding. The result
+  reads like a proper man page rather than cramped flat text.
+
+Known limitation: in the Tcl/Tk man pages, fenced code that is indented
+underneath a definition is parsed by mdstack as an *indented* code block, so
+the ``` fences appear literally and inline `**bold**` inside it stays raw.
+That is mdstack parser semantics (4-space indent = code), not the sink.
+
+## 2026-06-02 — md2odt CLI + safe dict-default lookups
+
+### Added
+
+- **`bin/md2odt`** — Markdown → ODT via the DocIR pipeline
+  (`mdstack::parser` → `docir::mdSource` → `docir::odt`). Converts one
+  `.md`, or combines several into a single `.odt` (one level-1 section per
+  file). Same front end as `md2html`, ODT sink at the back; ordered lists
+  come out numbered. Verified end-to-end on the Tcl/Tk 9.0 man-page corpus
+  (221 files → one ODT, conformant under odfvalidator 0.13.0).
+
+### Fixed
+
+- **all DocIR sinks/sources** — dict lookups with a default were written as
+  `[expr {[dict exists $d $k] ? [dict get $d $k] : DEF}]`. `expr`
+  *evaluates* the substituted dict value as an expression, so a text/value
+  string that looks like an out-of-range number (e.g. on the math man
+  pages `expr.md`, `fpclassify.md`) threw "domain error: argument not in
+  valid range". Replaced throughout with a non-evaluating per-namespace
+  `_dictDef` helper (mdSource, md, odt, odtSource, html, pdf, svg, canvas,
+  roff, roffSource, rendererTk, tilecommon, tilepdf — ~190 sites). Where a
+  default was itself an expression (e.g. `$darkMode ? "#9cdcfe" : "#003366"`
+  in rendererTk), it is wrapped in `[expr {...}]` so it still evaluates.
+  Verified: headless suite 577/0, GUI tests (rendererTk 7/7, canvas) under
+  Xvfb, and the full Tcl/Tk 9.0 man-page corpus (221/221 → ODT, conformant).
+
+## 2026-06-02 — Ordered lists in the ODT pipeline
+
+### Changed
+
+- **`lib/tm/docir/odt-0.4.tm`** — the ODT sink now emits ordered lists
+  as ordered, not just bullets. `_defineStyles` defines two named list
+  styles (`docir_ol` ordered numbers, `docir_ul` bullets); the writer
+  references the right one per list block via its `meta.kind` (`ol`/`ul`),
+  for both top-level lists and nested sublists. Requires `odf` 0.20
+  (`odf::style defineListStyle`).
+- **`lib/tm/docir/odtSource-0.4.tm`** — the ODT reader now recovers a
+  list's kind instead of assuming `ul`: it resolves the `text:list`'s
+  `text:style-name` through `odf::style listStyleKind` and tags the
+  block/items `ol` when the style numbers, `ul` otherwise (per level,
+  so nested ordered sublists round-trip).
+
+### Added
+
+- **`tests/test-odt-ol.tcl`** — round-trips DocIR(ol/ul, incl. a nested
+  ordered sublist) → ODT → DocIR and asserts the kind survives; the
+  generated ODT validates clean against odfvalidator 0.13.0 (ODF 1.3).
+
+(Module versions stay `docir::odt` / `docir::odtSource` 0.4 — behaviour
+added, no API change: `appendList`/`addSublist` already accepted a style.)
+
+### Fixed
+
+- **`tests/test-framework.tcl`** — `assert {EXPR}` now evaluates its
+  condition (`uplevel`/`expr`) instead of being treated as an already-
+  resolved boolean. The old bridge passed the raw expression string to
+  `::test::assert`'s `if {!$condition}`, which errored with "expected
+  boolean value" whenever an `assert {EXPR}` actually ran — only visible
+  under a real `$DISPLAY` (headless reported the file as 0/0). Surfaced by
+  `test-docir-renderer-frame.tcl`, which is the only suite test using that
+  form; it now passes (7/7 under Xvfb). No other behaviour change.
+
 ## 2026-05-16 — Plain-text sink, n2md CLI, math + mermaid in renderers
 
 ### Added

@@ -302,6 +302,7 @@ test "canvas.scrollregion_is_set" {
 # ============================================================
 
 test "canvas.full_pipeline_nroff" {
+    if {[catch {package require nroffparser}]} { skip "nroffparser (man-viewer) not installed" }
     package require nroffparser
     package require docir::roffSource
 

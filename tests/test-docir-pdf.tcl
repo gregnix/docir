@@ -202,6 +202,7 @@ test "pdf.render_options_metadata_title" {
 }
 
 test "pdf.full_pipeline_nroff_to_pdf" {
+    if {[catch {package require nroffparser}]} { skip "nroffparser (man-viewer) not installed" }
     package require nroffparser
     package require docir::roffSource
 
