@@ -153,31 +153,45 @@ proc docir::md::_mapList {block} {
     set items   {}
     set trailing {}
 
+    set loose [expr {[dict exists $block loose] ? [dict get $block loose] : 0}]
     foreach item [dict get $block items] {
-        # list_item has blocks:[] – inline content from first paragraph
         set blocks [dict get $item blocks]
-        set descInlines {}
+        # Split the item's own paragraphs (rendered inside the <li>) from
+        # non-paragraph blocks such as sub-lists (kept as trailing siblings —
+        # the existing flat-IR behaviour for nested structures).
+        set paras {}
         set restBlocks {}
-        if {[llength $blocks] > 0} {
-            set first [lindex $blocks 0]
-            if {[dict get $first type] eq "paragraph"} {
-                set descInlines [docir::md::_mapInlines [dict get $first content]]
-                set restBlocks  [lrange $blocks 1 end]
+        foreach b $blocks {
+            if {[dict get $b type] eq "paragraph"} {
+                lappend paras [dict create type paragraph \
+                    content [docir::md::_mapInlines [dict get $b content]] meta {}]
             } else {
-                set restBlocks $blocks
+                lappend restBlocks $b
             }
         }
-        lappend items [dict create \
+        # content carries ALL paragraphs (space-separated) so renderers that do
+        # not yet read `blocks` (pdf/roff/odt) still show the full text without
+        # data loss. Renderers that understand `blocks` (html) use those for
+        # proper per-paragraph <p> separation.
+        set descInlines {}
+        set firstP 1
+        foreach pnode $paras {
+            if {$firstP} { set firstP 0 } else {
+                lappend descInlines [dict create type text text " "]
+            }
+            lappend descInlines {*}[dict get $pnode content]
+        }
+
+        set itemNode [dict create \
             type    listItem \
             content $descInlines \
             meta    [dict create kind $kind term {}]]
+        # Loose / multi-paragraph item: carry the paragraph blocks additively so
+        # renderers can emit <p>…</p> per paragraph. Tight single-paragraph items
+        # keep only `content` (unchanged, fully backward-compatible).
+        if {[llength $paras] > 1} { dict set itemNode blocks $paras }
+        lappend items $itemNode
 
-        # Nested blocks (sub-lists, paragraphs) collected as TRAILING
-        # top-level siblings — NOT appended to $items, because
-        # list.content must contain only listItem nodes (DocIR schema).
-        # The flat representation "list followed by sub-list followed
-        # by next item" is awkward but valid; the renderer uses
-        # indentLevel/visual cues to suggest nesting.
         foreach sub $restBlocks {
             lappend trailing {*}[docir::md::_mapBlock $sub]
         }
@@ -186,7 +200,7 @@ proc docir::md::_mapList {block} {
     set listNode [dict create \
         type    list \
         content $items \
-        meta    [dict create kind $kind indentLevel 0]]
+        meta    [dict create kind $kind indentLevel 0 loose $loose]]
 
     return [concat [list $listNode] $trailing]
 }
@@ -376,7 +390,15 @@ proc docir::md::_mapInlines {inlines} {
                 set url   [expr {[dict exists $inline url]   ? [dict get $inline url]   : ""}]
                 set label [_dictDef $inline label {}]
                 set txt   [docir::md::_inlinesToText $label]
-                lappend result [dict create type link text $txt name "" section "" href $url]
+                set title [_dictDef $inline title ""]
+                # url-quirk: a title may be packed into the url as: url "title"
+                if {$title eq "" && [regexp {^(\S+)\s+"([^"]*)"} $url full u t]} {
+                    set url $u
+                    set title $t
+                }
+                set linkDict [dict create type link text $txt name "" section "" href $url]
+                if {$title ne ""} { dict set linkDict title $title }
+                lappend result $linkDict
             }
             image {
                 # Markdown image inline: {type image alt "..." url "..." title "..."?}
@@ -397,6 +419,10 @@ proc docir::md::_mapInlines {inlines} {
             linebreak {
                 # Hard break: kein text-Feld nötig in DocIR-Spec
                 lappend result [dict create type linebreak]
+            }
+            softbreak {
+                # Soft break: html renders "\n", other sinks render a space.
+                lappend result [dict create type softbreak]
             }
             strike {
                 # mdparser: {type strike content {nested-inlines}}

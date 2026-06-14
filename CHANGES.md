@@ -1,5 +1,50 @@
 # DocIR — Changelog
 
+## 2026-06-14 — Soft line breaks across all sinks, link rendering, footnote-emoji PDF fix
+
+Paired with **mdstack 0.5.0**, whose parser now emits a structured `softbreak`
+inline node for soft line breaks (see the mdstack CHANGELOG).
+
+### Added
+
+- **`softbreak` inline node — handled by every renderer.** A soft line break
+  between two paragraph lines now arrives as a `softbreak` node (mirroring
+  `linebreak` for hard breaks). Each sink chooses its presentation: HTML emits a
+  newline (CommonMark; identical to a space in a browser), Markdown a newline
+  (soft break in the source), and PDF / ODT / nroff / plain text / tilecommon /
+  renderer-tk render a single space — so non-HTML output is visually unchanged.
+  Files: `html-0.1.tm`, `md-0.1.tm`, `pdf-0.2.tm`, `odt-0.4.tm`, `roff-0.1.tm`,
+  `txt-0.1.tm`, `tilecommon-0.1.tm`, `rendererTk-0.1.tm`, plus the
+  `mdSource-0.1.tm` bridge (maps the mdstack node through). The `*Source` readers
+  (`htmlSource`/`odtSource`/`tkSource`) are unchanged — they parse a format into
+  the AST and still emit hard `linebreak` nodes.
+
+### Fixed
+
+- **`lib/tm/docir/html-0.1.tm`** — `_renderLinkInline` rewritten: a link `title`
+  is now rendered as `title="…"`, an empty destination produces `<a href="">`
+  (instead of a synthesised `.html`), and the manpage name/section resolution is
+  preserved. Link URLs are percent-encoded per CommonMark (`_encodeUrl`:
+  space → `%20`, `\` → `%5C`, existing `%XX` preserved). Combined with the
+  mdstack `_tryLink` rewrite this moved the Links conformance section
+  31.1 % → 57.8 %.
+- **`lib/tm/docir/mdSource-0.1.tm`** — the bridge now passes a link `title`
+  through to the IR, so HTML/Markdown can render it.
+- **`lib/tm/docir/pdf-0.2.tm`** — footnote definitions and the footnote index no
+  longer crash pdf4tcl when the text contains characters outside the embedded
+  font subset (e.g. emoji). The `$pdf text` calls in `_renderFootnoteDef` and the
+  index lines run through `::pdf4tcllib::unicode::sanitize` (emoji → ASCII
+  fallback), so documents like KOMPLEX-SHOWCASE.md export cleanly.
+
+### Notes
+
+- All 849 docir tests pass on Tcl 8.6.18 and 9.0.3.
+- Lesson: a node-level change (`softbreak`) must be applied across **all**
+  renderers. The first pass covered 3 of 7 sinks; a follow-up audit found 4 more
+  (`roff`/`txt`/`tilecommon`/`rendererTk`) and then 2 further renderers
+  (`md`/`odt`). Sink-level changes should always be congruence-checked against the
+  full renderer set.
+
 ## 2026-06-02 — Foreign-ODT lists, number formats, cross-format ol
 
 ### Changed

@@ -77,6 +77,7 @@ proc docir::odt::_inlines {txt p inlines} {
         set str  [_dictDef $inl text ""]
         switch -- $type {
             linebreak { $txt addBreak $p }
+            softbreak { _emit $txt $p " " }
             text      { _emit $txt $p $str }
             link {
                 set href [_dictDef $inl href ""]

@@ -414,6 +414,7 @@ proc docir::txt::_renderInline {inline} {
         strike     { return "[_dictGet $inline text [_renderInlines [_dictGet $inline content {}]]]" }
         code       { return "[_dictGet $inline text [_dictGet $inline content ""]]" }
         linebreak  { return "\n" }
+        softbreak  { return " " }
         link {
             set text [_dictGet $inline text [_renderInlines [_dictGet $inline content {}]]]
             set url  [_dictGet $inline url ""]

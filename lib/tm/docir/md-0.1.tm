@@ -483,6 +483,11 @@ proc docir::md::_renderInline {inline} {
             # aber die "echte" Markdown-Form sind zwei trailing Spaces.
             return "  \n"
         }
+        softbreak {
+            # Soft break: a plain newline keeps the lines separate in the
+            # Markdown source while rendering as a space downstream.
+            return "\n"
+        }
         span {
             # TIP-700 span — Markdown hat keine Standard-Notation.
             # Wir nutzen die Pandoc-Erweiterung [text]{.class #id}

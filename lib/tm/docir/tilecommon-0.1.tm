@@ -78,6 +78,7 @@ proc docir::tile::inlinesToText {inlines} {
                 }
             }
             linebreak { append out " " }
+            softbreak { append out " " }
             image {
                 set alt ""
                 set url ""

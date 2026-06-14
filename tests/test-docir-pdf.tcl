@@ -276,6 +276,31 @@ test "spec.pdf.block.footnote_section" {
     file delete -force $tmpFile
 }
 
+test "spec.pdf.block.footnote_emoji_no_crash" {
+    # Regression: a footnote definition containing a non-encodable character
+    # (emoji / astral codepoint) must be sanitised like every other text path,
+    # not passed raw to pdf4tcl (which would abort with
+    # "key ... not known in dictionary"). The index path carries the same fix.
+    set ir [list \
+        [dict create type paragraph \
+            content [list [dict create type text text "Body with a note."]] meta {}] \
+        [dict create type footnote_section \
+            content [list \
+                [dict create type footnote_def \
+                    content [list [dict create type text \
+                        text "Note with \U0001F525 fire and \u2728 sparkles."]] \
+                    meta [dict create id "fn1" num "1"]]] \
+            meta {}]]
+    set tmpFile [file join $::TMPBASE test-pdf-fn-emoji.pdf]
+    set rc [catch {::docir::pdf::render $ir $tmpFile} err]
+    if {$rc} {
+        puts stderr "PDF render failed: $err"
+    }
+    assert [expr {$rc == 0}] "footnote with emoji renders without crash"
+    assert [file exists $tmpFile] "PDF-Datei wurde erzeugt"
+    file delete -force $tmpFile
+}
+
 test "spec.pdf.block.div_transparent" {
     set ir [list [dict create type div \
         content [list \

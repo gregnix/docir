@@ -140,6 +140,41 @@ test "html.link_with_explicit_href" {
     assert [string match "*<a href=\"http://example.com\">Click</a>*" $out]
 }
 
+test "html.link_with_title" {
+    set ir [list [dict create type paragraph content {
+        {type link text "Click" href "/uri" title "the title"}
+    } meta {}]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [string match "*<a href=\"/uri\" title=\"the title\">Click</a>*" $out]
+}
+
+test "html.link_empty_href" {
+    # An explicit empty href must render as <a href=""> (CommonMark allows it),
+    # not fall back to plain text or manpage-style "<name>.html".
+    set ir [list [dict create type paragraph content {
+        {type link text "Click" name "" section "" href ""}
+    } meta {}]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [string match "*<a href=\"\">Click</a>*" $out]
+}
+
+test "html.link_url_encoded" {
+    # CommonMark href encoding: space -> %20, backslash -> %5C, existing %XX kept.
+    set ir [list [dict create type paragraph content {
+        {type link text "x" name "" section "" href "/my uri"}
+    } meta {}]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [string match "*<a href=\"/my%20uri\">x</a>*" $out]
+}
+
+test "html.link_url_preserve_pct" {
+    set ir [list [dict create type paragraph content {
+        {type link text "x" name "" section "" href "foo%20bar"}
+    } meta {}]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [string match "*<a href=\"foo%20bar\">x</a>*" $out]
+}
+
 test "html.link_resolved_via_callback" {
     proc myResolve {name section} {
         return "/man/${name}.${section}.html"

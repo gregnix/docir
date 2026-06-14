@@ -538,6 +538,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
             strike    { $textWidget insert end $text strike }
             code      { $textWidget insert end $text pre }
             linebreak { $textWidget insert end "\n" $defaultTag }
+            softbreak { $textWidget insert end " " $defaultTag }
             span {
                 # span: zeigt Text mit class als Tag-Name "span_class".
                 # Wir konfigurieren keinen speziellen Style — kann der

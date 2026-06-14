@@ -291,6 +291,9 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
             linebreak {
                 lappend segs [list "" "break" ""]
             }
+            softbreak {
+                lappend segs [list " " $parentStyle ""]
+            }
             span {
                 # TIP-700 span: text durchreichen mit parentStyle
                 lappend segs [list $text $parentStyle ""]
@@ -981,13 +984,19 @@ proc docir::pdf::_renderList {node} {
         set itemKind [_dictDef $itemMeta kind $kind]
         set itemTerm [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
+        set itemExtras {}
+        if {[dict exists $item blocks]} {
+            set _bl [dict get $item blocks]
+            set itemDescInlines [dict get [lindex $_bl 0] content]
+            foreach _b [lrange $_bl 1 end] { lappend itemExtras [dict get $_b content] }
+        }
 
         switch $itemKind {
             ol {
                 set marker "${ord}. "
                 _setFont $fontSize
                 set markerW [$pdf getStringWidth $marker]
-                _renderListItemMarker $marker $itemDescInlines $markerW $indentX
+                _renderListItemMarker $marker $itemDescInlines $markerW $indentX $itemExtras
                 incr ord
             }
             tp - ip - op - ap - dl {
@@ -998,7 +1007,7 @@ proc docir::pdf::_renderList {node} {
                 set marker "- "
                 _setFont $fontSize
                 set markerW [$pdf getStringWidth $marker]
-                _renderListItemMarker $marker $itemDescInlines $markerW $indentX
+                _renderListItemMarker $marker $itemDescInlines $markerW $indentX $itemExtras
             }
         }
     }
@@ -1007,7 +1016,7 @@ proc docir::pdf::_renderList {node} {
 
 # Render an item as "MARKER  text..." — marker on first line,
 # subsequent lines hang-indented to the marker's right edge.
-proc docir::pdf::_renderListItemMarker {marker descInlines markerW {indentX 0}} {
+proc docir::pdf::_renderListItemMarker {marker descInlines markerW {indentX 0} {extraParas {}}} {
     variable opts
     variable st
     set pdf [dict get $st pdf]
@@ -1036,6 +1045,20 @@ proc docir::pdf::_renderListItemMarker {marker descInlines markerW {indentX 0}} 
             _renderStyledLine $lineSegs $y $xText $fontSize
         }
         _advanceY $lh
+    }
+
+    # Loose / multi-paragraph item: render each further paragraph hang-indented
+    # to the text column, with a small gap before it.
+    foreach para $extraParas {
+        _advanceY [expr {$lh * 0.4}]
+        set pSegs  [_inlinesToSegments $para "normal"]
+        set pLines [_wrapStyledSegments $pSegs $wText $fontSize]
+        foreach lineSegs $pLines {
+            _ensureSpace $lh
+            set y [expr {[dict get $st y] + $fontSize}]
+            _renderStyledLine $lineSegs $y $xText $fontSize
+            _advanceY $lh
+        }
     }
 }
 
@@ -1505,7 +1528,7 @@ proc docir::pdf::_renderFootnoteDef {node} {
     foreach line $lines {
         _ensureSpace $lh
         set y [expr {[dict get $st y] + $fontSize}]
-        $pdf text $line -x [dict get $st margin] -y $y
+        $pdf text [::pdf4tcllib::unicode::sanitize $line] -x [dict get $st margin] -y $y
         _advanceY $lh
     }
     _advanceY 2
@@ -1625,7 +1648,7 @@ proc docir::pdf::_renderToc {tocHeadings} {
         foreach wline $wrappedLines {
             _ensureSpace $lh
             set wy [expr {[dict get $st y] + $entryFontSize}]
-            $pdf text $wline -x $entryX -y $wy
+            $pdf text [::pdf4tcllib::unicode::sanitize $wline] -x $entryX -y $wy
             _advanceY $lh
         }
     }
@@ -1709,7 +1732,7 @@ proc docir::pdf::_renderIndex {} {
             _ensureSpace [expr {$lh * 2}]
             _setFont [expr {$fontSize + 2}] bold
             set hy [expr {[dict get $st y] + $fontSize + 2}]
-            $pdf text $initial -x $x -y $hy
+            $pdf text [::pdf4tcllib::unicode::sanitize $initial] -x $x -y $hy
             _advanceY [expr {$lh + 2}]
             set lastInitial $initial
         }
@@ -1737,7 +1760,7 @@ proc docir::pdf::_renderIndex {} {
             set displayText "${displayText}..."
         }
 
-        $pdf text $displayText -x $entryX -y $ey
+        $pdf text [::pdf4tcllib::unicode::sanitize $displayText] -x $entryX -y $ey
 
         # Seitennummer rechtsbuendig
         set pageX [expr {$x + [dict get $st contentW] - $pageColW}]

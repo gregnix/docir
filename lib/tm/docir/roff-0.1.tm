@@ -233,8 +233,18 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
     set descIr   [dict get $item content]
 
     set termText [_renderInlines $term]
-    set descText [string trimright [_renderInlines $descIr] "\n"]
-    set descText [_protectLeadingDot $descText]
+    if {[dict exists $item blocks]} {
+        # Loose / multi-paragraph item: one paragraph per block, separated by .sp
+        set _parts {}
+        foreach _b [dict get $item blocks] {
+            lappend _parts [_protectLeadingDot \
+                [string trimright [_renderInlines [dict get $_b content]] "\n"]]
+        }
+        set descText [join $_parts "\n.sp\n"]
+    } else {
+        set descText [string trimright [_renderInlines $descIr] "\n"]
+        set descText [_protectLeadingDot $descText]
+    }
 
     switch -- $kind {
         tp -
@@ -524,6 +534,10 @@ proc ::docir::roff::_renderInlines {inlines} {
                 # und einem weiteren Newline, damit der nächste Inline
                 # auf einer neuen Zeile landet.
                 append out "\n.br\n"
+            }
+            softbreak {
+                # Soft break: nroff fills paragraphs, so a space is enough.
+                append out " "
             }
             span {
                 # nroff hat keine class/id-Attribute — Text durchreichen.

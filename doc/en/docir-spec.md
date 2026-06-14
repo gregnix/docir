@@ -34,7 +34,7 @@ Concrete consequences:
 | Aspect | AST (e.g. `nroffparser`) | DocIR |
 |---|---|---|
 | Vocabulary | Mirrors the source (`section` = `.SH`, `subsection` = `.SS`, `heading` = `.TH`) | Sink-near, source-format-neutral (`heading` with `level 1..6`, `doc_header`) |
-| Inline set | Small and source-near (in the nroff AST: `text`/`strong`/`emphasis`) | Richer and sink-near (12 types incl. `underline`/`strike`/`code`/`link`/`image`/`linebreak`/`span`/`footnote_ref`) |
+| Inline set | Small and source-near (in the nroff AST: `text`/`strong`/`emphasis`) | Richer and sink-near (13 types incl. `underline`/`strike`/`code`/`link`/`image`/`linebreak`/`softbreak`/`span`/`footnote_ref`) |
 | Variability | Differs per source format | One spec for all sources |
 | Responsibility | Preserves what the source says | Provides what sinks need |
 
@@ -303,6 +303,7 @@ Inlines are dicts `{type <t> text <s>}` plus optional fields:
 | `link`         | `text`, `name`, `section` | `href`               |
 | `image`        | `text` (= alt), `url`     | `title`              |
 | `linebreak`    | (none)                    | –                    |
+| `softbreak`    | (none)                    | –                    |
 | `span`         | `text`                    | `class`, `id`        |
 | `footnote_ref` | `text` (= display num)    | `id` (target)        |
 
@@ -320,6 +321,13 @@ is the alt-text. Sinks that cannot render images (nroff, text) emit
 **`linebreak`** — hard line break. The inline carries no text; it forces
 a line break inside a paragraph. HTML `<br/>`, Markdown two trailing
 spaces + newline, nroff `.br`, SVG/PDF newline within text run.
+
+**`softbreak`** — soft line break between two lines of the same paragraph
+(mirrors `linebreak`, carries no text). Each sink chooses its presentation:
+HTML emits a newline (CommonMark; identical to a space in a browser),
+Markdown a newline (soft break in the source), and PDF / ODT / nroff /
+text / tilecommon / renderer-tk a single space — so non-HTML output is
+visually unchanged.
 
 **`span`** — TIP-700 inline container. The `text` is the displayed
 content; `class` and `id` are HTML/CSS attributes preserved by

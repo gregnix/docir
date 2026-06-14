@@ -558,6 +558,9 @@ proc docir::html::_renderList {node level} {
         append wrapClass " indent-$indentLevel"
     }
 
+    set lmeta [dict get $node meta]
+    set loose [expr {[dict exists $lmeta loose] ? [dict get $lmeta loose] : 0}]
+
     set out "$ind<$tag class=\"$wrapClass\">\n"
 
     foreach item [dict get $node content] {
@@ -568,14 +571,14 @@ proc docir::html::_renderList {node level} {
             append out [_renderBlock $item [expr {$level + 1}]]
             continue
         }
-        append out [_renderListItemInside $item $tag $itemTag [expr {$level + 1}]]
+        append out [_renderListItemInside $item $tag $itemTag [expr {$level + 1}] $loose]
     }
 
     append out "$ind</$tag>\n"
     return $out
 }
 
-proc docir::html::_renderListItemInside {item parentTag itemTag level} {
+proc docir::html::_renderListItemInside {item parentTag itemTag level {loose 0}} {
     set m [dict get $item meta]
     set term  [_dictDef $m term {}]
     set descInlines [dict get $item content]
@@ -588,6 +591,19 @@ proc docir::html::_renderListItemInside {item parentTag itemTag level} {
         return "$ind<dt>$termHtml</dt>\n$ind<dd>$descHtml</dd>\n"
     }
 
+    # Multi-paragraph (loose) item: render each paragraph as its own <p>.
+    if {[dict exists $item blocks]} {
+        set body ""
+        foreach b [dict get $item blocks] {
+            append body "$ind  <p>[_renderInlines [dict get $b content]]</p>\n"
+        }
+        return "$ind<$itemTag>\n$body$ind</$itemTag>\n"
+    }
+    # Loose list, single-paragraph item: wrap the content in <p>.
+    if {$loose} {
+        return "$ind<$itemTag>\n$ind  <p>[_renderInlines $descInlines]</p>\n$ind</$itemTag>\n"
+    }
+    # Tight item: inline content (unchanged).
     set inner [_renderInlines $descInlines]
     return "$ind<$itemTag>$inner</$itemTag>\n"
 }
@@ -828,6 +844,7 @@ proc docir::html::_renderInline {inline} {
             return $out
         }
         linebreak  { return "<br/>" }
+        softbreak  { return "\n" }
         span {
             # <span class="..." id="...">text</span> — class/id optional
             set attrs ""
@@ -865,33 +882,55 @@ proc docir::html::_renderInline {inline} {
     }
 }
 
+# CommonMark-style URL encoding for link/image destinations: percent-encode
+# unsafe bytes (UTF-8), preserve existing %XX sequences and a safe set of
+# characters. Note: this is the HTML href encoding; & is HTML-escaped later by
+# _escapeAttr (so "a&b" -> "a&amp;b", "a b" -> "a%20b").
+proc docir::html::_encodeUrl {url} {
+    set safe {-_.~!*'();:@&=+$,/?#[]}
+    set bytes [encoding convertto utf-8 $url]
+    set n [string length $bytes]
+    set out ""
+    for {set i 0} {$i < $n} {incr i} {
+        set ch [string index $bytes $i]
+        # Preserve an existing percent-encoded sequence %XX.
+        if {$ch eq "%" && $i + 2 < $n
+            && [string match {[0-9A-Fa-f]} [string index $bytes [expr {$i+1}]]]
+            && [string match {[0-9A-Fa-f]} [string index $bytes [expr {$i+2}]]]} {
+            append out $ch
+            continue
+        }
+        scan $ch %c b
+        if {($b >= 0x30 && $b <= 0x39) || ($b >= 0x41 && $b <= 0x5A)
+            || ($b >= 0x61 && $b <= 0x7A) || [string first $ch $safe] >= 0} {
+            append out $ch
+        } else {
+            append out [format %%%02X $b]
+        }
+    }
+    return $out
+}
+
 proc docir::html::_renderLinkInline {inline escTxt} {
     variable opts
-    set href ""
-    # Nur ein NICHT-LEERES href-Feld nehmen — DocIR-Knoten haben
-    # manchmal href="" plus name/section (vom roff-Mapper)
-    if {[dict exists $inline href] && [dict get $inline href] ne ""} {
-        set href [dict get $inline href]
-    } elseif {[dict exists $inline name]} {
-        # name + section : link auflösen
-        set name    [dict get $inline name]
+    set name    [_dictDef $inline name ""]
+    set hasHref [dict exists $inline href]
+    set href    ""
+    if {$name ne ""} {
+        # Manpage cross-reference: resolve name (+section) into an href.
         set section [_dictDef $inline section ""]
         set lr [dict get $opts linkResolve]
         if {$lr ne ""} {
-            # Externer Resolver hat Vorrang
             if {[catch {{*}$lr $name $section} resolved]} {
                 set href ""
             } else {
                 set href $resolved
             }
         } else {
-            # linkMode-basiertes Mapping
             set linkMode [dict get $opts linkMode]
             set part [dict get $opts part]
             switch $linkMode {
                 online {
-                    # TkCmd für Tk-Befehle (part enthält "Tk"),
-                    # TclCmd für alles andere
                     set subdir [expr {[string match -nocase "*tk*" $part] ? "TkCmd" : "TclCmd"}]
                     set href "https://www.tcl.tk/man/tcl9.0/${subdir}/${name}.htm"
                 }
@@ -908,13 +947,23 @@ proc docir::html::_renderLinkInline {inline escTxt} {
                 }
             }
         }
-    }
-    if {$href eq ""} {
+        # An unresolvable manpage reference degrades to plain text.
+        if {$href eq ""} { return $escTxt }
+    } elseif {$hasHref} {
+        # A regular link. An explicit (even empty) href is rendered as an
+        # anchor -- CommonMark allows <a href="">.
+        set href [_encodeUrl [dict get $inline href]]
+    } else {
+        # Neither a manpage ref nor an href field: emit plain text.
         return $escTxt
     }
-    return "<a href=\"[_escapeAttr $href]\">$escTxt</a>"
+    set titleAttr ""
+    set title [_dictDef $inline title ""]
+    if {$title ne ""} {
+        set titleAttr " title=\"[_escapeAttr $title]\""
+    }
+    return "<a href=\"[_escapeAttr $href]\"$titleAttr>$escTxt</a>"
 }
-
 # ============================================================
 # HTML escaping
 # ============================================================
@@ -925,7 +974,6 @@ proc docir::html::_escapeHtml {s} {
         "<"  "&lt;"
         ">"  "&gt;"
         "\"" "&quot;"
-        "'"  "&#39;"
     } $s]
 }
 
@@ -935,6 +983,5 @@ proc docir::html::_escapeAttr {s} {
         "<"  "&lt;"
         ">"  "&gt;"
         "\"" "&quot;"
-        "'"  "&#39;"
     } $s]
 }
