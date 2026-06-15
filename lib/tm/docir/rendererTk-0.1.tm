@@ -451,6 +451,22 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 # _insertInlines – Inline-Sequenz in Text-Widget einfügen
 # ============================================================
 
+# Forward mouse-wheel events from an embedded widget and all its descendants
+# to the text widget. Without this, the embedded table grabs the wheel event,
+# so scrolling stops while the pointer is over the table. Mirrors the fix in
+# mdstack::viewer. Prefers tkutils::tkuwheel::redirect when available, else
+# falls back to local recursive bindings (no hard tkutils dependency).
+proc docir::renderer::tk::_wheelToText {t w} {
+    if {![catch {package require tkutils::tkuwheel}]} {
+        ::tkutils::tkuwheel::redirect $t $w
+        return
+    }
+    bind $w <MouseWheel> "$t yview scroll \[expr {-%D/30}] units"
+    bind $w <Button-4>   "$t yview scroll -3 units"
+    bind $w <Button-5>   "$t yview scroll 3 units"
+    foreach child [winfo children $w] { docir::renderer::tk::_wheelToText $t $child }
+}
+
 # Variant B: a real embedded Tk table (ttk widgets in a grid) instead of the
 # monospace box. Enabled via options "tablemode frame". Cell content is reduced
 # to plain text (same tradeoff as the box variant); column alignments from
@@ -516,6 +532,8 @@ proc docir::renderer::tk::_renderTableFrame {textWidget node meta options} {
 
     $textWidget insert end "\n" normal
     $textWidget window create end -window $tf -padx 2 -pady 2
+    # keep wheel scrolling working while the pointer is over the embedded table
+    docir::renderer::tk::_wheelToText $textWidget $tf
     $textWidget insert end "\n\n" normal
     return
 }

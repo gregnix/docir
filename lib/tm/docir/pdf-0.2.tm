@@ -134,7 +134,8 @@ proc docir::pdf::_normalizeOptions {options} {
         generateIndex      0 \
         indexTitle         "Stichwortverzeichnis" \
         indexLevel         3 \
-        bookmarks          1]
+        bookmarks          1 \
+        cid                0]
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
     }
@@ -183,6 +184,12 @@ proc docir::pdf::_initFonts {} {
         if {$v ne ""} {
             lappend fontArgs $argKey $v
         }
+    }
+    # CID-Modus: volles Unicode-Subset (Greek, Math, Cyrillic, Pfeile ...)
+    # statt des 256-Zeichen-Encodings. Nur Glyphen, die der Font wirklich
+    # hat, werden gerendert; fehlende (z.B. CJK in DejaVu) bleiben .notdef/?.
+    if {[dict exists $opts cid] && [dict get $opts cid]} {
+        lappend fontArgs -cid 1
     }
     # Wenn fontArgs leer: pdf4tcllib::fonts::init nutzt seine
     # eingebauten Defaults (Standard-PDF-Fonts ohne Embedding)
@@ -899,6 +906,43 @@ proc docir::pdf::_renderPre {node} {
         } else {
             set txt $content
         }
+        # Try rendered display math via pdf4tcllib::math::renderLatex; on any
+        # error fall back to the raw $$...$$ text rendering so PDF export can
+        # never break on an unsupported construct.
+        set latex [string trim [regsub -all {\s+} $txt " "]]
+        set rendered 0
+        if {$latex ne "" \
+                && [llength [info commands ::pdf4tcllib::math::renderLatex]]} {
+            set mathFont [::pdf4tcllib::fonts::fontSans]
+            set msize [expr {$fontSize + 2}]
+            if {[catch {
+                lassign [::pdf4tcllib::math::measureLatex $pdf $latex \
+                            -size $msize -font $mathFont] mw mh mdp
+                set padding 6
+                set blockH [expr {$mh + $mdp + 2 * $padding}]
+                _ensureSpace $blockH
+                set yTop [dict get $st y]
+                $pdf setFillColor 0.95 0.94 0.88
+                $pdf rectangle [dict get $st margin] $yTop \
+                    [dict get $st contentW] $blockH -filled true -stroke false
+                $pdf setFillColor 0 0 0
+                set cx [expr {[dict get $st margin] \
+                        + ([dict get $st contentW] - $mw) / 2.0}]
+                if {$cx < [expr {[dict get $st margin] + 4}]} {
+                    set cx [expr {[dict get $st margin] + 4}]
+                }
+                set baseY [expr {$yTop + $padding + $mh}]
+                ::pdf4tcllib::math::renderLatex $pdf $cx $baseY $latex \
+                    -size $msize -font $mathFont
+                _advanceY $blockH
+                _advanceY 4
+                set rendered 1
+            } err]} {
+                set rendered 0
+            }
+        }
+        if {$rendered} { return }
+        # Fallback: raw $$...$$ as monospace text
         set lines [concat {$$} [split $txt "\n"] {$$}]
         _setFont $fontSize mono
         set x [dict get $st margin]
