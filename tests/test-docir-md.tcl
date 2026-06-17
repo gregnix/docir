@@ -456,6 +456,26 @@ test "spec.mdsource.image_block" {
     assert $found "image-Block gefunden"
 }
 
+test "spec.mdsource.span_across_linebreak_single_node" {
+    # A bracketed span split across a source-text line break arrives from the
+    # parser as one span whose content is text/softbreak/text. fromAst must
+    # flatten it into a SINGLE span node (softbreak -> space), not emit one
+    # span per inner inline — otherwise a multi-word index term would split
+    # into several entries in every sink.
+    set ast [mdstack::parser::parse "x \[intermediate\nrepresentation\]\{.index\} y"]
+    set ir  [::docir::md::fromAst $ast]
+    set spans {}
+    foreach n $ir {
+        if {[dict get $n type] ne "paragraph"} continue
+        foreach in [dict get $n content] {
+            if {[dict get $in type] eq "span"} { lappend spans $in }
+        }
+    }
+    assert [expr {[llength $spans] == 1}] "one span node (got [llength $spans])"
+    assert [string equal [dict get [lindex $spans 0] text] \
+        "intermediate representation"] "span text joined with a space"
+}
+
 test "spec.mdsource.image_with_title" {
     set ast [mdstack::parser::parse "Text with !\[alt\](img.png \"My Title\") here."]
     set ir  [::docir::md::fromAst $ast]

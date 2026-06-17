@@ -435,16 +435,28 @@ proc docir::md::_mapInlines {inlines} {
             }
             span {
                 # TIP-700: {type span content {nested} class? id?}
+                # The whole span content becomes the text of ONE span node,
+                # with softbreaks turned into spaces. A span split across a
+                # source-text line break ([a\nb]{.c}) arrives as
+                # text/softbreak/text; flattening it here keeps it a single
+                # node for every sink (PDF, HTML, ...), instead of emitting
+                # one span per inner inline.
                 set cls [_dictDef $inline class ""]
                 set id  [expr {[dict exists $inline id]    ? [dict get $inline id]    : ""}]
                 set inner [docir::md::_mapInlines \
                     [_dictDef $inline content {}]]
+                set buf ""
                 foreach i $inner {
-                    set spanDict [dict create type span text [_inlineText $i]]
-                    if {$cls ne ""} { dict set spanDict class $cls }
-                    if {$id  ne ""} { dict set spanDict id $id }
-                    lappend result $spanDict
+                    if {[dict get $i type] eq "softbreak"} {
+                        append buf " "
+                    } else {
+                        append buf [_inlineText $i]
+                    }
                 }
+                set spanDict [dict create type span text [string trim $buf]]
+                if {$cls ne ""} { dict set spanDict class $cls }
+                if {$id  ne ""} { dict set spanDict id $id }
+                lappend result $spanDict
             }
             footnote_ref {
                 # mdparser: {type footnote_ref id "..." num "..."?}
