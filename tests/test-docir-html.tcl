@@ -782,4 +782,76 @@ test "html.block.div_no_attrs" {
     assert [expr {[string first {<div>} $out] >= 0}]
 }
 
+# ============================================================
+# Sachindex aus [Begriff]{.index} (includeIndex)
+# ============================================================
+#
+# Ein span mit class "index" wird als Index-Begriff erfasst, bekommt einen
+# Sprung-Anker und erscheint im Index am Ende mit Links zu den Vorkommen
+# (Linktext = Abschnittstitel). Die IR wird direkt gebaut.
+
+proc _htmlIdxPara {pre term post} {
+    return [dict create type paragraph content [list \
+        [dict create type text text $pre] \
+        [dict create type span text $term class index] \
+        [dict create type text text $post]] meta {}]
+}
+
+test "html.index.off_by_default" {
+    set ir [list [_htmlIdxPara "see " "Widget" "."]]
+    set out [docir::html::render $ir [dict create standalone 0]]
+    assert [expr {[string first {class="index"} $out] >= 0}] "span still rendered with class"
+    assert [expr {[string first {<nav class="index">} $out] < 0}] \
+        "no index section without includeIndex"
+}
+
+test "html.index.section_present" {
+    set ir [list [_htmlIdxPara "see " "Widget" "."]]
+    set out [docir::html::render $ir [dict create standalone 0 \
+        includeIndex 1 indexTitle "Stichwortverzeichnis"]]
+    assert [expr {[string first {<nav class="index">} $out] >= 0}] "index section present"
+    assert [expr {[string first "Stichwortverzeichnis" $out] >= 0}] "index title present"
+    assert [expr {[string first "Widget" $out] >= 0}] "term listed in index"
+}
+
+test "html.index.anchor_on_span" {
+    set ir [list [_htmlIdxPara "see " "Widget" "."]]
+    set out [docir::html::render $ir [dict create standalone 0 includeIndex 1]]
+    assert [regexp {<span class="index" id="idx-[0-9]+">Widget</span>} $out] \
+        "index span carries a jump anchor"
+}
+
+test "html.index.alphabetical_with_links" {
+    set ir [list \
+        [_htmlIdxPara "" "Zebra" ""] \
+        [_htmlIdxPara "" "Alpha" ""]]
+    set out [docir::html::render $ir [dict create standalone 0 includeIndex 1]]
+    set pa [string first {index-term">Alpha} $out]
+    set pz [string first {index-term">Zebra} $out]
+    assert [expr {$pa >= 0 && $pz >= 0 && $pa < $pz}] "terms alphabetical (Alpha before Zebra)"
+    assert [regexp {<a href="#idx-[0-9]+">} $out] "index links to span anchor"
+}
+
+test "html.index.section_title_as_linktext" {
+    set ir [list \
+        [dict create type heading content {{type text text "Chapter One"}} meta {level 1 id chap-one}] \
+        [_htmlIdxPara "uses " "Thingamajig" "."]]
+    set out [docir::html::render $ir [dict create standalone 0 includeIndex 1]]
+    assert [expr {[string first {>Chapter One</a>} $out] >= 0}] \
+        "section title used as index link text"
+}
+
+test "html.index.same_section_deduplicated" {
+    # Zwei Vorkommen im selben Abschnitt -> ein Link im Index.
+    set ir [list \
+        [dict create type heading content {{type text text "Only Chapter"}} meta {level 1 id only}] \
+        [_htmlIdxPara "first " "Dupterm" "." ] \
+        [_htmlIdxPara "second " "Dupterm" "."]]
+    set out [docir::html::render $ir [dict create standalone 0 includeIndex 1]]
+    # Genau ein Link im Index-Eintrag fuer Dupterm
+    regexp {index-term">Dupterm</span>:(.*?)</li>} $out -> linkPart
+    set linkCount [llength [regexp -all -inline {<a href} $linkPart]]
+    assert [expr {$linkCount == 1}] "duplicate occurrences in one section collapse to one link ($linkCount)"
+}
+
 test::runAll

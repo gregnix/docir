@@ -550,6 +550,318 @@ test "spec.pdf.image.resolve_path" {
         "Empty bleibt empty"
 }
 
+# ============================================================
+# TOC mit Seitenzahlen (generateToc, Zwei-Pass)
+# ============================================================
+#
+# render() rendert bei -generateToc 1 das Dokument iterativ, bis die
+# Heading-Seiten stabil sind, und stellt ein Inhaltsverzeichnis mit
+# rechtsbuendigen Seitenzahlen voran. Diese Tests pruefen:
+#   - generateToc fuegt eine TOC-Seite mit Titel + Eintraegen hinzu,
+#   - tocTitle ist anpassbar,
+#   - die angezeigte Seitenzahl entspricht der echten Body-Seite,
+#   - tocDepth begrenzt die gelisteten Level,
+#   - ohne generateToc gibt es kein TOC (unveraenderter Pfad).
+
+test "spec.pdf.toc.disabled_by_default" {
+    set ir [list \
+        [dict create type heading content {{type text text "OnlyChapter"}} meta {level 1}] \
+        [dict create type paragraph content {{type text text "Body."}} meta {}]]
+    set out [file join $::TMPBASE "docir-toc-off-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out {}
+    assert [file exists $out] "PDF without TOC created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-toc-off-[pid].txt"]
+        exec pdftotext $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        assert [expr {[string first "Inhaltsverzeichnis" $txt] < 0}] \
+            "no TOC title when generateToc is off"
+    }
+    catch {file delete $out}
+}
+
+test "spec.pdf.toc.page_added_with_title" {
+    set ir [list \
+        [dict create type heading content {{type text text "IntroChapter"}} meta {level 1}] \
+        [dict create type paragraph content {{type text text "Body."}} meta {}]]
+    set out [file join $::TMPBASE "docir-toc-on-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateToc 1 tocTitle "Inhaltsverzeichnis"]
+    assert [file exists $out] "PDF with TOC created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-toc-on-[pid].txt"]
+        exec pdftotext $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        assert [expr {[string first "Inhaltsverzeichnis" $txt] >= 0}] "TOC title present"
+        assert [expr {[string first "IntroChapter" $txt] >= 0}] "heading listed in TOC"
+    }
+    catch {file delete $out}
+}
+
+test "spec.pdf.toc.custom_title" {
+    set ir [list [dict create type heading content {{type text text "X"}} meta {level 1}]]
+    set out [file join $::TMPBASE "docir-toc-ct-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateToc 1 tocTitle "Table of Contents"]
+    assert [file exists $out] "PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-toc-ct-[pid].txt"]
+        exec pdftotext $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        assert [expr {[string first "Table of Contents" $txt] >= 0}] "tocTitle is customisable"
+    }
+    catch {file delete $out}
+}
+
+test "spec.pdf.toc.page_numbers_match_body" {
+    # Core check: the page number shown in the TOC equals the page on which
+    # the heading actually appears in the body (two-pass convergence).
+    set ir {}
+    foreach title {AlphaUniqueChap BetaUniqueChap GammaUniqueChap} {
+        lappend ir [dict create type heading \
+            content [list [dict create type text text $title]] meta {level 1}]
+        for {set i 0} {$i < 45} {incr i} {
+            lappend ir [dict create type paragraph \
+                content [list [dict create type text text "Filler $i for $title to push pages."]] \
+                meta {}]
+        }
+    }
+    set out [file join $::TMPBASE "docir-toc-pn-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateToc 1 tocDepth 1]
+    assert [file exists $out] "TOC PDF created"
+
+    if {[auto_execok pdftotext] eq ""} { skip "pdftotext not available" }
+    set txtFile [file join $::TMPBASE "docir-toc-pn-[pid].txt"]
+    exec pdftotext -layout $out $txtFile
+    set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+    set txt [read $fh]; close $fh
+    file delete -force $txtFile
+
+    # pdftotext separates pages with a form-feed (0x0C).
+    set pages [split $txt \x0C]
+
+    # TOC page number for the last chapter (guaranteed > 1). Take the last
+    # integer on the TOC line carrying the title (robust against spacing).
+    set tocNum ""
+    foreach line [split [lindex $pages 0] \n] {
+        if {[string first GammaUniqueChap $line] >= 0} {
+            set nums [regexp -all -inline {\d+} $line]
+            if {[llength $nums] > 0} { set tocNum [lindex $nums end] }
+        }
+    }
+    assert [expr {[string is integer -strict $tocNum]}] "TOC shows a page number ($tocNum)"
+
+    # Actual body page: first page after the TOC whose text carries the title.
+    set bodyPage 0
+    for {set i 1} {$i < [llength $pages]} {incr i} {
+        if {[string first GammaUniqueChap [lindex $pages $i]] >= 0} {
+            set bodyPage [expr {$i + 1}]
+            break
+        }
+    }
+    assert [expr {$bodyPage > 0}] "chapter found in body (page $bodyPage)"
+    assertEqual $bodyPage $tocNum "TOC page number matches the real body page"
+    catch {file delete $out}
+}
+
+test "spec.pdf.toc.depth_limits_levels" {
+    # tocDepth 1 -> only level-1 headings appear in the TOC.
+    set ir [list \
+        [dict create type heading content {{type text text "TopLevelChap"}} meta {level 1}] \
+        [dict create type heading content {{type text text "SubLevelSec"}}  meta {level 2}] \
+        [dict create type paragraph content {{type text text "Body."}} meta {}]]
+    set out [file join $::TMPBASE "docir-toc-depth-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateToc 1 tocDepth 1]
+    assert [file exists $out] "PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-toc-depth-[pid].txt"]
+        exec pdftotext $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        set tocPage [lindex [split $txt \x0C] 0]
+        assert [expr {[string first "TopLevelChap" $tocPage] >= 0}] "level-1 listed in TOC"
+        assert [expr {[string first "SubLevelSec" $tocPage] < 0}] \
+            "level-2 omitted from TOC at tocDepth 1"
+    }
+    catch {file delete $out}
+}
+
+# ============================================================
+# Sachindex aus [Begriff]{.index}-Markierungen (generateIndex)
+# ============================================================
+#
+# Ein span mit class "index" markiert einen Index-Begriff. Der Begriff
+# bleibt im Fliesstext sichtbar und wird mit der Seite, auf der er
+# tatsaechlich gerendert wird, in den Sachindex aufgenommen. Mehrere
+# Vorkommen eines Begriffs ergeben mehrere Seiten. Diese Tests bauen die
+# IR direkt (unabhaengig vom Markdown-Parser).
+
+# Helper: Paragraph mit einem Index-Span bauen.
+proc _idxPara {pre term post} {
+    return [dict create type paragraph content [list \
+        [dict create type text text $pre] \
+        [dict create type span text $term class index] \
+        [dict create type text text $post]] meta {}]
+}
+
+test "spec.pdf.index.collects_marked_terms" {
+    set ir [list \
+        [dict create type heading content {{type text text "Chap"}} meta {level 1}] \
+        [_idxPara "About " "Coroutine" " here."]]
+    set out [file join $::TMPBASE "docir-idx-collect-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateIndex 1 indexTitle "Stichwortverzeichnis"]
+    assert [file exists $out] "index PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-idx-collect-[pid].txt"]
+        exec pdftotext $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        assert [expr {[string first "Stichwortverzeichnis" $txt] >= 0}] "index section present"
+        assert [expr {[string first "Coroutine" $txt] >= 0}] "marked term listed in index"
+    }
+    catch {file delete $out}
+}
+
+# A multi-word index term split by the parser at a source-text line break
+# arrives as several consecutive index spans (term / "" / term). They must
+# coalesce into a single index entry (_coalesceIndexSpans), not be recorded
+# as separate terms under different initial letters.
+test "spec.pdf.index.multiword_coalesced" {
+    set ir [list \
+        [dict create type heading content {{type text text "Chap"}} meta {level 1}] \
+        [dict create type paragraph content [list \
+            [dict create type text text "The "] \
+            [dict create type span text "intermediate" class index] \
+            [dict create type span text "" class index] \
+            [dict create type span text "representation" class index] \
+            [dict create type text text " is flat."]] meta {}]]
+    set out [file join $::TMPBASE "docir-idx-coalesce-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateIndex 1 indexTitle "Stichwortverzeichnis"]
+    assert [file exists $out] "index PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-idx-coalesce-[pid].txt"]
+        exec pdftotext -layout $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        # Check only the index section (after its heading), so the body's
+        # own "intermediate representation" does not mask a split entry.
+        set ipos [string first "Stichwortverzeichnis" $txt]
+        assert [expr {$ipos >= 0}] "index section present"
+        set idxSection [string range $txt $ipos end]
+        assert [expr {[string first "intermediate representation" $idxSection] >= 0}] \
+            "multi-word term coalesced into one index entry"
+    }
+    catch {file delete $out}
+}
+
+test "spec.pdf.index.none_without_markers" {
+    # Keine .index-Marker und keine indexLevel-Headings -> keine Index-Seite.
+    set ir [list \
+        [dict create type heading content {{type text text "Chap"}} meta {level 1}] \
+        [dict create type paragraph content {{type text text "Plain body."}} meta {}]]
+    set out [file join $::TMPBASE "docir-idx-none-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateIndex 1 indexTitle "Stichwortverzeichnis"]
+    assert [file exists $out] "PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-idx-none-[pid].txt"]
+        exec pdftotext $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        assert [expr {[string first "Stichwortverzeichnis" $txt] < 0}] \
+            "no index section when nothing is marked"
+    }
+    catch {file delete $out}
+}
+
+test "spec.pdf.index.page_matches_body" {
+    # Begriff-Seite im Index == Seite, auf der der Begriff im Body steht.
+    set ir [list [dict create type heading content {{type text text "Start"}} meta {level 1}]]
+    for {set i 0} {$i < 55} {incr i} {
+        lappend ir [dict create type paragraph \
+            content [list [dict create type text text "Filler $i pushing the term down."]] meta {}]
+    }
+    lappend ir [_idxPara "Topic " "Singletonpattern" " explained."]
+    set out [file join $::TMPBASE "docir-idx-page-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateIndex 1 indexTitle "Stichwortverzeichnis"]
+    assert [file exists $out] "index PDF created"
+
+    if {[auto_execok pdftotext] eq ""} { skip "pdftotext not available" }
+    set txtFile [file join $::TMPBASE "docir-idx-page-[pid].txt"]
+    exec pdftotext -layout $out $txtFile
+    set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+    set txt [read $fh]; close $fh
+    file delete -force $txtFile
+
+    set pages [split $txt \x0C]
+    # Index-Zahl fuer den Begriff
+    set idxNum ""
+    foreach line [split $txt \n] {
+        if {[string first "Singletonpattern" $line] >= 0} {
+            set nums [regexp -all -inline {\d+} $line]
+            if {[llength $nums] > 0} { set idxNum [lindex $nums end] }
+        }
+    }
+    assert [expr {[string is integer -strict $idxNum]}] "index shows a page number ($idxNum)"
+    # Echte Body-Seite (Vorkommen ausserhalb der Index-Seite)
+    set bodyPage 0
+    for {set i 0} {$i < [llength $pages]} {incr i} {
+        set p [lindex $pages $i]
+        if {[string first "Singletonpattern" $p] >= 0 && [string first "Stichwortverzeichnis" $p] < 0} {
+            set bodyPage [expr {$i + 1}]
+            break
+        }
+    }
+    assert [expr {$bodyPage > 0}] "term found in body (page $bodyPage)"
+    assertEqual $bodyPage $idxNum "index page matches the real body page"
+    catch {file delete $out}
+}
+
+test "spec.pdf.index.multiple_occurrences" {
+    # Derselbe Begriff zweimal -> zwei Seiten im selben Eintrag.
+    set ir [list [dict create type heading content {{type text text "A"}} meta {level 1}]]
+    lappend ir [_idxPara "First " "Repeatedterm" " mention."]
+    for {set i 0} {$i < 55} {incr i} {
+        lappend ir [dict create type paragraph \
+            content [list [dict create type text text "Spacer $i."]] meta {}]
+    }
+    lappend ir [_idxPara "Second " "Repeatedterm" " mention."]
+    set out [file join $::TMPBASE "docir-idx-multi-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create generateIndex 1 indexTitle "Stichwortverzeichnis"]
+    assert [file exists $out] "index PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-idx-multi-[pid].txt"]
+        exec pdftotext -layout $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        set idxLine ""
+        foreach line [split $txt \n] {
+            if {[string first "Repeatedterm" $line] >= 0} { set idxLine $line }
+        }
+        set nums [regexp -all -inline {\d+} $idxLine]
+        assert [expr {[llength $nums] >= 2}] "two pages listed for repeated term ($nums)"
+    }
+    catch {file delete $out}
+}
+
 }  ;# end pdf4tcl-availability block
 
 test::runAll

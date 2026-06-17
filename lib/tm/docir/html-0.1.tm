@@ -40,6 +40,13 @@ package require docir 0.1
 
 namespace eval ::docir::html {
     namespace export render renderInline
+
+    # Subject-index collection, filled while rendering and consumed by
+    # _buildIndex. Reset at the start of every render call.
+    variable indexEntries {}
+    variable indexCounter 0
+    variable currentSectionTitle ""
+    variable currentSectionId ""
 }
 
 # ============================================================
@@ -63,6 +70,8 @@ proc docir::html::render {ir {options {}}} {
         theme       "default" \
         viewport    1 \
         includeToc  0 \
+        includeIndex 0 \
+        indexTitle  "Index" \
         linkMode    "local" \
         enableMermaid 0 \
         enableMath  0 \
@@ -70,6 +79,16 @@ proc docir::html::render {ir {options {}}} {
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
     }
+
+    # Reset the subject-index collection for this render run.
+    variable indexEntries
+    variable indexCounter
+    variable currentSectionTitle
+    variable currentSectionId
+    set indexEntries {}
+    set indexCounter 0
+    set currentSectionTitle ""
+    set currentSectionId ""
 
     # Title bestimmen
     set title [dict get $opts title]
@@ -97,10 +116,16 @@ proc docir::html::render {ir {options {}}} {
         set toc [_buildToc $ir]
     }
 
-    # Body rendern
+    # Body rendern (fuellt waehrenddessen die Index-Sammlung)
     set body ""
     foreach node $ir {
         append body [_renderBlock $node 0]
+    }
+
+    # Sachindex anhaengen wenn gewuenscht (nutzt die beim Rendern
+    # gesammelten [Begriff]{.index}-Vorkommen).
+    if {[dict get $opts includeIndex]} {
+        append body [_buildIndex]
     }
 
     if {![dict get $opts standalone]} {
@@ -180,6 +205,46 @@ proc docir::html::_buildToc {ir} {
         set escTxt [_escapeHtml $txt]
         set escId  [_escapeAttr $id]
         append out "  <li class=\"toc-level-$lv\"><a href=\"#$escId\">$escTxt</a></li>\n"
+    }
+    append out "</ul>\n</nav>\n"
+    return $out
+}
+
+# Baut den Sachindex aus den waehrend des Renderns gesammelten
+# [Begriff]{.index}-Vorkommen: Begriffe alphabetisch, je Begriff Links zu
+# allen Vorkommen. Linktext ist der Abschnittstitel; mehrere Vorkommen im
+# selben Abschnitt werden zu einem Link zusammengefasst. Ohne umgebenden
+# Abschnitt wird eine laufende Nummer als Linktext verwendet.
+proc docir::html::_buildIndex {} {
+    variable opts
+    variable indexEntries
+    if {[llength $indexEntries] == 0} { return "" }
+
+    set indexTitle [_dictDef $opts indexTitle "Index"]
+
+    # Begriff -> geordnete Liste von {anchor label}, dedupliziert pro Abschnitt.
+    set byTerm [dict create]
+    set seen   [dict create]
+    foreach e $indexEntries {
+        lassign $e term anchor secTitle secId
+        set key "$term\u0000[expr {$secId ne "" ? $secId : $anchor}]"
+        if {[dict exists $seen $key]} { continue }
+        dict set seen $key 1
+        dict lappend byTerm $term [list $anchor $secTitle]
+    }
+
+    set out "<nav class=\"index\">\n<h2>[_escapeHtml $indexTitle]</h2>\n<ul>\n"
+    foreach term [lsort -dictionary [dict keys $byTerm]] {
+        set links {}
+        set n 0
+        foreach occ [dict get $byTerm $term] {
+            incr n
+            lassign $occ anchor label
+            if {$label eq ""} { set label $n }
+            lappend links "<a href=\"#[_escapeAttr $anchor]\">[_escapeHtml $label]</a>"
+        }
+        append out "  <li><span class=\"index-term\">[_escapeHtml $term]</span>:\
+                    [join $links {, }]</li>\n"
     }
     append out "</ul>\n</nav>\n"
     return $out
@@ -457,12 +522,16 @@ proc docir::html::_renderHeading {node level} {
 
     # ID: aus meta wenn da, sonst aus dem reinen Text generieren
     set id [_dictDef $m id ""]
-    if {$id eq ""} {
-        set txt [_inlinesToText [dict get $node content]]
-        if {$txt ne ""} {
-            set id [_makeId $txt]
-        }
+    set txt [_inlinesToText [dict get $node content]]
+    if {$id eq "" && $txt ne ""} {
+        set id [_makeId $txt]
     }
+
+    # Aktuellen Abschnitt fuer den Index-Linktext merken.
+    variable currentSectionTitle
+    variable currentSectionId
+    set currentSectionTitle $txt
+    set currentSectionId $id
 
     set ind [_indent $level]
     if {$id ne ""} {
@@ -846,13 +915,27 @@ proc docir::html::_renderInline {inline} {
         linebreak  { return "<br/>" }
         softbreak  { return "\n" }
         span {
-            # <span class="..." id="...">text</span> — class/id optional
-            set attrs ""
-            if {[dict exists $inline class] && [dict get $inline class] ne ""} {
-                append attrs " class=\"[_escapeAttr [dict get $inline class]]\""
+            # <span class="..." id="...">text</span> — class/id optional.
+            # Ein span mit class "index" wird zugleich als Sachindex-Eintrag
+            # erfasst und bekommt einen Sprung-Anker (falls keine eigene id).
+            set cls [_dictDef $inline class ""]
+            set spanId [_dictDef $inline id ""]
+            if {[lsearch -exact [split $cls] index] >= 0} {
+                variable indexEntries
+                variable indexCounter
+                variable currentSectionTitle
+                variable currentSectionId
+                incr indexCounter
+                if {$spanId eq ""} { set spanId "idx-$indexCounter" }
+                lappend indexEntries \
+                    [list $txt $spanId $currentSectionTitle $currentSectionId]
             }
-            if {[dict exists $inline id] && [dict get $inline id] ne ""} {
-                append attrs " id=\"[_escapeAttr [dict get $inline id]]\""
+            set attrs ""
+            if {$cls ne ""} {
+                append attrs " class=\"[_escapeAttr $cls]\""
+            }
+            if {$spanId ne ""} {
+                append attrs " id=\"[_escapeAttr $spanId]\""
             }
             return "<span$attrs>$escTxt</span>"
         }

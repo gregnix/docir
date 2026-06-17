@@ -84,19 +84,69 @@ proc docir::pdf::_ensurePdf4tcl {} {
 proc docir::pdf::render {ir outputPath {options {}}} {
     _ensurePdf4tcl
     variable opts
+    variable st
     set opts [_normalizeOptions $options]
 
     _initFonts
 
-    set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true]
-    if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
-    if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
+    set genToc [expr {[dict exists $opts generateToc] && [dict get $opts generateToc]}]
 
-    $pdf startPage
-    _renderInto $pdf $ir
+    if {!$genToc} {
+        # Single-pass render (unchanged behaviour when no TOC is requested).
+        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true]
+        if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
+        if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
+        $pdf startPage
+        _renderInto $pdf $ir
+        $pdf write -file $outputPath
+        $pdf destroy
+        return
+    }
 
-    $pdf write -file $outputPath
-    $pdf destroy
+    # Two-pass TOC with page numbers.
+    #
+    # The page number of a heading is only known after a full render, and the
+    # TOC itself shifts every page that follows it. We therefore render the
+    # whole document repeatedly, feeding the heading pages observed in one
+    # iteration back into the next, until the page list is stable. Because the
+    # page number is placed right-aligned on the heading's own line, the TOC
+    # page count does not change once numbers are added, so this normally
+    # converges after the second iteration.
+    #
+    # _renderToc reads opts(_tocPageList): a list of page numbers indexed in
+    # heading document order (same order as st(headingsSeen)). Empty on the
+    # first iteration -> TOC laid out without numbers.
+    set tocPageList {}
+    set maxIter 6
+    set finalPdf ""
+    for {set iter 1} {$iter <= $maxIter} {incr iter} {
+        dict set opts _tocPageList $tocPageList
+        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true]
+        if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
+        if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
+        $pdf startPage
+        _renderInto $pdf $ir
+
+        # Collect heading pages in document order from the freshly built state.
+        set newList {}
+        foreach h [dict get $st headingsSeen] { lappend newList [dict get $h page] }
+
+        if {$newList eq $tocPageList} {
+            set finalPdf $pdf
+            break
+        }
+        set tocPageList $newList
+        if {$iter < $maxIter} {
+            $pdf destroy
+        } else {
+            set finalPdf $pdf
+            puts stderr "docir::pdf: TOC page numbers did not stabilise after\
+                         $maxIter iterations; using last result."
+        }
+    }
+
+    $finalPdf write -file $outputPath
+    $finalPdf destroy
     return
 }
 
@@ -246,9 +296,47 @@ proc docir::pdf::_styleToFont {style} {
     }
 }
 
+# Merges directly consecutive index spans back into a single term. A
+# bracketed span split across a source-text line break is emitted by the
+# parser as several adjacent index spans (e.g. "intermediate" / "" /
+# "representation"); without this they would be recorded as separate index
+# entries. Spans separated by any non-index inline (normal text, even a
+# single space) are left untouched, so distinct markers stay distinct.
+proc docir::pdf::_coalesceIndexSpans {inlines} {
+    set out {}
+    set runParts {}
+    set inRun 0
+    foreach inline $inlines {
+        set isIdx 0
+        if {[dict exists $inline type] && [dict get $inline type] eq "span"} {
+            if {[lsearch -exact [split [_dictDef $inline class ""]] index] >= 0} {
+                set isIdx 1
+            }
+        }
+        if {$isIdx} {
+            set t [string trim [_dictDef $inline text ""]]
+            if {$t ne ""} { lappend runParts $t }
+            set inRun 1
+        } else {
+            if {$inRun} {
+                lappend out [dict create type span class index \
+                    text [join $runParts " "]]
+                set runParts {}
+                set inRun 0
+            }
+            lappend out $inline
+        }
+    }
+    if {$inRun} {
+        lappend out [dict create type span class index text [join $runParts " "]]
+    }
+    return $out
+}
+
 # Wandelt eine docir-IR Inline-Liste in Segmente um.
 # Jedes Segment: {text style url}.  url ist nur bei link-Inlines gesetzt.
 proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
+    set inlines [_coalesceIndexSpans $inlines]
     set segs {}
     foreach inline $inlines {
         if {![dict exists $inline type]} continue
@@ -302,8 +390,17 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                 lappend segs [list " " $parentStyle ""]
             }
             span {
-                # TIP-700 span: text durchreichen mit parentStyle
-                lappend segs [list $text $parentStyle ""]
+                # TIP-700 span: Text mit parentStyle durchreichen. Ein span
+                # mit der Klasse "index" markiert einen Sachindex-Begriff:
+                # der Begriff bleibt sichtbar und wird ueber das vierte
+                # Segment-Feld bis _renderStyledLine getragen, wo die finale
+                # Seite erfasst wird (siehe _renderIndex).
+                set cls [_dictDef $inline class ""]
+                set idxTerm ""
+                if {[lsearch -exact [split $cls] index] >= 0} {
+                    set idxTerm [string trim $text]
+                }
+                lappend segs [list $text $parentStyle "" $idxTerm]
             }
             footnote_ref {
                 set marker [_dictDef $inline text "?"]
@@ -342,8 +439,9 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
         set text  [lindex $seg 0]
         set style [lindex $seg 1]
         set url   [lindex $seg 2]
+        set idx   [lindex $seg 3]
         if {$style eq "break"} {
-            lappend words [list "\n" "break" 0 ""]
+            lappend words [list "\n" "break" 0 "" ""]
             set prevTrailing 0
             continue
         }
@@ -365,7 +463,10 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
                 set spaced 1
             }
             if {[string index $w 0] in {, . : ; ! ? )}} { set spaced 0 }
-            lappend words [list $w $style $spaced $url]
+            # Index term only on the first word of the span, so the term is
+            # captured once at its starting position.
+            set wIdx [expr {$i == 0 ? $idx : ""}]
+            lappend words [list $w $style $spaced $url $wIdx]
         }
         set prevTrailing $hasTrailing
     }
@@ -382,7 +483,7 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
     set curWidth 0.0
 
     foreach word $words {
-        lassign $word w style spaced url
+        lassign $word w style spaced url wIdx
         if {$style eq "break"} {
             lappend lines $curLine
             set curLine {}
@@ -397,7 +498,7 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
 
         if {$curWidth + $extraW + $wordW > $maxW && [llength $curLine] > 0} {
             lappend lines $curLine
-            set curLine [list [list $w $style $url]]
+            set curLine [list [list $w $style $url $wIdx]]
             set curWidth $wordW
         } else {
             set prefix [expr {$needSpace ? " " : ""}]
@@ -405,14 +506,18 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
                 set lastSeg [lindex $curLine end]
                 set lastStyle [lindex $lastSeg 1]
                 set lastUrl   [lindex $lastSeg 2]
-                if {$lastStyle eq $style && $lastUrl eq $url} {
+                set lastIdx   [lindex $lastSeg 3]
+                # Only merge when neither segment carries an index term, so an
+                # index word stays an isolated segment (term captured once).
+                if {$lastStyle eq $style && $lastUrl eq $url \
+                        && $lastIdx eq "" && $wIdx eq ""} {
                     set curLine [lreplace $curLine end end \
-                        [list "[lindex $lastSeg 0]${prefix}${w}" $style $url]]
+                        [list "[lindex $lastSeg 0]${prefix}${w}" $style $url ""]]
                 } else {
-                    lappend curLine [list "${prefix}${w}" $style $url]
+                    lappend curLine [list "${prefix}${w}" $style $url $wIdx]
                 }
             } else {
-                lappend curLine [list $w $style $url]
+                lappend curLine [list $w $style $url $wIdx]
             }
             set curWidth [expr {$curWidth + $extraW + $wordW}]
         }
@@ -437,6 +542,7 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
         set text  [lindex $seg 0]
         set style [lindex $seg 1]
         set url   [lindex $seg 2]
+        set idxTerm [lindex $seg 3]
         if {$text eq ""} continue
 
         set fontName [_styleToFont $style]
@@ -449,6 +555,13 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
         $pdf text $sanitized -x $x -y $y
         if {$style eq "url"} {
             $pdf setFillColor 0 0 0
+        }
+
+        # Index term: record it with the page it is actually rendered on.
+        # pageNo is final here because _ensureSpace/_newPage runs before the
+        # line is rendered.
+        if {$idxTerm ne ""} {
+            dict lappend st indexEntries [list $idxTerm [dict get $st pageNo]]
         }
 
         set w [$pdf getStringWidth $sanitized]
@@ -524,7 +637,8 @@ proc docir::pdf::_initState {pdf} {
         pageNo         1 \
         headerTemplate $headerTemplate \
         footerTemplate $footerTemplate \
-        headingsSeen   {}]
+        headingsSeen   {} \
+        indexEntries   {}]
     # headingsSeen: Liste von dicts {level, text, page, anchor, isIndexEntry}
     # Wird von _renderHeading bei jedem Heading befuellt. Spaeter
     # ausgewertet von _renderToc (Vorab) und _renderIndex (Nach Hauptteil).
@@ -1662,9 +1776,18 @@ proc docir::pdf::_renderToc {tocHeadings} {
     $pdf setStrokeColor 0 0 0
     _advanceY 8
 
-    # TOC-Eintraege rendern
+    # TOC-Eintraege rendern. Wenn opts(_tocPageList) gefuellt ist (zweiter
+    # Render-Durchlauf), wird je Eintrag die Seitenzahl rechtsbuendig gesetzt.
+    # Der Index laeuft ueber ALLE gescannten Headings (auch die nach tocDepth
+    # uebersprungenen), damit er zu st(headingsSeen)/_tocPageList passt.
+    set pageList [expr {[dict exists $opts _tocPageList] ? [dict get $opts _tocPageList] : {}}]
+    set showPages [expr {[llength $pageList] > 0}]
+    set rightEdge [expr {[dict get $st margin] + [dict get $st contentW]}]
+
     set lh [_lineHeight $fontSize]
+    set idx -1
     foreach h $tocHeadings {
+        incr idx
         set lv [dict get $h level]
         if {$lv > $tocDepth} continue
 
@@ -1684,15 +1807,31 @@ proc docir::pdf::_renderToc {tocHeadings} {
             _setFont $entryFontSize ""
         }
 
+        # Seitenzahl rechtsbuendig — Breite reserviert den Platz am rechten
+        # Rand, damit der Titel nicht in die Zahl laeuft. getStringWidth misst
+        # im gerade gesetzten Eintrags-Font.
+        set pageStr ""
+        set pageW 0
+        if {$showPages} {
+            set pageStr [lindex $pageList $idx]
+            if {$pageStr ne ""} { set pageW [expr {[$pdf getStringWidth $pageStr] + 8}] }
+        }
+
         set sanitized [::pdf4tcllib::unicode::sanitize [dict get $h text]]
 
-        # Wrap falls noetig
-        set maxW [expr {[dict get $st contentW] - $indent}]
+        # Wrap falls noetig — Platz fuer die Seitenzahl rechts abziehen.
+        set maxW [expr {[dict get $st contentW] - $indent - $pageW}]
         set wrappedLines [_wrap $sanitized $maxW]
+        set firstLine 1
         foreach wline $wrappedLines {
             _ensureSpace $lh
             set wy [expr {[dict get $st y] + $entryFontSize}]
             $pdf text [::pdf4tcllib::unicode::sanitize $wline] -x $entryX -y $wy
+            if {$firstLine && $pageStr ne ""} {
+                set px [expr {$rightEdge - [$pdf getStringWidth $pageStr]}]
+                $pdf text $pageStr -x $px -y $wy
+                set firstLine 0
+            }
             _advanceY $lh
         }
     }
@@ -1710,21 +1849,30 @@ proc docir::pdf::_renderIndex {} {
     set fontSize [dict get $opts fontSize]
     set indexTitle [dict get $opts indexTitle]
 
-    # Nur Index-Eintraege (Begriffe auf indexLevel)
-    set entries {}
-    foreach h [dict get $st headingsSeen] {
-        if {[dict get $h isIndexEntry]} {
-            lappend entries [list \
-                [dict get $h text] \
-                [dict get $h page]]
+    # Sachindex aus [Begriff]{.index}-Markierungen (st indexEntries):
+    # Begriff -> Liste von Seiten. Fallback (keine Marker vorhanden): der
+    # fruehere Heading-Index (Ueberschriften auf indexLevel), kompatibel.
+    set byTerm [dict create]
+    foreach e [dict get $st indexEntries] {
+        lassign $e term page
+        dict lappend byTerm $term $page
+    }
+    if {[dict size $byTerm] == 0} {
+        foreach h [dict get $st headingsSeen] {
+            if {[dict get $h isIndexEntry]} {
+                dict lappend byTerm [dict get $h text] [dict get $h page]
+            }
         }
     }
-    if {[llength $entries] == 0} {
+    if {[dict size $byTerm] == 0} {
         return
     }
 
-    # Alphabetisch sortieren (case-insensitive)
-    set entries [lsort -dictionary -index 0 $entries]
+    # Begriffe alphabetisch; Seiten je Begriff dedupliziert + numerisch sortiert.
+    set entries {}
+    foreach term [lsort -dictionary [dict keys $byTerm]] {
+        lappend entries [list $term [lsort -integer -unique [dict get $byTerm $term]]]
+    }
 
     # Neue Seite fuer Index
     _newPage
@@ -1755,12 +1903,10 @@ proc docir::pdf::_renderIndex {} {
     # Eintraege rendern, gruppiert nach Anfangsbuchstaben
     set lh [_lineHeight $fontSize]
     set lastInitial ""
-
-    # Spaltenbreite fuer Seitennummer: rechtsbuendig
-    set pageColW 32
+    set rightEdge [expr {$x + [dict get $st contentW]}]
 
     foreach e $entries {
-        lassign $e text page
+        lassign $e text pages
 
         # Anfangsbuchstabe (mit Umlaut-Normalisierung)
         set initial [string toupper [string index $text 0]]
@@ -1782,21 +1928,21 @@ proc docir::pdf::_renderIndex {} {
         }
 
         _ensureSpace $lh
-
-        # Eintrag: Text links, Seitennummer rechts mit gepunkteter Fuehrungslinie
         _setFont $fontSize ""
 
-        set sanitized [::pdf4tcllib::unicode::sanitize $text]
         set ey [expr {[dict get $st y] + $fontSize}]
         set entryX [expr {$x + 8}]
 
-        # Maximalbreite fuer Text (Seitennummer-Spalte freihalten)
-        set maxTextW [expr {[dict get $st contentW] - $pageColW - 12}]
+        # Seitenliste rechtsbuendig (z.B. "3, 7, 12"); Breite via getStringWidth.
+        set pageStr [join $pages ", "]
+        set pageW [$pdf getStringWidth $pageStr]
+        set pageX [expr {$rightEdge - $pageW}]
 
-        # Bei zu langem Text: kuerzen mit "..."
-        set displayText $sanitized
+        # Begriff links; bei Bedarf kuerzen, damit die Seitenspalte frei bleibt.
+        set maxTextW [expr {[dict get $st contentW] - 8 - $pageW - 12}]
+        set displayText [::pdf4tcllib::unicode::sanitize $text]
         set tw [$pdf getStringWidth $displayText]
-        if {$tw > $maxTextW} {
+        if {$maxTextW > 0 && $tw > $maxTextW} {
             while {$tw > $maxTextW && [string length $displayText] > 4} {
                 set displayText [string range $displayText 0 end-2]
                 set tw [$pdf getStringWidth "${displayText}..."]
@@ -1804,12 +1950,8 @@ proc docir::pdf::_renderIndex {} {
             set displayText "${displayText}..."
         }
 
-        $pdf text [::pdf4tcllib::unicode::sanitize $displayText] -x $entryX -y $ey
-
-        # Seitennummer rechtsbuendig
-        set pageX [expr {$x + [dict get $st contentW] - $pageColW}]
-        set pageStr "$page"
-        $pdf text $pageStr -x [expr {$pageX + $pageColW}] -y $ey -align right
+        $pdf text $displayText -x $entryX -y $ey
+        $pdf text $pageStr -x $pageX -y $ey
 
         _advanceY $lh
     }
