@@ -35,6 +35,11 @@ Two ways, manifest takes precedence:
    ```tcl
    set title  "My Book"
    set author "Jane Doe"
+   set subtitle  "An optional subtitle"   ;# shown on the title page
+   set date      "2026"                    ;# shown on the title page
+   set titlePage 1                         ;# render a dedicated title page
+   set tocTitle   "Contents"   ;# optional; default "Inhaltsverzeichnis"
+   set indexTitle "Index"      ;# optional; default "Stichwortverzeichnis"
    set chapters {
        010-introduction.md
        030-reference.md
@@ -101,17 +106,28 @@ tclsh book-build.tcl mybook/ -number
 # Explicit outputs:
 tclsh book-build.tcl mybook/ -pdf out/book.pdf -html out/book.html -number
 
+# Single merged Markdown file (all chapters, same numbering as PDF/HTML):
+tclsh book-build.tcl mybook/ -md out/book-all.md -number
+
 # Switches:
 #   -number        hierarchical auto-numbering on
 #   -no-toc        omit the table of contents
 #   -no-index      omit the subject index
 #   -title T       override title (else from manifest)
 #   -author A      override author
+#   -toc-title T   table-of-contents heading (else manifest, else German default)
+#   -index-title T subject-index heading (else manifest, else German default)
+#   -title-page    render a title page (else from manifest)
+#   -subtitle T    title-page subtitle (else manifest)
+#   -date T        title-page date (else manifest)
+#   -md out.md     single merged Markdown file (keeps [term]{.index} markers)
 #   -depth N       numbering/TOC depth (default 3)
 ```
 
-If neither `-pdf` nor `-html` is given, both are produced next to the book
-directory.
+If none of `-pdf`, `-html` or `-md` is given, PDF and HTML are produced
+next to the book directory. The merged Markdown keeps the chapter numbering
+and the `[term]{.index}` markers, so it round-trips back through the
+toolchain and is convenient for single-file viewing (e.g. in mdhelp).
 
 ### Module discovery
 

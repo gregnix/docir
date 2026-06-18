@@ -151,7 +151,8 @@ proc readManifest {manifestPath} {
     set ip [interp create -safe]
     # Allow only plain variable assignment; book.tcl is data, not code.
     interp eval $ip {set title ""; set author ""; set chapters {}
-                     set tocTitle ""; set indexTitle ""}
+                     set tocTitle ""; set indexTitle ""
+                     set subtitle ""; set date ""; set titlePage 0}
     set fh [open $manifestPath r]
     fconfigure $fh -encoding utf-8
     set script [read $fh]
@@ -165,19 +166,25 @@ proc readManifest {manifestPath} {
     set chapters   [interp eval $ip {set chapters}]
     set tocTitle   [interp eval $ip {set tocTitle}]
     set indexTitle [interp eval $ip {set indexTitle}]
+    set subtitle   [interp eval $ip {set subtitle}]
+    set date       [interp eval $ip {set date}]
+    set titlePage  [interp eval $ip {set titlePage}]
     interp delete $ip
-    return [list $title $author $chapters $tocTitle $indexTitle]
+    return [list $title $author $chapters $tocTitle $indexTitle \
+                 $subtitle $date $titlePage]
 }
 
 # Resolve order + metadata for a book directory.
-# Returns {title author files tocTitle indexTitle} (files relative to bookdir).
+# Returns {title author files tocTitle indexTitle subtitle date titlePage}.
 proc resolveBook {bookdir} {
     set manifest [file join $bookdir book.tcl]
     if {[file exists $manifest]} {
-        lassign [readManifest $manifest] title author chapters tocTitle indexTitle
-        return [list $title $author $chapters $tocTitle $indexTitle]
+        lassign [readManifest $manifest] \
+            title author chapters tocTitle indexTitle subtitle date titlePage
+        return [list $title $author $chapters $tocTitle $indexTitle \
+                     $subtitle $date $titlePage]
     }
-    return [list "" "" [prefixOrdered $bookdir] "" ""]
+    return [list "" "" [prefixOrdered $bookdir] "" "" "" "" 0]
 }
 
 # Generate book.tcl from the prefix order so it can be hand-reordered later.
@@ -214,9 +221,10 @@ if {[llength $argv] >= 2 && [lindex $argv 0] eq "manifest"} {
 }
 
 if {[llength $argv] < 1} {
-    puts stderr "Usage: book-build.tcl <bookdir> \[-pdf out.pdf\] \[-html out.html\]"
+    puts stderr "Usage: book-build.tcl <bookdir> \[-pdf out.pdf\] \[-html out.html\] \[-md out.md\]"
     puts stderr "                       \[-number\] \[-no-toc\] \[-no-index\] \[-title T\] \[-author A\] \[-depth N\]"
     puts stderr "                       \[-toc-title T\] \[-index-title T\]"
+    puts stderr "                       \[-title-page\] \[-subtitle T\] \[-date T\]"
     puts stderr "       book-build.tcl manifest <bookdir>"
     exit 1
 }
@@ -229,6 +237,7 @@ if {![file isdirectory $bookdir]} {
 
 set pdfOut    ""
 set htmlOut   ""
+set mdOut     ""
 set doNumber  0
 set wantToc   1
 set wantIndex 1
@@ -236,6 +245,9 @@ set optTitle  ""
 set optAuthor ""
 set optTocTitle   ""
 set optIndexTitle ""
+set optSubtitle   ""
+set optDate       ""
+set optTitlePage  0
 set depth     3
 
 for {set i 1} {$i < [llength $argv]} {incr i} {
@@ -243,6 +255,7 @@ for {set i 1} {$i < [llength $argv]} {incr i} {
     switch -- $a {
         -pdf      { set pdfOut    [lindex $argv [incr i]] }
         -html     { set htmlOut   [lindex $argv [incr i]] }
+        -md       { set mdOut     [lindex $argv [incr i]] }
         -number   { set doNumber  1 }
         -no-toc   { set wantToc   0 }
         -no-index { set wantIndex 0 }
@@ -250,13 +263,16 @@ for {set i 1} {$i < [llength $argv]} {incr i} {
         -author   { set optAuthor [lindex $argv [incr i]] }
         -toc-title   { set optTocTitle   [lindex $argv [incr i]] }
         -index-title { set optIndexTitle [lindex $argv [incr i]] }
+        -subtitle    { set optSubtitle   [lindex $argv [incr i]] }
+        -date        { set optDate       [lindex $argv [incr i]] }
+        -title-page  { set optTitlePage  1 }
         -depth    { set depth     [lindex $argv [incr i]] }
         default   { puts stderr "Unbekannte Option: $a"; exit 1 }
     }
 }
 
-# Default outputs if neither requested.
-if {$pdfOut eq "" && $htmlOut eq ""} {
+# Default outputs if none requested.
+if {$pdfOut eq "" && $htmlOut eq "" && $mdOut eq ""} {
     set base [file join [file dirname [file normalize $bookdir]] [file tail [file normalize $bookdir]]]
     set pdfOut  "$base.pdf"
     set htmlOut "$base.html"
@@ -266,7 +282,8 @@ if {$pdfOut eq "" && $htmlOut eq ""} {
 # Assemble + parse + (number) + render
 # ============================================================
 
-lassign [resolveBook $bookdir] mTitle mAuthor files mTocTitle mIndexTitle
+lassign [resolveBook $bookdir] mTitle mAuthor files mTocTitle mIndexTitle \
+    mSubtitle mDate mTitlePage
 if {[llength $files] == 0} {
     puts stderr "FEHLER: keine Kapitel gefunden in $bookdir"
     exit 1
@@ -279,6 +296,10 @@ set tocTitle [expr {$optTocTitle ne "" ? $optTocTitle \
     : ($mTocTitle ne "" ? $mTocTitle : "Inhaltsverzeichnis")}]
 set indexTitle [expr {$optIndexTitle ne "" ? $optIndexTitle \
     : ($mIndexTitle ne "" ? $mIndexTitle : "Stichwortverzeichnis")}]
+# Title page: switch or manifest enables it; subtitle/date switch > manifest.
+set subtitle  [expr {$optSubtitle ne "" ? $optSubtitle : $mSubtitle}]
+set date      [expr {$optDate     ne "" ? $optDate     : $mDate}]
+set titlePage [expr {$optTitlePage || ($mTitlePage ne "" && $mTitlePage)}]
 
 puts "Buch: [llength $files] Kapitel aus $bookdir"
 
@@ -304,6 +325,9 @@ if {$pdfOut ne ""} {
     docir::pdf::render $ir $pdfOut [dict create \
         title         $title \
         author        $author \
+        subtitle      $subtitle \
+        date          $date \
+        titlePage     $titlePage \
         paper         a4 \
         footer        "%p" \
         generateToc   $wantToc \
@@ -326,4 +350,18 @@ if {$htmlOut ne ""} {
     puts -nonewline $fh $html
     close $fh
     puts "HTML: $htmlOut ([file size $htmlOut] Bytes)"
+}
+
+if {$mdOut ne ""} {
+    # Single merged Markdown file: all chapters in reading order, with the
+    # same chapter numbering as PDF/HTML when -number is used. headingShift 0
+    # keeps the original heading levels (# chapter, ## section). Index markers
+    # [term]{.index} survive the round-trip.
+    package require docir::md
+    set mdText [docir::md::render $ir [dict create headingShift 0]]
+    set fh [open $mdOut w]
+    fconfigure $fh -encoding utf-8
+    puts -nonewline $fh $mdText
+    close $fh
+    puts "MD:   $mdOut ([file size $mdOut] Bytes)"
 }

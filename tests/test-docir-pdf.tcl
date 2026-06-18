@@ -768,6 +768,35 @@ test "spec.pdf.index.multiword_coalesced" {
     catch {file delete $out}
 }
 
+test "spec.pdf.titlepage.rendered_as_first_page" {
+    # titlePage 1 puts title + author on a dedicated first page, separate
+    # from the body. Without it, the title is only PDF metadata, not text.
+    set ir [list \
+        [dict create type heading content {{type text text "Body Chapter"}} meta {level 1}] \
+        [dict create type paragraph content {{type text text "Body text."}} meta {}]]
+    set out [file join $::TMPBASE "docir-tp-[pid].pdf"]
+    catch {file delete $out}
+    ::docir::pdf::render $ir $out [dict create \
+        title "My Title Page Book" author "An Author" \
+        subtitle "A Subtitle" titlePage 1 footer "%p"]
+    assert [file exists $out] "title page PDF created"
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE "docir-tp-[pid].txt"]
+        exec pdftotext -layout $out $txtFile
+        set fh [open $txtFile r]; fconfigure $fh -encoding utf-8
+        set txt [read $fh]; close $fh
+        file delete -force $txtFile
+        set page1 [lindex [split $txt \x0C] 0]
+        assert [expr {[string first "My Title Page Book" $page1] >= 0}] \
+            "title appears on the first page"
+        assert [expr {[string first "An Author" $page1] >= 0}] \
+            "author appears on the title page"
+        assert [expr {[string first "Body Chapter" $page1] < 0}] \
+            "body is on a later page, not the title page"
+    }
+    catch {file delete $out}
+}
+
 test "spec.pdf.index.none_without_markers" {
     # Keine .index-Marker und keine indexLevel-Headings -> keine Index-Seite.
     set ir [list \

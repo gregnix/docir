@@ -13,6 +13,9 @@
 #         fontSize       Int                (default 11)
 #         title          String             (default: aus DocIR)
 #         author         String             (default "")
+#         subtitle       String             (default ""; nur Titelseite)
+#         date           String             (default ""; nur Titelseite)
+#         titlePage      Bool   (default 0)  eigene Titelseite vor dem TOC
 #         sansFont       Pfad zu TTF        (optional, sonst pdf4tcllib-Default)
 #         sansBoldFont, sansItalicFont, sansBoldItalicFont, monoFont
 #         header         String             (Header-Template, %p = Pagenumber)
@@ -166,6 +169,9 @@ proc docir::pdf::_normalizeOptions {options} {
         fontSize           11 \
         title              "" \
         author             "" \
+        subtitle           "" \
+        date               "" \
+        titlePage          0 \
         sansFont           "" \
         sansBoldFont       "" \
         sansItalicFont     "" \
@@ -656,6 +662,60 @@ proc docir::pdf::_ensureSpace {needed} {
     }
 }
 
+# Renders a dedicated title page: title (large), optional subtitle, author
+# and date, centred horizontally in the upper-middle of the page. No header
+# or footer is placed on the title page. Afterwards a fresh page is started
+# (counts as a page) so the body begins on its own page.
+proc docir::pdf::_renderTitlePage {} {
+    variable opts
+    variable st
+    set pdf      [dict get $st pdf]
+    set pageW    [dict get $st pageW]
+    set pageH    [dict get $st pageH]
+    set fontSize [dict get $opts fontSize]
+
+    set title    [dict get $opts title]
+    set subtitle [_dictDef $opts subtitle ""]
+    set author   [dict get $opts author]
+    set date     [_dictDef $opts date ""]
+
+    set cx [expr {$pageW / 2.0}]
+    set y  [expr {$pageH * 0.32}]
+
+    if {$title ne ""} {
+        set fs [expr {$fontSize * 2.2}]
+        $pdf setFont $fs [::pdf4tcllib::fonts::fontSansBold]
+        $pdf text [::pdf4tcllib::unicode::sanitize $title] \
+            -x $cx -y $y -align center
+        set y [expr {$y + $fs * 1.6}]
+    }
+    if {$subtitle ne ""} {
+        set fs [expr {$fontSize * 1.3}]
+        $pdf setFont $fs [::pdf4tcllib::fonts::fontSans]
+        $pdf text [::pdf4tcllib::unicode::sanitize $subtitle] \
+            -x $cx -y $y -align center
+        set y [expr {$y + $fs * 2.2}]
+    }
+    if {$author ne ""} {
+        set fs [expr {$fontSize * 1.1}]
+        $pdf setFont $fs [::pdf4tcllib::fonts::fontSans]
+        $pdf text [::pdf4tcllib::unicode::sanitize $author] \
+            -x $cx -y $y -align center
+        set y [expr {$y + $fs * 1.8}]
+    }
+    if {$date ne ""} {
+        $pdf setFont $fontSize [::pdf4tcllib::fonts::fontSans]
+        $pdf text [::pdf4tcllib::unicode::sanitize $date] \
+            -x $cx -y $y -align center
+    }
+
+    # Fresh page for the body; no footer on the title page.
+    $pdf endPage
+    $pdf startPage
+    dict set st pageNo [expr {[dict get $st pageNo] + 1}]
+    dict set st y [dict get $st topY]
+}
+
 proc docir::pdf::_writeHeader {} {
     variable opts
     variable st
@@ -724,6 +784,15 @@ proc docir::pdf::_newPage {} {
 proc docir::pdf::_renderInto {pdf ir} {
     variable opts
     _initState $pdf
+
+    # Optional title page first (no header/footer on it), then the body
+    # starts on a fresh page. Counts as a page, so TOC/bookmark page numbers
+    # reflect the real PDF pages.
+    if {[info exists opts] && [dict exists $opts titlePage] \
+            && [dict get $opts titlePage]} {
+        _renderTitlePage
+    }
+
     # Header für die erste Page
     _writeHeader
 

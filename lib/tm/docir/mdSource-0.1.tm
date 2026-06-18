@@ -248,23 +248,39 @@ proc docir::md::_mapDeflist {block} {
         set term [docir::md::_mapInlines [dict get $dl term]]
         set defs [_dictDef $dl definitions {}]
         # `definitions` is a list of definition GROUPS; each group is a list of
-        # inline nodes (the definition body). Map the first group's inlines.
+        # inline nodes (one definition paragraph). Map ALL groups so Pandoc
+        # multi-paragraph / continuation definitions are kept (mapping only the
+        # first group dropped continuation paragraphs, which then reappeared as
+        # indented code blocks elsewhere). Consecutive paragraphs are separated
+        # by a blank line (two linebreaks) so they wrap as flowing text.
         set descInlines {}
-        if {[llength $defs] > 0} {
-            set group [lindex $defs 0]
-            if {[llength $group] > 0} {
-                set first [lindex $group 0]
-                set ft [expr {[dict exists $first type] ? [dict get $first type] : ""}]
-                if {$ft in {paragraph heading pre list deflist table blockquote}} {
-                    foreach b $group {
-                        if {[dict exists $b content]} {
-                            foreach m [docir::md::_mapInlines [dict get $b content]] {
-                                lappend descInlines $m
-                            }
+        set firstGroup 1
+        foreach group $defs {
+            if {[llength $group] == 0} continue
+            if {!$firstGroup} {
+                lappend descInlines [dict create type linebreak]
+                lappend descInlines [dict create type linebreak]
+            }
+            set firstGroup 0
+            set first [lindex $group 0]
+            set ft [expr {[dict exists $first type] ? [dict get $first type] : ""}]
+            if {$ft in {paragraph heading pre list deflist table blockquote}} {
+                set firstBlock 1
+                foreach b $group {
+                    if {[dict exists $b content]} {
+                        if {!$firstBlock} {
+                            lappend descInlines [dict create type linebreak]
+                            lappend descInlines [dict create type linebreak]
+                        }
+                        set firstBlock 0
+                        foreach m [docir::md::_mapInlines [dict get $b content]] {
+                            lappend descInlines $m
                         }
                     }
-                } else {
-                    set descInlines [docir::md::_mapInlines $group]
+                }
+            } else {
+                foreach m [docir::md::_mapInlines $group] {
+                    lappend descInlines $m
                 }
             }
         }
