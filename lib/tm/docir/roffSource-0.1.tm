@@ -5,6 +5,11 @@
 #
 # Namespace: ::docir::roff
 # Tcl 8.6+ / 9.x kompatibel
+#
+# 2026-06-20: doc_header-Meta-Felder werden ent-escaped (Version "0\&.10" →
+#   "0.10"); redundante blank-Knoten nach selbst-trennenden Bloecken
+#   (paragraph/heading/list/pre/table/...) werden verworfen, damit `.sp`
+#   zwischen SYNOPSIS-Zeilen nicht zu Dreifach-Abstand fuehrt.
 
 package provide docir::roffSource 0.1
 package require Tcl 8.6-
@@ -49,14 +54,17 @@ proc docir::roff::fromAst {ast} {
 
             heading {
                 # .TH → doc_header
+                # Header meta fields can carry nroff escapes (e.g. doctools
+                # writes the version as "0\&.10" to protect the dot) — unescape
+                # them like normal text so they don't show up literally.
                 lappend ir [dict create \
                     type    doc_header \
                     content {} \
                     meta    [dict create \
-                        name    [expr {[dict exists $meta name]    ? [dict get $meta name]    : ""}] \
-                        section [_dictDef $meta section ""] \
-                        version [_dictDef $meta version ""] \
-                        part    [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]]]
+                        name    [docir::roff::_unescapeNroff [expr {[dict exists $meta name]    ? [dict get $meta name]    : ""}]] \
+                        section [docir::roff::_unescapeNroff [_dictDef $meta section ""]] \
+                        version [docir::roff::_unescapeNroff [_dictDef $meta version ""]] \
+                        part    [docir::roff::_unescapeNroff [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]]]]
             }
 
             section {
@@ -140,11 +148,21 @@ proc docir::roff::fromAst {ast} {
             }
 
             blank {
-                set lines [_dictDef $meta lines 1]
-                lappend ir [dict create \
-                    type    blank \
-                    content {} \
-                    meta    [dict create lines $lines]]
+                # `.sp` / blank lines become blank nodes. But most block types
+                # (paragraph, heading, list, pre, table, doc_header) already
+                # render with a trailing blank line, so an extra blank node on
+                # top triples the gap — e.g. SYNOPSIS entries separated by `.sp`.
+                # Drop the blank when the previously emitted node already
+                # self-separates; keep it only between tight/inline content.
+                set prevType ""
+                if {[llength $ir]} { set prevType [dict get [lindex $ir end] type] }
+                if {$prevType ni {paragraph heading list pre table doc_header blank hr}} {
+                    set lines [_dictDef $meta lines 1]
+                    lappend ir [dict create \
+                        type    blank \
+                        content {} \
+                        meta    [dict create lines $lines]]
+                }
             }
 
             default {
