@@ -1,4 +1,10 @@
-# docir-renderer-tk-0.1.tm – DocIR → Tk Text Widget Renderer
+# docir-renderer-tk-0.2.tm – DocIR → Tk Text Widget Renderer
+#
+# 0.2 (2026-06-20): math inline ($...$ / $$...$$); blockquote styling (indent +
+#   background, inline styles preserved); deflist hanging indent (multi-def);
+#   multi-paragraph list items from `blocks` + ul/ol hanging indent (bulletCont);
+#   nested ul/ol indent by list indentLevel (bulletL$n); `tableframemax` option
+#   (large tables fall back to fast ASCII even in `tablemode frame`).
 #
 # Feature-gleich mit nroffrenderer-0.1.tm.
 # Rendert einen DocIR-Stream in ein Tk text-Widget.
@@ -7,7 +13,7 @@
 # Namespace: ::docir::renderer::tk
 # Tcl/Tk 8.6+ / 9.x kompatibel
 
-package provide docir::rendererTk 0.1
+package provide docir::rendererTk 0.2
 package require docir 0.1
 package require Tcl 8.6-
 catch {package require docir 0.1}
@@ -61,6 +67,11 @@ proc docir::renderer::tk::render {textWidget ir {options {}}} {
     set fontSize   [expr {[dict exists $options fontSize]   ? [dict get $options fontSize]   : 12}]
     set fontFamily [_dictDef $options fontFamily "TkDefaultFont"]
     set monoFamily [_dictDef $options monoFamily "TkFixedFont"]
+    # A named font like "TkFixedFont" used as a family in a {family size} list
+    # mis-resolves to the proportional default (Tk quirk), which breaks code
+    # blocks, inline code, math and ASCII tables. Resolve it to the real
+    # monospace family once. A real family name passes through unchanged.
+    catch {set monoFamily [font actual $monoFamily -family]}
     set darkMode   [expr {[dict exists $options darkMode]   ? [dict get $options darkMode]   : 0}]
     set colors     [expr {[dict exists $options colors]     ? [dict get $options colors]     : {}}]
 
@@ -142,9 +153,19 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
             }
 
             paragraph {
-                $textWidget insert end "  " normal
-                docir::renderer::tk::_insertInlines $textWidget $content
-                $textWidget insert end "\n\n" normal
+                if {[_dictDef $meta class ""] eq "blockquote"} {
+                    set bqStart [$textWidget index "end - 1 char"]
+                    $textWidget insert end "  " normal
+                    docir::renderer::tk::_insertInlines $textWidget $content
+                    $textWidget insert end "\n\n" normal
+                    # Apply the blockquote tag over the whole paragraph so the
+                    # margin/background covers inline-tagged spans too.
+                    $textWidget tag add blockquote $bqStart "end - 1 char"
+                } else {
+                    $textWidget insert end "  " normal
+                    docir::renderer::tk::_insertInlines $textWidget $content
+                    $textWidget insert end "\n\n" normal
+                }
             }
 
             pre {
@@ -170,8 +191,24 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                     if {[dict exists $item type] && [dict get $item type] eq "listItem"} {
                         set itemMeta [dict get $item meta]
                         set term [_dictDef $itemMeta term {}]
-                        set desc [dict get $item content]
                         set itemKind [_dictDef $itemMeta kind $kind]
+                        # Prefer per-paragraph `blocks` (multi-paragraph items),
+                        # joining paragraphs with a blank line so the structure
+                        # survives; fall back to the flattened `content`.
+                        if {[dict exists $item blocks]} {
+                            set desc {}
+                            set firstPB 1
+                            foreach pb [dict get $item blocks] {
+                                if {![dict exists $pb content]} continue
+                                if {$firstPB} { set firstPB 0 } else {
+                                    lappend desc [dict create type linebreak]
+                                    lappend desc [dict create type linebreak]
+                                }
+                                lappend desc {*}[dict get $pb content]
+                            }
+                        } else {
+                            set desc [dict get $item content]
+                        }
                     } elseif {[dict exists $item type]} {
                         # Schema-Verletzung: getypter Knoten der nicht listItem ist.
                         # Häufigster Fall: nested 'list' direkt im list.content
@@ -233,22 +270,36 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                             }
                             $textWidget insert end "\n" normal
                         }
-                        ul {
-                            # Unordered list: Bullet + Text
-                            $textWidget insert end "  • " listTerm
-                            if {[llength $desc] > 0} {
-                                docir::renderer::tk::_insertInlines $textWidget $desc
-                            }
-                            $textWidget insert end "\n" normal
-                        }
+                        ul -
                         ol {
-                            # Ordered list: Nummer wird vom Aufrufer erwartet,
-                            # hier Bullet als Platzhalter
-                            $textWidget insert end "  • " listTerm
-                            if {[llength $desc] > 0} {
+                            # Bullet (ul) / placeholder bullet (ol) with a real
+                            # hanging indent. Multi-paragraph items: first para
+                            # follows the bullet; continuation paras align under
+                            # the text via the bulletCont tag.
+                            set ulStart [$textWidget index "end - 1 char"]
+                            $textWidget insert end "• " listTerm
+                            if {[dict exists $item blocks]} {
+                                set firstPara 1
+                                foreach pb [dict get $item blocks] {
+                                    if {![dict exists $pb content]} continue
+                                    if {$firstPara} {
+                                        set firstPara 0
+                                        docir::renderer::tk::_insertInlines \
+                                            $textWidget [dict get $pb content]
+                                    } else {
+                                        $textWidget insert end "\n\n" normal
+                                        set cStart [$textWidget index "end - 1 char"]
+                                        docir::renderer::tk::_insertInlines \
+                                            $textWidget [dict get $pb content]
+                                        $textWidget tag add bulletContL$lvl \
+                                            $cStart "end - 1 char"
+                                    }
+                                }
+                            } elseif {[llength $desc] > 0} {
                                 docir::renderer::tk::_insertInlines $textWidget $desc
                             }
                             $textWidget insert end "\n" normal
+                            $textWidget tag add bulletL$lvl $ulStart "end - 1 char"
                         }
                         dl {
                             # Definition list: Term fett, Definition eingerückt
@@ -258,9 +309,11 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                                 $textWidget insert end "\n" normal
                             }
                             if {[llength $desc] > 0} {
-                                $textWidget insert end "      " normal
+                                set dlStart [$textWidget index "end - 1 char"]
                                 docir::renderer::tk::_insertInlines $textWidget $desc
                                 $textWidget insert end "\n" normal
+                                # Hanging indent across all definition lines.
+                                $textWidget tag add dlDesc $dlStart "end - 1 char"
                             }
                         }
                         default {
@@ -342,7 +395,14 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
             table {
                 set _tmode [_dictDef $options tablemode "ascii"]
-                if {$_tmode eq "frame"} {
+                # Native frame tables create one widget per cell, which is slow
+                # for large tables (grid layout is O(rows*cols)). Tables with
+                # more rows than `tableframemax` (default 30) fall back to the
+                # fast ASCII renderer even in frame mode. `tableframemax 0` (or
+                # negative) = no limit (always frame).
+                set _tfmax  [_dictDef $options tableframemax 30]
+                set _nrows  [llength [dict get $node content]]
+                if {$_tmode eq "frame" && ($_tfmax <= 0 || $_nrows <= $_tfmax)} {
                     docir::renderer::tk::_renderTableFrame $textWidget $node $meta $options
                 } else {
                 # Variante A: Monospace-Tabelle mit Box-Rahmen. Tk-text hat
@@ -386,10 +446,18 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 # Monospace-Font aus dem pre-Tag ableiten (+ fette Variante)
                 set mf [$textWidget tag cget pre -font]
                 if {$mf eq ""} { set mf TkFixedFont }
-                array set _fa [font actual $mf]
-                $textWidget tag configure tableBox  -font [list $_fa(-family) $_fa(-size)]
-                $textWidget tag configure tableHead -font [list $_fa(-family) $_fa(-size) bold]
-                array unset _fa
+                # monoFamily is resolved to a real family at render setup, so the
+                # pre/code font ($mf, e.g. {DejaVu Sans Mono} 12) is genuine
+                # monospace. Use it directly for the table so columns align with
+                # code blocks. Monospace bold keeps the same advance width, so the
+                # bold header stays aligned; only append "bold" when we have a
+                # {family size} form to insert into.
+                $textWidget tag configure tableBox -font $mf
+                if {[llength $mf] >= 2} {
+                    $textWidget tag configure tableHead -font [linsert $mf 2 bold]
+                } else {
+                    $textWidget tag configure tableHead -font $mf
+                }
 
                 # Rahmenlinien
                 set top "\u250c"; set sep "\u251c"; set bot "\u2514"
@@ -617,6 +685,13 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                         [list {*}$linkCallback $name $section]
                 }
             }
+            math {
+                # Tk cannot typeset LaTeX; show the source with Pandoc-style
+                # delimiters ($...$ inline, $$...$$ display) in the math tag.
+                set disp [_dictDef $inline display 0]
+                set d [expr {[string is true -strict $disp] || $disp == 1 ? "\$\$" : "\$"}]
+                $textWidget insert end "$d$text$d" math
+            }
             default { $textWidget insert end $text $defaultTag }
         }
     }
@@ -651,7 +726,16 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
     $w tag configure strike    -font [list $fontFamily $fontSize] -overstrike 1
     $w tag configure pre       -font [list $monoFamily $fontSize] -background $codeBg
     $w tag configure listTerm  -font [list $fontFamily $fontSize bold]
+    # Definition-list description: real hanging indent via margins, so that
+    # multi-paragraph definitions and wrapped lines all stay indented (a leading
+    # space prefix only indents the first line).
+    $w tag configure dlDesc     -lmargin1 36 -lmargin2 36
     $w tag configure link      -foreground $linkFg -underline 1
+
+    # Math: rendered as its source between $...$ delimiters (Tk cannot render
+    # LaTeX), in the mono family + italic so it reads as a formula.
+    $w tag configure math      -font [list $monoFamily $fontSize italic] \
+        -foreground [_dictDef $colors mathFg [expr {$darkMode ? "#c586c0" : "#6f42c1"}]]
 
     # Footnote-Reference: hochgestellt + kleiner
     set fnSize [expr {max(8, $fontSize - 3)}]
@@ -682,15 +766,31 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
             -tabs [list $lm2]
     }
 
-    # Blockquote: linker Balken + Einrückung
+    # Blockquote: linker Balken + Einrückung + leichter Hintergrund.
+    # (Kein -font, damit Inline-Fett/Kursiv/Links im Zitat erhalten bleiben.)
     $w tag configure blockquoteBar \
         -foreground $headFg \
         -font [list $fontFamily $fontSize bold]
     $w tag configure blockquote \
-        -lmargin1 20 -lmargin2 20 \
-        -foreground [expr {$fg}]
+        -lmargin1 25 -lmargin2 25 -rmargin 15 \
+        -foreground [_dictDef $colors quoteFg [expr {$darkMode ? "#b0b0b0" : "#555555"}]] \
+        -background [_dictDef $colors quoteBg [expr {$darkMode ? "#262626" : "#f6f6f6"}]]
 
-    # ul/ol Bullets: leichte Einrückung
+    # ul/ol Bullets: leichte Einrückung. bulletL$n / bulletContL$n staffeln je
+    # indentLevel (20px pro Stufe, wie ipItem), damit verschachtelte Listen
+    # optisch tiefer einrücken. bullet/bulletCont bleiben als Level-0-Alias.
     $w tag configure bullet \
         -lmargin1 10 -lmargin2 25
+    # Continuation paragraphs of a bullet item: same indent on first + wrapped
+    # lines (lmargin1 == lmargin2), so they align under the bullet's text
+    # instead of resetting to the first-line margin.
+    $w tag configure bulletCont \
+        -lmargin1 25 -lmargin2 25
+    for {set i 0} {$i <= 4} {incr i} {
+        set base [expr {$i * 20}]
+        $w tag configure bulletL$i \
+            -lmargin1 [expr {$base + 10}] -lmargin2 [expr {$base + 25}]
+        $w tag configure bulletContL$i \
+            -lmargin1 [expr {$base + 25}] -lmargin2 [expr {$base + 25}]
+    }
 }

@@ -5,7 +5,8 @@
 ##   Markdown --mdstack::parser--> AST --docir::md::fromAst--> DocIR
 ##           --docir::renderer::tk--> Text-Widget
 ##
-## Tabellen erscheinen als ausgerichtete Box-Tabellen (Monospace).
+## Tabellen werden als echte Tk-Grid-Tabellen gerendert (tablemode frame) —
+## font-unabhaengig und sauber ausgerichtet.
 ##
 ## Aufruf:  wish demo-md-tk.tcl ?datei.md?
 ##          wish demo-md-tk.tcl --selftest      (headless: rendert + prueft)
@@ -59,15 +60,17 @@ set ir [docir::md::fromAst [mdstack::parser::parse $md]]
 wm title . "demo: Markdown in Tk"
 text .t -wrap word -width 80 -height 28
 pack .t -fill both -expand 1
-docir::renderer::tk::render .t $ir
+docir::renderer::tk::render .t $ir {tablemode frame}
 .t configure -state disabled
 update idletasks
 
 if {$selftest} {
     set txt [.t get 1.0 end]
-    set hasBox  [string match *\u250c* $txt]    ;# obere linke Ecke der Box
+    # Frame-Modus bettet die Tabelle als echtes Widget ein (kein Box-Zeichen
+    # im Text) — also auf eingebettete Fenster pruefen statt auf \u250c.
+    set hasTable [expr {[llength [.t window names]] > 0}]
     set hasHead [string match *Markdown\ in\ Tk* $txt]
-    puts "SELFTEST: bloecke=[llength $ir] box-tabelle=$hasBox heading=$hasHead"
-    puts [expr {($hasBox && $hasHead) ? "PASS" : "FAIL"}]
-    exit [expr {($hasBox && $hasHead) ? 0 : 1}]
+    puts "SELFTEST: bloecke=[llength $ir] frame-tabelle=$hasTable heading=$hasHead"
+    puts [expr {($hasTable && $hasHead) ? "PASS" : "FAIL"}]
+    exit [expr {($hasTable && $hasHead) ? 0 : 1}]
 }

@@ -30,7 +30,7 @@ if {[lsearch -exact $::auto_path $libDir] < 0} {
 # sind also bekannt. Tk-abhaengige Module (canvas, rendererTk) und
 # Module mit externer Dep (tilepdf braucht pdf4tcl) mit catch — wenn
 # die Dep nicht ladbar ist, skipt der entsprechende Test.
-source -encoding utf-8 [file join $libDir docir-0.1.tm]
+source -encoding utf-8 [file join $libDir docir-0.1.1.tm]
 # Module ohne externe Deps (Pflicht)
 foreach mod {
     util-0.1.tm
@@ -63,7 +63,7 @@ foreach mod {
 }
 foreach mod {
     canvas-0.1.tm
-    rendererTk-0.1.tm
+    rendererTk-0.2.tm
 } {
     set p [file join $libDir docir $mod]
     if {[file exists $p]} {

@@ -1,11 +1,13 @@
-# docir-0.1.tm – DocIR Intermediate Representation
+# docir-0.1.1.tm – DocIR Intermediate Representation
+# 0.1.1 (2026-06-20): validator accepts `softbreak` (inlineTypes whitelist +
+#   field-less like `linebreak`) — completes the 2026-06-14 softbreak work.
 # Validator, Pretty-Dump, Diff
 # Spec: doc/docir-spec.md
 #
 # Namespace: ::docir
 # Tcl 8.6+ / 9.x kompatibel
 
-package provide docir 0.1
+package provide docir 0.1.1
 package require Tcl 8.6-
 
 namespace eval ::docir {
@@ -19,7 +21,7 @@ namespace eval ::docir {
     # Gültige Inline-Typen
     variable inlineTypes {
         text strong emphasis underline strike code link
-        image linebreak span footnote_ref
+        image linebreak softbreak span footnote_ref
         math
     }
     # IR-Schema-Versionen die dieser Validator/Hub verarbeiten kann.
@@ -294,8 +296,9 @@ proc docir::_validateInlines {nodeIdx nodeType inlines} {
                     lappend errors "Node $nodeIdx, Inline $j (image): Feld 'url' fehlt"
                 }
             }
-            linebreak {
-                # linebreak hat keine Required-Fields — kein text nötig
+            linebreak -
+            softbreak {
+                # line/soft breaks have no required fields -- no text needed
             }
             footnote_ref {
                 # footnote_ref braucht: text, id

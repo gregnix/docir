@@ -1,5 +1,50 @@
 # DocIR — Changelog
 
+## 2026-06-20 — Validator accepts `softbreak`; renderer-tk: math, blockquote, deflist & multi-paragraph list items
+
+Paired with **mdstack 0.6.0**.
+
+### Fixed
+
+- **`lib/tm/docir-0.1.1.tm` — validator now accepts `softbreak`.** The
+  2026-06-14 release added `softbreak` handling to every *renderer* and to the
+  spec (`docir-spec.md` lines 306/325), but the validator's `inlineTypes`
+  whitelist was overlooked, so otherwise-valid IR carrying a `softbreak`
+  reported `Unbekannter Inline-Typ 'softbreak'`. The type is now whitelisted
+  and — like `linebreak` — treated as field-less (no `text` required). All 23
+  tcllib doctools pages validate with 0 problems. Regression test:
+  `tests/test-validator-inline-breaks.tcl` (5 cases, no external parser needed).
+
+### Added — `lib/tm/docir/rendererTk-0.2.tm`
+
+- **`math` inline.** Tk cannot typeset LaTeX, so the source is shown between
+  Pandoc delimiters (`$…$` inline, `$$…$$` display) in a dedicated `math` tag
+  (mono italic, distinct colour). Previously `math` fell through to the default
+  text branch.
+- **Blockquote styling.** `mdSource` maps blockquotes to paragraphs with
+  `meta.class=blockquote`; the renderer now applies the (previously unused)
+  `blockquote` tag — indent + light background + muted colour, with **no** font
+  override so inline bold/italic/links inside the quote survive. Removed a dead
+  duplicate tag definition.
+- **Definition-list hanging indent.** Multi-definition `dl` items used a leading
+  space prefix that only indented the first line, so the second definition fell
+  to column 0. Replaced by a real `lmargin` hanging indent (`dlDesc` tag)
+  covering all definition lines and wraps.
+- **Multi-paragraph list items.** Bullet items (doctools command references)
+  now render the item's per-paragraph `blocks` with blank-line separation
+  instead of the flattened, space-joined `content`; `ul`/`ol` additionally get
+  a real hanging indent (`bullet` + new `bulletCont` tag) so continuation
+  paragraphs align under the bullet text. Single-paragraph items are unchanged.
+
+### Tests
+
+- Full suite **898** tests pass (was 893; +5 from the new
+  `tests/test-validator-inline-breaks.tcl`, already wired into
+  `run-all-tests.tcl`). Validator + renderer-tk suites verified after the
+  version bump: `test-docir` 42/0, `test-docir-list-indent` 9/0,
+  `test-docir-renderer-frame` 7/0. 23 tcllib doctools pages render with 0
+  crashes and validate with 0 problems.
+
 ## 2026-06-14 — Soft line breaks across all sinks, link rendering, footnote-emoji PDF fix
 
 Paired with **mdstack 0.5.0**, whose parser now emits a structured `softbreak`

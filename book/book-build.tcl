@@ -75,7 +75,7 @@ proc addTm {dir} {
     }
 }
 
-set docirRoot   [discover DOCIR_HOME      {lib tm docir-0.1.tm}]
+set docirRoot   [discover DOCIR_HOME      {lib tm docir-0.1.1.tm}]
 set mdstackRoot [discover MDSTACK_HOME    {lib mdstack-0.1.tm}]
 set pdftclRoot  [discover PDF4TCL_HOME    {pdf4tcl.tcl}]
 set pdflibRoot  [discover PDF4TCLLIB_HOME {lib pdf4tcllib-0.2.tm}]

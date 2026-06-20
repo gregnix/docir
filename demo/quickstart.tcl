@@ -47,18 +47,18 @@ proc findNroffparser {docirRoot} {
 # 2. Module laden
 # ============================================================
 
-# DocIR-Module direkt aus diesem Repo
-foreach mod {docir-0.1.tm
-             docir-roff-source-0.1.tm
-             docir-html-0.1.tm
-             docir-svg-0.1.tm
-             docir-md-0.1.tm} {
-    set p [file join $libDir $mod]
-    if {![file exists $p]} {
-        puts stderr "Demo-Fehler: $mod nicht gefunden in $libDir"
+# DocIR-Module via package require laden. Der pkgIndex / tm::path in lib/tm
+# kennt die korrekten Dateinamen und Versionen (Hub `docir` liegt direkt in
+# lib/tm, die Sinks in lib/tm/docir/). So bricht die Demo nicht bei jedem
+# Versions- oder Namens-Bump.
+::tcl::tm::path add $libDir
+if {[lsearch -exact $::auto_path $libDir] < 0} { lappend ::auto_path $libDir }
+foreach pkg {docir docir::roffSource docir::html docir::svg docir::md} {
+    if {[catch {package require $pkg} err]} {
+        puts stderr "Demo-Fehler: Paket $pkg nicht ladbar: $err"
+        puts stderr "  (erwartet in $libDir bzw. $libDir/docir)"
         exit 1
     }
-    source -encoding utf-8 $p
 }
 
 # nroffparser separat suchen
