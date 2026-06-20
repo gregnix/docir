@@ -1069,48 +1069,6 @@ proc docir::pdf::_renderParagraph {node} {
     _advanceY 4
 }
 
-# Render a tuflow flow-diagram block to a PNG and place it like an image.
-# Returns 1 on success, 0 to signal the caller to fall back to a code box.
-proc docir::pdf::_renderFlowBlock {txt} {
-    variable opts
-    variable st
-    set pdf [dict get $st pdf]
-    set fontSize [dict get $opts fontSize]
-    set lh [_lineHeight $fontSize]
-    if {[catch {
-        package require tclutils::tuflow
-        set model [::tclutils::tuflow::parse $txt]
-        set png   [::tclutils::tudiagram::toPng $model]
-        set ch    [file tempfile tmp]
-        fconfigure $ch -translation binary
-        puts -nonewline $ch $png
-        close $ch
-    }]} {
-        catch {file delete $tmp}
-        return 0
-    }
-    set ok 0
-    if {[catch {$pdf addImage $tmp -type png} imgId] == 0} {
-        catch {
-            lassign [$pdf getImageSize $imgId] imgW imgH
-            set maxW [dict get $st contentW]
-            if {$imgW > $maxW} {
-                set scale [expr {double($maxW) / $imgW}]
-                set imgW [expr {int($imgW * $scale)}]
-                set imgH [expr {int($imgH * $scale)}]
-            }
-            _ensureSpace [expr {$imgH + $lh}]
-            $pdf putImage $imgId [dict get $st margin] [dict get $st y] \
-                -width $imgW -height $imgH
-            _advanceY $imgH
-            _advanceY 4
-            set ok 1
-        }
-    }
-    catch {file delete $tmp}
-    return $ok
-}
-
 proc docir::pdf::_renderPre {node} {
     variable opts
     variable st
@@ -1192,13 +1150,6 @@ proc docir::pdf::_renderPre {node} {
     }
 
     set txt [_inlinesToText [dict get $node content]]
-    # tuflow flow-diagram: render to PNG and place it like an image block.
-    # Lazy + defensive: missing tuflow or unparsable source falls through to
-    # the normal code box, so PDF export never breaks on a flow block.
-    set lang [_dictDef $m language ""]
-    if {[string tolower $lang] in {flow tuflow mermaid}} {
-        if {[_renderFlowBlock $txt]} { return }
-    }
     set lines [split $txt "\n"]
 
     # Hintergrund-Box

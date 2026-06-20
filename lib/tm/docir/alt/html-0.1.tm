@@ -584,17 +584,6 @@ proc docir::html::_renderPre {node level} {
     if {$kind eq "code" || $kind eq "example"} {
         set txt [_inlinesToText [dict get $node content]]
         set escTxt [_escapeHtml $txt]
-        # tuflow flow-diagram: render server-side to inline SVG (no JS needed).
-        # Lazy + defensive: if tuflow is missing or the source does not parse,
-        # fall through to plain code rendering.
-        if {[string tolower $lang] in {flow tuflow}} {
-            if {![catch {
-                package require tclutils::tuflow
-                set _svg [::tclutils::tudiagram::toSvg [::tclutils::tuflow::parse $txt]]
-            }]} {
-                return "$ind<div class=\"docir-diagram\">$_svg</div>\n"
-            }
-        }
         # Mermaid: <pre class="mermaid"> -- erlaubt einbettung von
         # mermaid.js fuer Diagramm-Rendering im Browser.
         if {[string tolower $lang] eq "mermaid"} {

@@ -96,6 +96,28 @@ proc docir::renderer::tk::render {textWidget ir {options {}}} {
 
 # _renderBlocks – iteriert über Blocks ohne textWidget zu resetten.
 # Wird intern von render() aufgerufen, plus rekursiv für div-Container.
+proc docir::renderer::tk::_insertFlowImage {textWidget txt} {
+    # Render a tuflow flow-diagram to a Tk photo and embed it. Returns 1 on
+    # success, 0 to fall back to plain pre text. Lazy + defensive.
+    if {[catch {
+        package require tclutils::tuflow
+        set png [::tclutils::tudiagram::toPng [::tclutils::tuflow::parse $txt]]
+        set ch  [file tempfile tmp]
+        fconfigure $ch -translation binary
+        puts -nonewline $ch $png
+        close $ch
+        set img [image create photo -file $tmp]
+    }]} {
+        catch {file delete $tmp}
+        return 0
+    }
+    catch {file delete $tmp}
+    $textWidget insert end "\n" normal
+    $textWidget image create end -image $img -align center
+    $textWidget insert end "\n" normal
+    return 1
+}
+
 proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
     variable linkCallback
     variable linkTagCounter
@@ -173,11 +195,17 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 foreach inline $content {
                     if {[dict exists $inline text]} { append txt [dict get $inline text] }
                 }
-                # Tab-Expansion
-                set txt [string map {"\t" "        "} $txt]
-                $textWidget insert end "\n" normal
-                $textWidget insert end "$txt\n" pre
-                $textWidget insert end "\n" normal
+                set lang [_dictDef $meta language ""]
+                if {[string tolower $lang] in {flow tuflow mermaid} \
+                        && [_insertFlowImage $textWidget $txt]} {
+                    # embedded as a diagram image
+                } else {
+                    # Tab-Expansion
+                    set txt [string map {"\t" "        "} $txt]
+                    $textWidget insert end "\n" normal
+                    $textWidget insert end "$txt\n" pre
+                    $textWidget insert end "\n" normal
+                }
             }
 
             list {

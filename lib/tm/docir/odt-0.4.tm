@@ -26,6 +26,7 @@ package require odf::style
 
 namespace eval docir::odt {
     namespace export write
+    variable _flowCnt 0
 }
 
 ## ---------- helpers ----------
@@ -163,6 +164,28 @@ proc docir::odt::_fillList {txt listEl listsVar iVar L} {
 }
 
 ## One non-list block onto the body via $txt; image blocks embed bytes into $pkg.
+## Render a tuflow flow-diagram block to a PNG, add it as a package part and
+## reference it. Returns 1 on success, 0 to fall back to a Code paragraph.
+proc docir::odt::_emitFlow {txt pkg node mediaOutVar} {
+    upvar 1 $mediaOutVar mediaOut
+    variable _flowCnt
+    set src ""
+    foreach i [dict get $node content] {
+        if {[dict exists $i text]} { append src [dict get $i text] }
+    }
+    if {[catch {
+        package require tclutils::tuflow
+        set png [::tclutils::tudiagram::toPng [::tclutils::tuflow::parse $src]]
+    }]} { return 0 }
+    set name "Pictures/flow[incr _flowCnt].png"
+    if {[catch {
+        $pkg addpart $name $png [_mediaType $png $name]
+        dict set mediaOut $name $png
+        $txt appendImageFit $name -name img -anchor as-char
+    }]} { return 0 }
+    return 1
+}
+
 proc docir::odt::_block {txt pkg node mediaInVar mediaOutVar} {
     upvar 1 $mediaInVar mediaIn $mediaOutVar mediaOut
     set type [dict get $node type]
@@ -177,7 +200,13 @@ proc docir::odt::_block {txt pkg node mediaInVar mediaOutVar} {
             _inlines $txt [$txt appendParagraph "" Body] [dict get $node content]
         }
         pre {
-            _inlines $txt [$txt appendParagraph "" Code] [dict get $node content]
+            set lang [_dictDef $meta language ""]
+            if {[string tolower $lang] in {flow tuflow mermaid} \
+                    && [_emitFlow $txt $pkg $node mediaOut]} {
+                # embedded as a diagram image
+            } else {
+                _inlines $txt [$txt appendParagraph "" Code] [dict get $node content]
+            }
         }
         blank {
             $txt appendParagraph "" ""
