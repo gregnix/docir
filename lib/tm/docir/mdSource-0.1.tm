@@ -82,11 +82,11 @@ proc docir::md::_mapBlock {block} {
         footnote_section { return [docir::md::_mapFootnoteSection $block] }
         footnote_def { return {} }
         math_block   {
-            # Display-Math als Pre-Block mit kind=math kennzeichnen.
+            # Mark display math as a pre block with kind=math.
             # HTML-Sink kann es als <div class="math display"> rendern,
             # MD-Sink als $$...$$, TXT-Sink als eingerueckter Text.
-            # Content als Text-Inline-Liste, damit DocIR-Validator nicht
-            # protestiert (content muss Inline-Liste sein, nicht String).
+            # Content as a text-inline list so the DocIR validator does not
+            # complain (content must be an inline list, not a string).
             set txt [dict get $block content]
             return [list [dict create \
                 type pre \
@@ -95,11 +95,11 @@ proc docir::md::_mapBlock {block} {
         }
         default      {
             # Unbekannter Block-Typ (image, video, ...). Wenn er
-            # 'content' hat, als paragraph mit recursiv verarbeiteten
+            # has 'content', as a paragraph with recursively processed
             # Inlines emittieren. Sonst Marker-Text einfuegen.
             #
-            # Wichtig: Klammern um $t mit \[..\] escapen, sonst loest
-            # Tcl Kommando-Substitution aus und versucht den Typnamen
+            # Important: escape the brackets around $t with \[..\], otherwise
+            # Tcl triggers command substitution and tries to run the type name
             # als Befehl auszufuehren ("invalid command name span" /
             # "wrong # args: should be image option ?args?").
             if {[dict exists $block content]} {
@@ -297,10 +297,10 @@ proc docir::md::_mapDeflist {block} {
 
 proc docir::md::_mapTable {block} {
     # Seit A.3 Lesart 2 (2026-05-07):
-    # Der mdparser-AST emittiert Tabellen bereits in der DocIR-Form
-    # (rekursive tableRow/tableCell-Knoten). Der Mapper reicht die
-    # Struktur durch und mappt nur die Inlines pro Cell auf das
-    # DocIR-Inline-Schema. Vorher wurde die Tabelle aus den flachen
+    # The mdparser AST already emits tables in DocIR form
+    # (recursive tableRow/tableCell nodes). The mapper passes the
+    # structure through and only maps the inlines per cell onto the
+    # DocIR inline schema. Previously the table was built from the flat
     # headerInlines/rowsInlines neu aufgebaut.
     set rows {}
     foreach row [dict get $block content] {
@@ -346,7 +346,7 @@ proc docir::md::_mapFootnoteSection {block} {
         meta    {}]]
 }
 
-# Block-Image: ![alt](url "title") als eigenständiger Block.
+# Block image: ![alt](url "title") as a standalone block.
 # mdparser-AST: {type image alt "..." url "..." [title "..."]?}
 # DocIR-Spec: {type image content {} meta {url alt title}}
 proc docir::md::_mapImageBlock {block} {
@@ -418,12 +418,12 @@ proc docir::md::_mapInlines {inlines} {
             }
             image {
                 # Markdown image inline: {type image alt "..." url "..." title "..."?}
-                # → DocIR image inline mit text=alt, url, optional title
+                # -> DocIR image inline with text=alt, url, optional title
                 set alt   [expr {[dict exists $inline alt]   ? [dict get $inline alt]   : ""}]
                 set url   [expr {[dict exists $inline url]   ? [dict get $inline url]   : ""}]
                 set title [_dictDef $inline title ""]
                 # url kann manchmal "img.png \"Title\"" sein (mdparser-Quirk):
-                # Title separieren wenn er drin steckt
+                # separate the title if it is embedded
                 if {$title eq "" && [regexp {^(\S+)\s+"([^"]*)"} $url full u t]} {
                     set url $u
                     set title $t
@@ -433,7 +433,7 @@ proc docir::md::_mapInlines {inlines} {
                 lappend result $inlineDict
             }
             linebreak {
-                # Hard break: kein text-Feld nötig in DocIR-Spec
+                # Hard break: no text field needed in the DocIR spec
                 lappend result [dict create type linebreak]
             }
             softbreak {
@@ -442,7 +442,7 @@ proc docir::md::_mapInlines {inlines} {
             }
             strike {
                 # mdparser: {type strike content {nested-inlines}}
-                # DocIR: ein strike-Inline pro Text-Stück (analog zu strong)
+                # DocIR: one strike inline per text piece (analogous to strong)
                 set inner [docir::md::_mapInlines \
                     [_dictDef $inline content {}]]
                 foreach i $inner {
@@ -476,26 +476,26 @@ proc docir::md::_mapInlines {inlines} {
             }
             footnote_ref {
                 # mdparser: {type footnote_ref id "..." num "..."?}
-                # DocIR-Spec: footnote_ref braucht text (=display marker) und id
+                # DocIR spec: footnote_ref needs text (=display marker) and id
                 set id  [expr {[dict exists $inline id]  ? [dict get $inline id]  : ""}]
                 set num [_dictDef $inline num $id]
                 lappend result [dict create type footnote_ref text $num id $id]
             }
             math {
                 # mdparser: {type math display 0|1 text "..."}
-                # DocIR: math inline mit display-Flag
+                # DocIR: math inline with a display flag
                 set txt [_dictDef $inline text ""]
                 set disp [_dictDef $inline display 0]
                 lappend result [dict create type math text $txt display $disp]
             }
             default {
                 # Unbekannter Inline-Typ (span, strike, mark, ...).
-                # Wenn 'content' vorhanden ist (verschachtelte Inlines):
+                # If 'content' is present (nested inlines):
                 # rekursiv verarbeiten — damit verlieren wir den Text
-                # nicht. Sonst 'value' nehmen, sonst Marker-Text.
+                # not. Otherwise take 'value', otherwise the marker text.
                 #
-                # Wichtig: Klammern mit \[..\] escapen, sonst loest
-                # Tcl Kommando-Substitution aus und versucht den
+                # Important: escape the brackets with \[..\], otherwise
+                # Tcl triggers command substitution and tries to run the
                 # Typnamen als Befehl auszufuehren.
                 if {[dict exists $inline content]} {
                     set inner [docir::md::_mapInlines [dict get $inline content]]

@@ -6,15 +6,17 @@
 #   nested ul/ol indent by list indentLevel (bulletL$n); `tableframemax` option
 #   (large tables fall back to fast ASCII even in `tablemode frame`).
 #
-# Feature-gleich mit nroffrenderer-0.1.tm.
-# Rendert einen DocIR-Stream in ein Tk text-Widget.
-# Tag-Namen kompatibel mit nroffrenderer.
+# Feature-equivalent to nroffrenderer-0.1.tm.
+# Renders a DocIR stream into a Tk text widget.
+# Tag names compatible with nroffrenderer.
 #
 # Namespace: ::docir::renderer::tk
 # Tcl/Tk 8.6+ / 9.x kompatibel
 
 package provide docir::rendererTk 0.2
 package require docir 0.1
+package require docir::diag
+package require docir::diagram
 package require Tcl 8.6-
 catch {package require docir 0.1}
 
@@ -27,9 +29,9 @@ namespace eval ::docir::renderer::tk {
 
 # ============================================================
 # docir::renderer::tk::setHeadingCallback
-#   cmd – proc die als: cmd text level markName aufgerufen wird
+#   cmd – proc called as: cmd text level markName
 #   Wird beim Rendern jedes heading-Nodes aufgerufen.
-#   Ermöglicht dem Aufrufer TOC-Aufbau und Anchor-Marks.
+#   Allows the caller to build a TOC and anchor marks.
 # ============================================================
 
 proc docir::renderer::tk::_dictDef {d k {def ""}} {
@@ -43,7 +45,7 @@ proc docir::renderer::tk::setHeadingCallback {cmd} {
 
 # ============================================================
 # docir::renderer::tk::setLinkCallback
-#   cmd – proc die als: cmd name section aufgerufen wird
+#   cmd – proc called as: cmd name section
 # ============================================================
 
 proc docir::renderer::tk::setLinkCallback {cmd} {
@@ -94,28 +96,30 @@ proc docir::renderer::tk::render {textWidget ir {options {}}} {
     $textWidget yview moveto 0
 }
 
-# _renderBlocks – iteriert über Blocks ohne textWidget zu resetten.
-# Wird intern von render() aufgerufen, plus rekursiv für div-Container.
-proc docir::renderer::tk::_insertFlowImage {textWidget txt} {
+# _renderBlocks – iterates over blocks without resetting the textWidget.
+# Called internally by render(), plus recursively for div containers.
+proc docir::renderer::tk::_insertFlowImage {textWidget txt lang fontfile} {
     # Render a tuflow flow-diagram to a Tk photo and embed it. Returns 1 on
-    # success, 0 to fall back to plain pre text. Lazy + defensive.
-    if {[catch {
-        package require tclutils::tuflow
-        set png [::tclutils::tudiagram::toPng [::tclutils::tuflow::parse $txt]]
+    # success, 0 to fall back to plain pre text. A failure is reported through
+    # docir::diag (warn/strict/silent), never silently swallowed.
+    try {
+        set fontOpt [expr {$fontfile eq "" ? {} : [list -fontfile $fontfile]}]
+        set png [docir::diagram::renderPng $txt $lang {*}$fontOpt]
         set ch  [file tempfile tmp]
         fconfigure $ch -translation binary
         puts -nonewline $ch $png
         close $ch
         set img [image create photo -file $tmp]
-    }]} {
         catch {file delete $tmp}
+        $textWidget insert end "\n" normal
+        $textWidget image create end -image $img -align center
+        $textWidget insert end "\n" normal
+        return 1
+    } on error {m o} {
+        catch {file delete $tmp}
+        docir::diag::report [dict get $o -errorcode] "diagram/$lang: $m"
         return 0
     }
-    catch {file delete $tmp}
-    $textWidget insert end "\n" normal
-    $textWidget image create end -image $img -align center
-    $textWidget insert end "\n" normal
-    return 1
 }
 
 proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
@@ -154,7 +158,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 set lvl [_dictDef $meta level 1]
                 set tag "heading$lvl"
                 set startIdx [$textWidget index "end-1c"]
-                # Mark für TOC-Navigation setzen
+                # set a mark for TOC navigation
                 set headText ""
                 foreach inline $content {
                     if {[dict exists $inline text]} { append headText [dict get $inline text] }
@@ -164,7 +168,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 $textWidget mark gravity $markName left
                 docir::renderer::tk::_insertInlines $textWidget $content
                 $textWidget insert end "\n" normal
-                # Tag auf die eingefügte Zeile setzen
+                # set the tag on the inserted line
                 set endIdx [$textWidget index "end - 1 char"]
                 $textWidget tag add $tag $startIdx $endIdx
                 $textWidget insert end "\n" normal
@@ -196,8 +200,9 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                     if {[dict exists $inline text]} { append txt [dict get $inline text] }
                 }
                 set lang [_dictDef $meta language ""]
-                if {[string tolower $lang] in {flow tuflow mermaid} \
-                        && [_insertFlowImage $textWidget $txt]} {
+                set _ff [expr {[dict exists $options flowFont] ? [dict get $options flowFont] : ""}]
+                if {[docir::diagram::isDiagram $lang] \
+                        && [_insertFlowImage $textWidget $txt $lang $_ff]} {
                     # embedded as a diagram image
                 } else {
                     # Tab-Expansion
@@ -215,7 +220,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 set itemTag [expr {$lvl > 0 ? "ipItem$lvl" : "ipItem"}]
 
                 foreach item $content {
-                    # listItem-Node (neu) oder legacy {term desc}
+                    # listItem node (new) or legacy {term desc}
                     if {[dict exists $item type] && [dict get $item type] eq "listItem"} {
                         set itemMeta [dict get $item meta]
                         set term [_dictDef $itemMeta term {}]
@@ -238,10 +243,10 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                             set desc [dict get $item content]
                         }
                     } elseif {[dict exists $item type]} {
-                        # Schema-Verletzung: getypter Knoten der nicht listItem ist.
-                        # Häufigster Fall: nested 'list' direkt im list.content
+                        # schema violation: a typed node that is not listItem.
+                        # most common case: nested 'list' directly in list.content
                         # (mdparser-typisch). Statt zu crashen: sichtbarer
-                        # Hinweis im Output und nächstes Item.
+                        # note in the output and the next item.
                         set badType [dict get $item type]
                         $textWidget insert end \
                             "  ⚠ list.content enthält '$badType' statt 'listItem' (Schema-Verletzung)\n" \
@@ -253,7 +258,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                         set desc [dict get $item desc]
                         set itemKind $kind
                     } else {
-                        # Unbekannte Form: weder listItem-Node noch legacy.
+                        # unknown form: neither listItem node nor legacy.
                         $textWidget insert end \
                             "  ⚠ Unbekannte Form für list-Item (kein type-Feld, kein term/desc)\n" \
                             normal
@@ -262,9 +267,9 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
                     switch $itemKind {
                         op {
-                            # OP: dreispaltig – term sind Inline-Dicts mit | getrennt
-                            # Im DocIR sind cmd/db/class bereits als separates Dict gespeichert
-                            # (falls noch Pipe-Format: extrahieren)
+                            # OP: three columns – term is inline dicts separated by |
+                            # In DocIR, cmd/db/class are already stored as a separate dict
+                            # (if still in pipe format: extract)
                             set termText ""
                             if {[llength $term] > 0} {
                                 foreach i $term {
@@ -330,7 +335,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                             $textWidget tag add bulletL$lvl $ulStart "end - 1 char"
                         }
                         dl {
-                            # Definition list: Term fett, Definition eingerückt
+                            # definition list: term bold, definition indented
                             if {[llength $term] > 0} {
                                 $textWidget insert end "  " normal
                                 docir::renderer::tk::_insertInlines $textWidget $term listTerm
@@ -345,7 +350,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                             }
                         }
                         default {
-                            # TP / AP: term auf eigener Zeile, desc eingerückt
+                            # TP / AP: term on its own line, desc indented
                             if {[llength $term] > 0} {
                                 $textWidget insert end "  " normal
                                 docir::renderer::tk::_insertInlines $textWidget $term listTerm
@@ -392,7 +397,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
             }
 
             footnote_section {
-                # Trennlinie + alle defs
+                # separator line + all defs
                 $textWidget insert end "\n" normal
                 $textWidget insert end "[string repeat "─" 30]\n\n" normal
                 foreach def [dict get $node content] {
@@ -416,8 +421,8 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 
             div {
                 # div ist transparent — children rekursiv rendern.
-                # Wichtig: _renderBlocks (NICHT render) nutzen, sonst
-                # würde das Widget komplett gelöscht.
+                # Important: use _renderBlocks (NOT render), otherwise
+                # the widget would be completely cleared.
                 docir::renderer::tk::_renderBlocks $textWidget $content $options
             }
 
@@ -433,10 +438,10 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 if {$_tmode eq "frame" && ($_tfmax <= 0 || $_nrows <= $_tfmax)} {
                     docir::renderer::tk::_renderTableFrame $textWidget $node $meta $options
                 } else {
-                # Variante A: Monospace-Tabelle mit Box-Rahmen. Tk-text hat
+                # Variant A: monospace table with a box border. Tk text has
                 # keine echten Tabellen; in Monospace stimmt die Ausrichtung,
-                # Box-Zeichen geben Rahmen, Kopfzeile fett. Inline-Formatting
-                # in Zellen wird zugunsten der Ausrichtung zu Plain-Text.
+                # box characters give the border, header row bold. Inline formatting
+                # in cells is reduced to plain text in favor of alignment.
                 set rows    [dict get $node content]
                 set numCols [_dictDef $meta columns 1]
                 if {$numCols < 1} { set numCols 1 }
@@ -471,7 +476,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                     }
                 }
 
-                # Monospace-Font aus dem pre-Tag ableiten (+ fette Variante)
+                # derive the monospace font from the pre tag (+ bold variant)
                 set mf [$textWidget tag cget pre -font]
                 if {$mf eq ""} { set mf TkFixedFont }
                 # monoFamily is resolved to a real family at render setup, so the
@@ -530,7 +535,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 if {[::docir::isSchemaOnly $type]} {
                     continue
                 }
-                # paragraph mit class=blockquote
+                # paragraph with class=blockquote
                 set cls [_dictDef $meta class ""]
                 if {$cls eq "blockquote"} {
                     $textWidget insert end "  │ " blockquoteBar
@@ -544,7 +549,7 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
 }
 
 # ============================================================
-# _insertInlines – Inline-Sequenz in Text-Widget einfügen
+# _insertInlines – insert an inline sequence into the text widget
 # ============================================================
 
 # Forward mouse-wheel events from an embedded widget and all its descendants
@@ -654,8 +659,8 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
             linebreak { $textWidget insert end "\n" $defaultTag }
             softbreak { $textWidget insert end " " $defaultTag }
             span {
-                # span: zeigt Text mit class als Tag-Name "span_class".
-                # Wir konfigurieren keinen speziellen Style — kann der
+                # span: shows text with class as the tag name "span_class".
+                # We do not configure a special style — the
                 # Konsument tun via $textWidget tag configure span_FOO.
                 set cls [_dictDef $inline class ""]
                 set spanTag $defaultTag
@@ -666,14 +671,14 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
             }
             image {
                 # Inline-Image. Tk-Text kann Bilder via image create einbetten.
-                # Wir versuchen das Bild lokal zu laden; bei Fehlschlag
+                # We try to load the image locally; on failure
                 # fallback auf "[image: alt]" Plain-Text.
                 set url [_dictDef $inline url ""]
                 set alt [_dictDef $inline text ""]
                 if {$url ne "" && [file exists $url] && [file readable $url]} {
                     if {[catch {image create photo -file $url} imgName] == 0} {
                         $textWidget image create end -image $imgName -align center
-                        # Image-Name speichern für Cleanup
+                        # store the image name for cleanup
                         $textWidget tag add docir-image-track end-2c end-1c
                     } else {
                         $textWidget insert end "\[image: $alt\]" $defaultTag
@@ -683,7 +688,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 }
             }
             footnote_ref {
-                # Hochgestellt mit kleinerer Schrift via footnoteRef-Tag.
+                # superscript with a smaller font via the footnoteRef tag.
                 # Format: [N]
                 set id [_dictDef $inline id ""]
                 set num [_dictDef $inline text "?"]
@@ -704,7 +709,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 $textWidget tag bind $tagName <Leave> \
                     [list $textWidget configure -cursor {}]
                 if {$href ne ""} {
-                    # URL-Link: xdg-open (Linux) oder open (macOS)
+                    # URL link: xdg-open (Linux) or open (macOS)
                     set opener [expr {$::tcl_platform(os) eq "Darwin" ? "open" : "xdg-open"}]
                     $textWidget tag bind $tagName <ButtonRelease-1> \
                         [list catch [list exec $opener $href &]]
@@ -730,7 +735,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
 # ============================================================
 
 proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkMode {colors {}}} {
-    # Farben aus colors-Dict (Dark-Mode-Support) oder Defaults
+    # colors from the colors dict (dark-mode support) or defaults
     set bg     [expr {[dict exists $colors bg]     ? [dict get $colors bg]     : \
                      ($darkMode ? "#1e1e1e" : "#ffffff")}]
     set fg     [expr {[dict exists $colors fg]     ? [dict get $colors fg]     : \
@@ -739,7 +744,7 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
     set codeBg [_dictDef $colors codeBg [expr {$darkMode ? "#2d2d2d" : "#f0f0f0"}]]
     set linkFg [_dictDef $colors linkFg [expr {$darkMode ? "#4ec9b0" : "#0066cc"}]]
 
-    # Link-Farbe in Namespace-Variable speichern (für renderInlines)
+    # store the link color in a namespace variable (for renderInlines)
     set ::docir::renderer::tk::currentLinkFg $linkFg
 
     $w configure -background $bg -foreground $fg
@@ -770,7 +775,7 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
     $w tag configure footnoteRef -font [list $fontFamily $fontSize] \
         -offset [expr {$fontSize / 2}] -foreground $linkFg
 
-    # Footnote-Section: kleinerer Font für die Definitionen
+    # footnote section: smaller font for the definitions
     $w tag configure footnoteSection -font [list $fontFamily $fnSize] \
         -lmargin1 0 -lmargin2 20
 
@@ -780,7 +785,7 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
         -foreground "#666666"
 
     # Div-Container: einfaches default-Tag, kann via tag configure
-    # vom Konsumenten gestyled werden (z.B. div_warning)
+    # be styled by the consumer (e.g. div_warning)
 
     # IP-Item Tags: bis Level 4
     $w tag configure ipItem \
@@ -794,8 +799,8 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
             -tabs [list $lm2]
     }
 
-    # Blockquote: linker Balken + Einrückung + leichter Hintergrund.
-    # (Kein -font, damit Inline-Fett/Kursiv/Links im Zitat erhalten bleiben.)
+    # blockquote: left bar + indentation + light background.
+    # (No -font, so inline bold/italic/links in the quote are preserved.)
     $w tag configure blockquoteBar \
         -foreground $headFg \
         -font [list $fontFamily $fontSize bold]
@@ -804,9 +809,9 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
         -foreground [_dictDef $colors quoteFg [expr {$darkMode ? "#b0b0b0" : "#555555"}]] \
         -background [_dictDef $colors quoteBg [expr {$darkMode ? "#262626" : "#f6f6f6"}]]
 
-    # ul/ol Bullets: leichte Einrückung. bulletL$n / bulletContL$n staffeln je
-    # indentLevel (20px pro Stufe, wie ipItem), damit verschachtelte Listen
-    # optisch tiefer einrücken. bullet/bulletCont bleiben als Level-0-Alias.
+    # ul/ol bullets: light indentation. bulletL$n / bulletContL$n step per
+    # indentLevel (20px per level, like ipItem), so nested lists
+    # indent visually deeper. bullet/bulletCont remain as the level-0 alias.
     $w tag configure bullet \
         -lmargin1 10 -lmargin2 25
     # Continuation paragraphs of a bullet item: same indent on first + wrapped

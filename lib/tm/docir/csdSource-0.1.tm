@@ -1,4 +1,4 @@
-# csdSource-0.1.tm -- DocIR-Quelle fuer CSD (Cheatsheet Definition)
+# csdSource-0.1.tm -- DocIR source for CSD (Cheatsheet Definition)
 # ============================================================
 #
 # CSDs sind Tcl-deklarative Cheatsheet-Definitions:
@@ -10,20 +10,20 @@
 #           {{pack}     {pack $w ?-option value ...?}}
 #           {{forget}   {pack forget $w}}
 #       }}
-#       {title "Beispiel" type code content {
+#       {title "Example" type code content {
 #           {pack .b -side left}
 #           {pack .e -fill x}
 #       }}
 #       {title "Hinweise" type hint content {
-#           {Reihenfolge der pack-Aufrufe bestimmt die Platzvergabe.}
+#           {Order of pack calls determines space allocation.}
 #       }}
 #       {title "Tips" type list content {
-#           {pack info $w zeigt die aktuelle Konfiguration.}
+#           {pack info $w shows the current configuration.}
 #       }}
 #   }
 #
-# Dieses Modul ist eine docir-Source: CSD-Dict -> Sheets-Liste, im
-# gleichen Format das tilecommon::streamToSheets erzeugt und das
+# This module is a docir source: CSD dict -> sheets list, in the
+# same format that tilecommon::streamToSheets produces and that
 # docir::tilepdf::renderSheets/_renderSheet konsumiert.
 #
 # Damit kann ein cheatsheets-Adapter ohne eigenen Renderer-Code
@@ -34,7 +34,7 @@
 #
 # Public API:
 #   docir::csd::toSheet  csdDict       -> ein Sheet-Dict
-#   docir::csd::toSheets csdOrList     -> Liste von Sheet-Dicts (Multi-CSD)
+#   docir::csd::toSheets csdOrList     -> list of sheet dicts (multi-CSD)
 
 package provide docir::csdSource 0.1
 
@@ -43,8 +43,8 @@ namespace eval docir::csd {
 }
 
 # Ein CSD-Dict in ein Sheet-Dict (title/subtitle/sections) konvertieren.
-# Section-Types: table/code/hint/list/code-intro/image -- der Sektion-
-# Content wird ans Format gebracht das tilepdf::_renderSection erwartet.
+# Section types: table/code/hint/list/code-intro/image -- the section
+# content is shaped into the format that tilepdf::_renderSection expects.
 proc docir::csd::toSheet {csdDict} {
     set title    ""
     set subtitle ""
@@ -66,7 +66,7 @@ proc docir::csd::toSheet {csdDict} {
         set sheetContent {}
         switch $secType {
             table {
-                # CSD table-Row:  {{label} {value}}  ODER {{label} {value} mono}
+                # CSD table row:  {{label} {value}}  OR {{label} {value} mono}
                 # Sheet table-Row: {label value ?mono?}
                 foreach row $content {
                     set lbl [lindex $row 0]
@@ -77,7 +77,7 @@ proc docir::csd::toSheet {csdDict} {
                 }
             }
             code - hint - list {
-                # content ist bereits eine Liste von Strings, 1:1
+                # content is already a list of strings, 1:1
                 set sheetContent $content
             }
             code-intro {
@@ -91,7 +91,7 @@ proc docir::csd::toSheet {csdDict} {
                 continue
             }
             image {
-                # content: Liste von {url alt title} Tripeln -- 1:1
+                # content: list of {url alt title} triples -- 1:1
                 set sheetContent $content
             }
             default {
@@ -106,13 +106,13 @@ proc docir::csd::toSheet {csdDict} {
     return [dict create title $title subtitle $subtitle sections $sections]
 }
 
-# Eingabe kann ein einzelnes CSD-Dict sein oder eine Liste von CSD-Dicts
-# (Multi-CSD-Datei). Heuristik: ein einzelnes CSD-Dict hat den Schluessel
-# 'title' auf der Top-Ebene; eine Liste hat das nicht.
+# Input can be a single CSD dict or a list of CSD dicts (multi-CSD file).
+# Heuristic: a single CSD dict has the key 'title' at the top level;
+# a list does not.
 proc docir::csd::toSheets {csdOrList} {
     set sheets {}
 
-    # Heuristik: ist's ein dict mit "title" key -> einzelnes CSD
+    # Heuristic: is it a dict with a "title" key -> single CSD
     if {[catch {dict exists $csdOrList title} hasTitle] || $hasTitle} {
         lappend sheets [toSheet $csdOrList]
     } else {

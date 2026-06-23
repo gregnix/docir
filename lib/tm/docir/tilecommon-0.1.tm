@@ -1,15 +1,15 @@
 # docir::tile-common -- Gemeinsame DocIR -> Sheets/Tiles-Logik
 #
-# Extrahiert aus tilepdf-0.1.tm. Wird von tilepdf und tilehtml genutzt.
-# Konvertiert einen DocIR-Stream in eine Liste von Sheets, jedes Sheet
-# enthält Sections mit klassifizierten Typen.
+# Extracted from tilepdf-0.1.tm. Used by tilepdf and tilehtml.
+# Converts a DocIR stream into a list of sheets; each sheet
+# contains sections with classified types.
 #
 # Public API:
 #   docir::tile::streamToSheets ir ?titleOverride? ?subtitleOverride?
-#       -> Liste von Sheets {title subtitle sections}
+#       -> list of sheets {title subtitle sections}
 #
 #   docir::tile::tokenize text
-#       -> Liste von Tokens {type text} (plain/bold/italic/code)
+#       -> list of tokens {type text} (plain/bold/italic/code)
 #
 #   docir::tile::inlinesToText inlines
 #       -> String mit pseudo-markdown
@@ -22,7 +22,7 @@
 #   table             -> table-Tile (label/value)
 #   paragraph         -> hint-Tile
 #   paragraph + pre   -> code-intro Section (Intro+Code)
-#   gemischt          -> hint mit Markern
+#   mixed             -> hint with markers
 
 package provide docir::tilecommon 0.1
 package require docir 0.1
@@ -45,7 +45,7 @@ proc docir::tile::inlinesToText {inlines} {
     foreach inline $inlines {
         if {![dict exists $inline type]} continue
         set t [dict get $inline type]
-        # Text-Wert extrahieren (mdparser nutzt 'value', andere nutzen 'text')
+        # extract text value (mdparser uses 'value', others use 'text')
         set v ""
         if {[dict exists $inline value]} {
             set v [dict get $inline value]
@@ -82,11 +82,11 @@ proc docir::tile::inlinesToText {inlines} {
             image {
                 set alt ""
                 set url ""
-                # alt: aus inline.text oder meta.alt
+                # alt: from inline.text or meta.alt
                 if {[dict exists $inline text]} {
                     set alt [dict get $inline text]
                 }
-                # url: aus inline.url oder meta.url
+                # url: from inline.url or meta.url
                 if {[dict exists $inline url]} {
                     set url [dict get $inline url]
                 }
@@ -117,7 +117,7 @@ proc docir::tile::inlinesToText {inlines} {
 }
 
 # ---------------------------------------------------------------------------
-# Mini-Tokenizer fuer Inline-Markup (**bold**, *italic*, `code`)
+# Mini tokenizer for inline markup (**bold**, *italic*, `code`)
 # ---------------------------------------------------------------------------
 
 proc docir::tile::tokenize {text} {
@@ -155,7 +155,7 @@ proc docir::tile::tokenize {text} {
 }
 
 # ---------------------------------------------------------------------------
-# Token-Type -> Font-Familie (fuer PDF: Helvetica-Bold etc.)
+# Token type -> font family (for PDF: Helvetica-Bold etc.)
 # ---------------------------------------------------------------------------
 
 proc docir::tile::fontFor {type} {
@@ -168,7 +168,7 @@ proc docir::tile::fontFor {type} {
 }
 
 # ---------------------------------------------------------------------------
-# DocIR-Stream -> Sheets-Liste
+# DocIR stream -> sheets list
 # ---------------------------------------------------------------------------
 
 proc docir::tile::streamToSheets {ir {titleOverride ""} {subtitleOverride ""}} {
@@ -294,7 +294,7 @@ proc docir::tile::packSection {title content} {
         return [dict create title $title type hint content {}]
     }
 
-    # Klassifizieren: welche Block-Typen sind in der Section?
+    # Classify: which block types are in the section?
     set types {}
     foreach b $content {
         set t [dict get $b type]
@@ -306,7 +306,7 @@ proc docir::tile::packSection {title content} {
         set onlyType [lindex $types 0]
         switch $onlyType {
             image {
-                # image-Section: Liste von {url alt title} Tripeln
+                # image section: list of {url alt title} triples
                 set images {}
                 foreach b $content {
                     set bm [dict get $b meta]

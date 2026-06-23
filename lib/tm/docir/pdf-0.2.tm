@@ -1,5 +1,5 @@
 # docir-pdf-0.2.tm -- DocIR → PDF Renderer
-#
+# BUILD-ID: pdf-0.2 seam+heightfit+logicalsize 2026-06-21 id=5f4d4dc4867621fe
 # Wandelt eine DocIR-Sequenz in ein PDF-Dokument um. Nutzt
 # pdf4tcl (>=0.9) als Low-Level-Backend und pdf4tcllib (>=0.2)
 # für Font-Embedding (TTF), Unicode-Sanitization und
@@ -51,6 +51,8 @@
 
 package provide docir::pdf 0.2
 package require docir 0.1
+package require docir::diag
+package require docir::diagram
 
 # pdf4tcl + pdf4tcllib werden lazy beim ersten render-Aufruf geladen,
 # nicht beim Modul-Source. So kann das Modul auch auf Systemen ohne
@@ -177,6 +179,7 @@ proc docir::pdf::_normalizeOptions {options} {
         sansItalicFont     "" \
         sansBoldItalicFont "" \
         monoFont           "" \
+        flowFont           "" \
         header             "" \
         footer             "" \
         theme              "" \
@@ -1071,44 +1074,50 @@ proc docir::pdf::_renderParagraph {node} {
 
 # Render a tuflow flow-diagram block to a PNG and place it like an image.
 # Returns 1 on success, 0 to signal the caller to fall back to a code box.
-proc docir::pdf::_renderFlowBlock {txt} {
+proc docir::pdf::_renderFlowBlock {txt lang} {
     variable opts
     variable st
     set pdf [dict get $st pdf]
-    set fontSize [dict get $opts fontSize]
-    set lh [_lineHeight $fontSize]
-    if {[catch {
-        package require tclutils::tuflow
-        set model [::tclutils::tuflow::parse $txt]
-        set png   [::tclutils::tudiagram::toPng $model]
-        set ch    [file tempfile tmp]
+    set lh [_lineHeight [dict get $opts fontSize]]
+    try {
+        set ff [expr {[dict exists $opts flowFont] ? [dict get $opts flowFont] : ""}]
+        set fontOpt [expr {$ff eq "" ? {} : [list -fontfile $ff]}]
+        set renderScale 3
+        set png [docir::diagram::renderPng $txt $lang -scale $renderScale {*}$fontOpt]
+        set ch  [file tempfile tmp]
         fconfigure $ch -translation binary
         puts -nonewline $ch $png
         close $ch
-    }]} {
+        set imgId [$pdf addImage $tmp -type png]
+        lassign [$pdf getImageSize $imgId] pxW pxH
+        # The PNG is oversampled by renderScale for crisp output. Embed it at
+        # its logical (scale-1) point size instead of placing the pixels 1:1 as
+        # points -- otherwise every diagram is renderScale-times too large and
+        # gets pushed onto its own page. The fit-to-page step below still
+        # shrinks genuinely oversized diagrams.
+        set imgW [expr {$pxW / double($renderScale)}]
+        set imgH [expr {$pxH / double($renderScale)}]
+        set maxW [dict get $st contentW]
+        set maxH [expr {[dict get $st bottomY] - [dict get $st topY]}]
+        set sW [expr {$imgW > $maxW ? double($maxW) / $imgW : 1.0}]
+        set sH [expr {$imgH > $maxH ? double($maxH) / $imgH : 1.0}]
+        set scale [expr {min($sW, $sH)}]
+        if {$scale < 1.0} {
+            set imgW [expr {int($imgW * $scale)}]
+            set imgH [expr {int($imgH * $scale)}]
+        }
+        _ensureSpace [expr {$imgH + $lh}]
+        $pdf putImage $imgId [dict get $st margin] [dict get $st y] \
+            -width $imgW -height $imgH
+        _advanceY $imgH
+        _advanceY 4
         catch {file delete $tmp}
+        return 1
+    } on error {m o} {
+        catch {file delete $tmp}
+        docir::diag::report [dict get $o -errorcode] "diagram/$lang: $m"
         return 0
     }
-    set ok 0
-    if {[catch {$pdf addImage $tmp -type png} imgId] == 0} {
-        catch {
-            lassign [$pdf getImageSize $imgId] imgW imgH
-            set maxW [dict get $st contentW]
-            if {$imgW > $maxW} {
-                set scale [expr {double($maxW) / $imgW}]
-                set imgW [expr {int($imgW * $scale)}]
-                set imgH [expr {int($imgH * $scale)}]
-            }
-            _ensureSpace [expr {$imgH + $lh}]
-            $pdf putImage $imgId [dict get $st margin] [dict get $st y] \
-                -width $imgW -height $imgH
-            _advanceY $imgH
-            _advanceY 4
-            set ok 1
-        }
-    }
-    catch {file delete $tmp}
-    return $ok
 }
 
 proc docir::pdf::_renderPre {node} {
@@ -1196,8 +1205,8 @@ proc docir::pdf::_renderPre {node} {
     # Lazy + defensive: missing tuflow or unparsable source falls through to
     # the normal code box, so PDF export never breaks on a flow block.
     set lang [_dictDef $m language ""]
-    if {[string tolower $lang] in {flow tuflow mermaid}} {
-        if {[_renderFlowBlock $txt]} { return }
+    if {[docir::diagram::isDiagram $lang]} {
+        if {[_renderFlowBlock $txt $lang]} { return }
     }
     set lines [split $txt "\n"]
 

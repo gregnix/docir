@@ -1,22 +1,27 @@
 #!/usr/bin/env tclsh
 # demo-docir-pdf-flow.tcl
 #
-# Demonstrates docir -> PDF rendering of flow-diagram code blocks.
+# Demonstrates docir -> PDF rendering of diagram code blocks.
 #
-# A ```flow (or ```tuflow) fenced block is parsed by tclutils::tuflow into a
-# tudiagram model, rasterised to PNG by tudiagram::toPng (pure Tcl, no browser
-# and no external SVG rasteriser) and embedded into the PDF as an image. A
-# ```mermaid block is rendered the same way (best-effort tuflow subset), while
-# an ordinary code block (e.g. ```tcl) stays a normal monospace code box.
+# A fenced ```flow / ```tuflow / ```pie block (and ```mermaid in the raster
+# sinks) is rendered through the tclutils::tuflow facade and embedded into the
+# PDF as a PNG -- pure Tcl, no browser and no external SVG rasteriser. Graph
+# types go through tudiagram; a pie chart goes through tupie. An ordinary code
+# block (e.g. ```tcl) stays a normal monospace code box.
 #
-# Everything is lazy + defensive: if tclutils::tuflow is not installed, or a
-# block does not parse, docir-pdf silently falls back to the code box, so the
-# PDF export can never break on a diagram block.
+# The docir sinks route every diagram block through the docir::diagram seam, so
+# the set of diagram languages lives in one place. Rendering is NOT silent: if a
+# diagram block fails to render (e.g. an unsupported type, or tclutils not on the
+# path), the error is reported through docir::diag (warn/strict/silent) and the
+# block then falls back to a code box -- the failure is observable, not hidden.
 #
 # Prerequisites (installed in tcl::tm::path / auto_path):
-#   docir 0.1.1, docir::pdf 0.2, pdf4tcl, pdf4tcllib,
-#   tclutils::tuflow, tclutils::tudiagram, tclutils::tupngdraw, tclutils::common
+#   docir 0.1.1, docir::pdf 0.2, docir::diagram, pdf4tcl, pdf4tcllib,
+#   tclutils::tuflow 0.2, tclutils::tudiagram, tclutils::tupie,
+#   tclutils::tupngdraw, tclutils::common
 
+set alDir  [file normalize [file join  [file dirname [info script]] ../ ../ ]]
+tcl::tm::path add [file join $alDir tclutils lib tm]
 package require docir::pdf
 
 # ----------------------------------------------------------------------------
@@ -75,6 +80,11 @@ set mermaidsrc {flowchart LR
     Review -->|approve| Publish
     Review -->|reject| Draft}
 
+set piesrc {pie showData title Test result
+    "pass" : 87
+    "skip" : 1
+    "fail" : 3}
+
 set tclsrc {proc greet {name} {
     puts "Hallo, $name!"
 }
@@ -84,10 +94,11 @@ greet Welt}
 # Assemble the document IR.
 # ----------------------------------------------------------------------------
 set ir [list \
-    [head 1 "docir -> PDF: flow & mermaid"] \
-    [para "Jeder ```flow-Block wird von tuflow geparst, von tudiagram zu PNG\
-           gerendert (pure Tcl) und als Bild ins PDF eingebettet. Ein normaler\
-           Code-Block bleibt eine Monospace-Box."] \
+    [head 1 "docir -> PDF: flow, pie & mermaid"] \
+    [para "Jeder Diagramm-Block wird ueber die tuflow-Fassade gerendert (Graphen\
+           via tudiagram, Tortendiagramme via tupie), als PNG ins PDF\
+           eingebettet -- pure Tcl. Ein normaler Code-Block bleibt eine\
+           Monospace-Box."] \
 \
     [head 2 "1. Lineare Pipeline (LR)"] \
     [para "Eine einfache Kette von Boxen; der letzte Knoten ist ein Stadium."] \
@@ -109,13 +120,18 @@ set ir [list \
            durchzulaufen."] \
     [block flow $skipedge] \
 \
-    [head 2 "5. mermaid-Tag im PDF"] \
-    [para "Ein ```mermaid-Block wird im PDF best-effort ueber tuflow\
+    [head 2 "5. Tortendiagramm (pie)"] \
+    [para "Ein ```pie-Block ist kein Graph; die Fassade leitet ihn an tupie\
+           weiter. Legende mit Wert und Prozent (showData)."] \
+    [block pie $piesrc] \
+\
+    [head 2 "6. mermaid-Tag im PDF"] \
+    [para "Ein ```mermaid-Block wird im PDF best-effort ueber die Fassade\
            gerendert (im HTML-Sink bliebe er dagegen browserseitiges\
            mermaid.js)."] \
     [block mermaid $mermaidsrc] \
 \
-    [head 2 "6. Normaler Code-Block (Kontrast)"] \
+    [head 2 "7. Normaler Code-Block (Kontrast)"] \
     [para "Ein ```tcl-Block ist kein Diagramm und bleibt eine Code-Box:"] \
     [block tcl $tclsrc] \
 ]
@@ -126,8 +142,8 @@ set ir [list \
 set out [file join [file dirname [file normalize [info script]]] \
              demo-docir-pdf-flow.pdf]
 docir::pdf::render $ir $out [dict create \
-    title    "docir -> PDF: flow & mermaid" \
-    author   "tuflow / tudiagram demo" \
-    date     "2026-06-20"]
+    title    "docir -> PDF: flow, pie & mermaid" \
+    author   "tuflow / tudiagram / tupie demo" \
+    date     "2026-06-21"]
 
 puts "geschrieben: $out ([file size $out] bytes)"

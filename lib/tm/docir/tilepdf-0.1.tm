@@ -1,28 +1,28 @@
 # docir::tilepdf -- DocIR -> 2-spaltiges Tile-PDF
 #
-# Adaption von gregs cheatsheet-0.1.tm-Layout-Logik fuer beliebige
-# DocIR-Streams. Quelle ist DocIR (typisch aus mdSource), Senke ist
-# A4-quer-PDF mit 2-Spalten-Tile-Layout.
+# Adaptation of greg's cheatsheet-0.1.tm layout logic for arbitrary
+# DocIR streams. Source is DocIR (typically from mdSource), sink is
+# A4 landscape PDF with a 2-column tile layout.
 #
 # Mapping DocIR -> Tile:
-#   heading level=1   -> Sheet-Titel (auf Header der Seite)
+#   heading level=1   -> sheet title (in the page header)
 #   heading level=2+  -> Tile-Section-Titel (startet neue Tile)
-#   paragraph         -> hint-artige Tile-Zeile
+#   paragraph         -> hint-like tile row
 #   pre               -> code-Tile-Zeilen
 #   list              -> list-Tile (Bullet-Items)
 #   table             -> table-Tile (label/value)
 #
-# Layout-Regeln (wie cheatsheet):
-#   - Sections sind atomar: passt nicht in aktuelle Spalte -> andere
-#   - Passt in keine Spalte -> neue Seite
-#   - Section groesser als ganze Seite: wird trotzdem auf neue Seite
-#     gezwungen und ueberlaeuft (User soll MD anders strukturieren)
+# Layout rules (like cheatsheet):
+#   - sections are atomic: does not fit in the current column -> the other
+#   - fits in no column -> new page
+#   - section larger than a whole page: is forced onto a new page
+#     anyway and overflows (the user should structure the MD differently)
 #
 # API:
 #   docir::tilepdf::render irStream outFile ?options?
 #
 # Optionen:
-#   -title   Sheet-Titel-Override (default: aus erstem doc_header oder H1)
+#   -title   sheet title override (default: from the first doc_header or H1)
 #   -subtitle Subtitel-Override
 #
 # package require Tcl 8.6-
@@ -34,17 +34,17 @@ package require pdf4tcl
 
 namespace eval docir::tilepdf {
 
-    # Style-Konfiguration: fontMode entscheidet was passiert wenn TTF
-    # nicht ladbar (strict=throw, warn=stderr+fallback, silent=fallback).
-    # Default warn -- ein fehlendes Unicode-Font soll Rendering nicht
-    # blockieren. Cheatsheets-Workflow setzt strict wenn Unicode-Fonts
-    # zwingend benoetigt werden.
+    # Style configuration: fontMode decides what happens when a TTF
+    # is not loadable (strict=throw, warn=stderr+fallback, silent=fallback).
+    # Default warn -- a missing Unicode font should not block
+    # rendering. The cheatsheets workflow sets strict when Unicode fonts
+    # are strictly required.
     variable Style
     array set Style {fontMode warn}
 
     # Font-Mapping (gefuellt von _setupFonts).
     # F(prop)/F(propBold)/F(propOblique)/F(mono) zeigen entweder auf
-    # Unicode-TTF (UniSans/UniSansBold/UniSansOblique/UniMono) oder
+    # Unicode TTF (UniSans/UniSansBold/UniSansOblique/UniMono) or
     # Standard-Fonts (Helvetica/Helvetica-Bold/Helvetica-Oblique/Courier).
     variable F
     array set F {
@@ -54,7 +54,7 @@ namespace eval docir::tilepdf {
         mono        Courier
     }
 
-    # Layout-Konstanten — 1:1 aus cheatsheet-0.1.tm (A4 Portrait, 2 Spalten)
+    # Layout constants — 1:1 from cheatsheet-0.1.tm (A4 portrait, 2 columns)
     variable C
     array set C {
         col1_x    8
@@ -72,7 +72,7 @@ namespace eval docir::tilepdf {
         div_x     297
     }
 
-    # Themes: light (default) und dark
+    # Themes: light (default) and dark
     variable THEMES
     array set THEMES {
         light:bg          "1.0 1.0 1.0"
@@ -98,7 +98,7 @@ namespace eval docir::tilepdf {
         dark:subtitle     "0.65 0.65 0.65"
     }
 
-    # Aktuelle Color-Map (wird bei render gesetzt)
+    # current color map (set during render)
     variable COL
     array set COL {
         header_r   0.1   header_g  0.2   header_b  0.5
@@ -132,20 +132,20 @@ proc docir::tilepdf::_inlinesToText {inlines} {
     return [docir::tile::inlinesToText $inlines]
 }
 # ---------------------------------------------------------------------------
-# DocIR-Stream -> Sheets-Liste (Sheet = {title, subtitle, sections})
+# DocIR stream -> sheets list (sheet = {title, subtitle, sections})
 # ---------------------------------------------------------------------------
 #
 # Aufteilung:
-#   - doc_header oder erstes heading level=1 -> Sheet-Titel
+#   - doc_header or the first heading level=1 -> sheet title
 #   - Weitere heading level=1 -> neue Sheets
 #   - heading level>=2 -> startet neue Section in aktuellem Sheet
-#   - Block ohne heading davor -> Section "Übersicht" (nur wenn Inhalt da)
+#   - block without a preceding heading -> section "Übersicht" (only if there is content)
 
 proc docir::tilepdf::_streamToSheets {ir titleOverride subtitleOverride} {
     return [docir::tile::streamToSheets $ir $titleOverride $subtitleOverride]
 }
-# Section-Inhalt analysieren und in {title, type, content}-Form packen.
-# Wenn die Section nur einen einzigen Block-Typ enthaelt, nutzt Tile
+# Analyze the section content and pack it into {title, type, content} form.
+# If the section contains only a single block type, Tile uses
 # den passenden Typ. Bei gemischten Inhalten -> "hint"-artiger Mix.
 proc docir::tilepdf::_packSection {title content} {
     return [docir::tile::packSection $title $content]
@@ -185,18 +185,18 @@ proc docir::tilepdf::_setTheme {theme} {
 }
 
 # ---------------------------------------------------------------------------
-# Mini-Tokenizer + Mixed-Font-Renderer fuer Inline-Markup
+# Mini tokenizer + mixed-font renderer for inline markup
 # ---------------------------------------------------------------------------
 #
-# Erkennt **bold**, *italic*, `code` in einem Text und rendert die
-# Stuecke mit den passenden Fonts. Word-Wrap auf Spaltenbreite.
+# Recognizes **bold**, *italic*, `code` in a text and renders the
+# pieces with the matching fonts. Word wrap at the column width.
 
 # _tokenize: parst pseudo-markdown in {type text}-Tokens
 proc docir::tilepdf::_tokenize {text} {
     return [docir::tile::tokenize $text]
 }
-# _fontFor: mapped Token-Type auf pdf4tcl Font-Namen (via F-Array, das
-# bei _setupFonts mit Unicode-TTF gefuellt wird falls verfuegbar).
+# _fontFor: maps a token type to a pdf4tcl font name (via the F array, which
+# is filled with Unicode TTF during _setupFonts if available).
 proc docir::tilepdf::_fontFor {type} {
     variable F
     switch $type {
@@ -206,8 +206,8 @@ proc docir::tilepdf::_fontFor {type} {
         default { return $F(prop)        }
     }
 }
-# _drawRichLine: rendert eine Zeile mit Mixed-Fonts, mit Word-Wrap.
-# Returns y nach der gerenderten Zeile(n).
+# _drawRichLine: renders a line with mixed fonts, with word wrap.
+# Returns y after the rendered line(s).
 proc docir::tilepdf::_drawRichLine {pdf text x y maxWidth fontSize lineHeight} {
     variable COL
     set tokens [_tokenize $text]
@@ -219,8 +219,8 @@ proc docir::tilepdf::_drawRichLine {pdf text x y maxWidth fontSize lineHeight} {
         lassign $token tType tText
         set font [_fontFor $tType]
 
-        # Token in Worte splitten, pro Wort prüfen ob es noch passt
-        # Wir erhalten Whitespace zwischen Wörtern explizit.
+        # split the token into words, check per word whether it still fits
+        # We preserve whitespace between words explicitly.
         set parts [split $tText " "]
         set partIdx 0
         foreach part $parts {
@@ -246,7 +246,7 @@ proc docir::tilepdf::_drawRichLine {pdf text x y maxWidth fontSize lineHeight} {
             $pdf setFillColor $COL(fg_r) $COL(fg_g) $COL(fg_b)
             set partW [$pdf getStringWidth $part]
 
-            # Wrap wenn Word nicht passt
+            # wrap if the word does not fit
             if {$curX + $partW > $x + $maxWidth && $curX > $x} {
                 incr curY $lineHeight
                 set curX $x
@@ -258,7 +258,7 @@ proc docir::tilepdf::_drawRichLine {pdf text x y maxWidth fontSize lineHeight} {
             set lineUsed 1
         }
     }
-    # Returns y nach Zeilenwechsel (Höhe der Zeilen-Block + 2px Spacing)
+    # Returns y after the line break (height of the line block + 2px spacing)
     if {$lineUsed} {
         return [expr {$curY + $lineHeight + 1}]
     }
@@ -377,19 +377,19 @@ proc docir::tilepdf::_sep {pdf y col} {
     return [expr {$y + $C(sep_h)}]
 }
 
-# Spaltenwechsel: Wenn aktuelle Spalte voll oder ueberhaupt benutzt,
-# wechsle zur anderen Spalte. Wenn beide voll waren -> neue Seite.
+# Column switch: if the current column is full or used at all,
+# switch to the other column. If both were full -> new page.
 proc docir::tilepdf::_col {pdf yIn colVar title subtitle} {
     variable C
     upvar $colVar col
 
     if {$yIn > $C(y_max)} {
         if {$col == $C(col1_x)} {
-            # Wechsel zu Spalte 2
+            # switch to column 2
             set col $C(col2_x)
             return $C(y_start)
         } else {
-            # Beide Spalten voll -> neue Seite
+            # both columns full -> new page
             $pdf endPage
             $pdf startPage
             _header $pdf $title $subtitle
@@ -401,7 +401,7 @@ proc docir::tilepdf::_col {pdf yIn colVar title subtitle} {
     return $yIn
 }
 
-# Hoehe einer Section schaetzen (fuer atomare Platzierung)
+# Estimate the height of a section (for atomic placement)
 proc docir::tilepdf::_sectionHeight {section} {
     variable C
     set type [dict get $section type]
@@ -420,7 +420,7 @@ proc docir::tilepdf::_sectionHeight {section} {
         list    { incr h [expr {[llength $content] * $C(row_h)}] }
         image   {
             # Schaetzung: pro Bild ~120pt (skaliert auf col-width).
-            # Echte Hoehe haengt von Bild-Dim ab.
+            # real height depends on the image dimensions.
             incr h [expr {[llength $content] * 120}]
         }
     }
@@ -436,7 +436,7 @@ proc docir::tilepdf::_image {pdf url alt y col} {
     set vx [expr {$col + 4}]
     set vw [expr {$C(col_w) - 8}]
 
-    # URL/Pfad: nur lokale Files supported. URL -> Fallback Text-Marker.
+    # URL/path: only local files supported. URL -> fallback text marker.
     set isLocal 1
     if {[regexp {^https?://} $url]} { set isLocal 0 }
     if {[regexp {^file://} $url]} {
@@ -468,7 +468,7 @@ proc docir::tilepdf::_image {pdf url alt y col} {
     # Image rendert von y oben nach y+drawH unten
     $pdf putImage $imgId $drawX $y -width $drawW -height $drawH
 
-    # Alt-Text als kleine Caption darunter (optional, nur wenn vorhanden)
+    # alt text as a small caption below (optional, only if present)
     set newY [expr {$y + $drawH + 2}]
     if {$alt ne ""} {
         $pdf setFont 7 $F(propOblique)
@@ -498,7 +498,7 @@ proc docir::tilepdf::_renderSection {pdf section yVar colVar title subtitle} {
                 set value [lindex $row 1]
                 set m 0
                 if {[llength $row] >= 3} { set m [lindex $row 2] }
-                # Pre-measure und Spalte wechseln wenn n\u00f6tig
+                # pre-measure and switch column if needed
                 set est [expr {max(1, int(ceil([string length $value] / 42.0)))}]
                 set rowH [expr {max($C(row_h), $est * 10 + 3)}]
                 if {$y + $rowH > $C(y_max)} {
@@ -520,7 +520,7 @@ proc docir::tilepdf::_renderSection {pdf section yVar colVar title subtitle} {
             }
         }
         code-intro {
-            # Intro mit Helvetica (hint-Style), Code mit Courier
+            # intro with Helvetica (hint style), code with Courier
             set intro [dict get $section intro]
             foreach line $intro {
                 set est [expr {max(1, int(ceil([string length $line] / 35.0)))}]
@@ -564,7 +564,7 @@ proc docir::tilepdf::_renderSection {pdf section yVar colVar title subtitle} {
             }
         }
         image {
-            # content: Liste von {url alt title}
+            # content: list of {url alt title}
             foreach img $content {
                 lassign $img url alt ttl
                 # Bilder schwer vorab zu vermessen -- konservativ: 80px reservieren
@@ -581,13 +581,13 @@ proc docir::tilepdf::_renderSection {pdf section yVar colVar title subtitle} {
 }
 
 # ---------------------------------------------------------------------------
-# Unicode-Font-Pipeline (portiert aus cheatsheet-0.1.tm, 2026-05-13)
+# Unicode font pipeline (ported from cheatsheet-0.1.tm, 2026-05-13)
 # ---------------------------------------------------------------------------
 #
 # Versucht UniSans/UniSansBold/UniSansOblique/UniMono als CID-Fonts zu
-# registrieren. Bei Erfolg werden im F-Array die Slots auf die
+# register. On success, the slots in the F array are set to the
 # Unicode-Namen umgestellt; bei Misserfolg fallback auf die Standard-
-# Helvetica/Courier (kein Unicode, aber immer da).
+# Helvetica/Courier (no Unicode, but always available).
 #
 # Mode (Style(fontMode)):
 #   strict (default) -- bei Fehler: Exception werfen
@@ -598,7 +598,7 @@ proc docir::tilepdf::_setupFonts {pdf} {
     variable F
     variable Style
 
-    # Defaults: Standard-PDF-Fonts (kein Unicode, aber immer verfuegbar).
+    # Defaults: standard PDF fonts (no Unicode, but always available).
     array set F {
         prop        Helvetica
         propBold    Helvetica-Bold
@@ -609,10 +609,10 @@ proc docir::tilepdf::_setupFonts {pdf} {
     set mode strict
     if {[info exists Style(fontMode)]} { set mode $Style(fontMode) }
 
-    # Capability-Check: pdf4tcl muss BEIDE Procs haben fuer Unicode-Fonts.
-    # Aeltere pdf4tcl-Versionen kennen z.B. createFontSpecCID nicht --
-    # in dem Fall fallen wir lautlos zurueck auf Standard-PDF-Fonts.
-    # Im strict-Mode bleibt das ein Fehler.
+    # Capability check: pdf4tcl must have BOTH procs for Unicode fonts.
+    # Older pdf4tcl versions do not know createFontSpecCID, for example --
+    # in that case we silently fall back to standard PDF fonts.
+    # In strict mode this remains an error.
     set missingApis {}
     if {[info commands ::pdf4tcl::loadBaseTrueTypeFont] eq ""} {
         lappend missingApis "loadBaseTrueTypeFont"
@@ -661,8 +661,8 @@ proc docir::tilepdf::_setupFonts {pdf} {
 # Versucht ein Font-Mapping zu setzen. pdf4tcl-Pipeline:
 #   1. loadBaseTrueTypeFont <BaseName> <ttf-pfad>
 #   2. createFontSpecCID    <BaseName> <SpecName>
-# Bei Problemen wird je nach $mode geworfen (strict), gewarnt (warn)
-# oder still gefallen-back (silent).
+# On problems it throws (strict), warns (warn)
+# or silently falls back (silent), depending on $mode.
 proc docir::tilepdf::_tryLoadFont {mode slot fontName candidates} {
     variable F
 
@@ -706,7 +706,7 @@ proc docir::tilepdf::_fontProblem {mode msg} {
 # Sheet-Rendering
 # ---------------------------------------------------------------------------
 
-# Ein Sheet (= 1 Page mit Titel) rendern
+# Render a sheet (= 1 page with a title)
 proc docir::tilepdf::_renderSheet {pdf sheet} {
     variable C
     variable COL
@@ -716,7 +716,7 @@ proc docir::tilepdf::_renderSheet {pdf sheet} {
 
     $pdf startPage
 
-    # Background fuellen wenn Theme nicht weiss
+    # fill the background if the theme is not white
     if {$COL(bg_r) < 0.99 || $COL(bg_g) < 0.99 || $COL(bg_b) < 0.99} {
         $pdf setFillColor $COL(bg_r) $COL(bg_g) $COL(bg_b)
         $pdf rectangle 0 0 $C(page_w) $C(page_h) -filled 1
@@ -730,9 +730,9 @@ proc docir::tilepdf::_renderSheet {pdf sheet} {
 
     foreach section $sections {
         set need [_sectionHeight $section]
-        # Section header sollte mit mindestens etwas Content in dieselbe
-        # Spalte; wenn nichtmal das passt, gleich Spalte wechseln.
-        # Wenn die ganze Section nicht in eine Spalte passt, kein Problem
+        # the section header should go into the same column with at least
+        # some content; if even that does not fit, switch column right away.
+        # If the whole section does not fit in one column, no problem
         # -- _renderSection splittet jetzt automatisch via upvar y col.
         set minNeed [expr {min($need, $C(sec_h) + 40)}]
         if {$y + $minNeed > $C(y_max)} {
@@ -772,9 +772,9 @@ proc docir::tilepdf::render {ir outFile args} {
     return [renderSheets $sheets $outFile -theme $opts(-theme)]
 }
 
-# renderSheets: alternative Public API -- nimmt eine fertige Sheets-Liste
-# (z.B. von docir::csd::toSheets). Bypass des DocIR-Schema-Checks und
-# der streamToSheets-Klassifizierung -- der Aufrufer ist schon im
+# renderSheets: alternative public API -- takes a ready-made sheets list
+# (e.g. from docir::csd::toSheets). Bypasses the DocIR schema check and
+# the streamToSheets classification -- the caller is already in the
 # Sheet-Format.
 proc docir::tilepdf::renderSheets {sheets outFile args} {
     array set opts {-theme light}

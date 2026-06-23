@@ -1,35 +1,34 @@
-# util-0.1.tm -- Allgemeine Helper fuer den DocIR-Stack
+# util-0.1.tm -- general helpers for the DocIR stack
 #
-# Aktuell enthaelt: plattformunabhaengiges Temp-Verzeichnis.
+# Currently contains: a platform-independent temp directory.
 #
 # Public API:
 #   docir::util::tmpdir
-#       Liefert einen Pfad auf ein schreibbares Temp-Verzeichnis.
-#       Such-Reihenfolge:
+#       Returns a path to a writable temp directory.
+#       Search order:
 #         1. $TMPDIR     (POSIX: Linux, macOS, BSD)
 #         2. $TEMP       (Windows primary)
 #         3. $TMP        (Windows fallback)
-#         4. /tmp        (Linux/Unix wenn keine env-Var)
-#         5. [pwd]       (Last resort)
+#         4. /tmp        (Linux/Unix when no env var)
+#         5. [pwd]       (last resort)
 #
 #   docir::util::mktmpdir name
-#       Erstellt ein neues Sub-Verzeichnis im Temp-Dir. Name wird mit
-#       Process-ID suffixiert, um Kollisionen bei parallelen Lauefen
-#       zu vermeiden. Returnt absoluten Pfad.
-#       Beispiel:
+#       Creates a new sub-directory in the temp dir. The name is suffixed with
+#       the process id to avoid collisions between parallel runs. Returns the
+#       absolute path.
+#       Example:
 #           set d [docir::util::mktmpdir test-pdf]
-#           # -> /tmp/test-pdf-12345    bzw. C:\Users\...\Local\Temp\test-pdf-12345
+#           # -> /tmp/test-pdf-12345    or  C:\Users\...\Local\Temp\test-pdf-12345
 #
 # Use cases:
-#   - Tests die Temp-Files brauchen (Cross-Platform Linux/Windows/macOS)
-#   - Beliebige Code-Pfade die einen schreibbaren Temp-Pfad brauchen
+#   - tests that need temp files (cross-platform Linux/Windows/macOS)
+#   - any code path that needs a writable temp path
 #
-# Anti-Pattern (was nicht zu tun ist):
+# Anti-pattern (what not to do):
 #   set tmpBase /tmp                          ;# Linux-only
-#   set tmpBase $::env(HOME)/tmp              ;# Win nicht, restricted Linux
-#   file mkdir "/tmp/mytest"                  ;# kein cross-platform
+#   set tmpBase $::env(HOME)/tmp              ;# not Windows, restricted on Linux
+#   file mkdir "/tmp/mytest"                  ;# not cross-platform
 #
-
 package provide docir::util 0.1
 package require Tcl 8.6-
 
@@ -55,3 +54,4 @@ proc ::docir::util::mktmpdir {name} {
     file mkdir $dir
     return $dir
 }
+

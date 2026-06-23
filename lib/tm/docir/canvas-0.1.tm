@@ -1,36 +1,36 @@
 # docir-canvas-0.1.tm -- DocIR → Tk-Canvas Renderer
 #
-# Wandelt eine DocIR-Sequenz in Canvas-Items um. Anwendungsfall:
-# Print-Preview, Druck-Vorschau, oder Vektor-Anzeige in einer Tk-App
-# die nicht die volle Text-Widget-API will.
+# Converts a DocIR sequence into canvas items. Use case:
+# print preview, or vector display in a Tk app
+# that does not want the full text-widget API.
 #
 # Vorteile gegenueber docir-svg native:
-#   - Tk Canvas hat eine eingebaute Text-Layout-Engine: -width macht
-#     automatisches Wrap. Wir messen die Hoehe per bbox NACH der
+#   - the Tk canvas has a built-in text layout engine: -width does
+#     automatic wrapping. We measure the height via bbox AFTER
 #     Erstellung — keine Schaetzung mehr.
 #   - Ergebnis ist in Tk direkt sichtbar, kann interaktiv bedient
-#     werden (Scrollen, Zoom).
+#     be done (scrolling, zoom).
 #   - Per `$canvas postscript` als PostScript exportierbar, von dort
 #     via ps2pdf/gs in PDF.
 #
 # Vorteile gegenueber docir-renderer-tk:
-#   - Vektor-Items statt Text-Tags — gut fuer Print-Preview
+#   - vector items instead of text tags — good for print preview
 #   - Echte Seiten-Begrenzungen sichtbar machen (Seitenrahmen, Margen)
 #
 # Public API:
 #   docir::canvas::render canvas ir ?options?
-#       options: dict mit
-#         width        Int     (Canvas-Breite in Pixel; default: aus Canvas)
+#       options: dict with
+#         width        Int     (canvas width in pixels; default: from canvas)
 #         margin       Int     (default 20)
 #         fontSize     Int     (default 12)
 #         fontFamily   String  (default {TkDefaultFont})
 #         monoFamily   String  (default {TkFixedFont})
-#         pageMode     Bool    (default 0; wenn 1: Page-Breaks visuell zeichnen)
-#         pageHeight   Int     (default 1000; Seitenhoehe wenn pageMode=1)
-#       Returns: Liste der erzeugten Canvas-Item-IDs (fuer Cleanup)
+#         pageMode     Bool    (default 0; if 1: draw page breaks visually)
+#         pageHeight   Int     (default 1000; page height when pageMode=1)
+#       Returns: list of created canvas item IDs (for cleanup)
 #
 #   docir::canvas::clear canvas
-#       Alle Items entfernen die docir::canvas erzeugt hat (per Tag).
+#       Remove all items that docir::canvas created (by tag).
 
 package provide docir::canvas 0.1
 package require docir 0.1
@@ -65,7 +65,7 @@ proc docir::canvas::render {canvas ir {options {}}} {
         dict set opts $k [dict get $options $k]
     }
 
-    # Canvas-Breite ermitteln, falls nicht in options
+    # determine canvas width if not in options
     set width [dict get $opts width]
     if {$width <= 0} {
         update idletasks
@@ -89,19 +89,19 @@ proc docir::canvas::render {canvas ir {options {}}} {
         topY      $margin \
         items     {}]
 
-    # Eigener Tag fuer alle erzeugten Items
+    # own tag for all created items
     set tag "docir-canvas"
 
     foreach node $ir {
         _renderBlock $node $tag
 
-        # Page-Break wenn pageMode aktiv
+        # page break if pageMode is active
         if {[dict get $opts pageMode] && [dict get $st y] > [dict get $opts pageHeight]} {
             _drawPageBreak $tag
         }
     }
 
-    # Scroll-Region setzen damit alles sichtbar ist
+    # set the scroll region so everything is visible
     set bbox [$canvas bbox $tag]
     if {$bbox ne ""} {
         $canvas configure -scrollregion $bbox
@@ -164,7 +164,7 @@ proc docir::canvas::_inlinesToText {inlines} {
     return $out
 }
 
-# Erzeugt ein Text-Item mit max-width Wrap und gibt die Hoehe zurueck.
+# Creates a text item with max-width wrap and returns the height.
 # Wraps bei Bedarf via Canvas eingebauter Layout-Engine.
 proc docir::canvas::_drawText {x y text font width tag {extraOpts {}}} {
     variable st
@@ -321,7 +321,7 @@ proc docir::canvas::_renderPre {node tag} {
     set txt [_inlinesToText [dict get $node content]]
     if {$txt eq ""} { return }
 
-    # Im pre: kein Wrap, Newlines bleiben — width=0 deaktiviert Tk-Wrap
+    # In pre: no wrap, newlines stay — width=0 disables Tk wrapping
     set x [expr {[dict get $st margin] + 4}]
     set yTop [dict get $st y]
 
@@ -332,7 +332,7 @@ proc docir::canvas::_renderPre {node tag} {
     set yText [dict get $st y]
     lassign [_drawText $xText $yText $txt [_font mono] 0 $tag] _ h
 
-    # Hintergrund-Rect ermitteln (mit padding)
+    # determine background rect (with padding)
     set yBot [expr {$yText + $h + $padding}]
     set xLeft [expr {[dict get $st margin]}]
     set xRight [expr {$xLeft + [dict get $st contentW]}]
@@ -380,7 +380,7 @@ proc docir::canvas::_renderList {node tag} {
                 _renderListItemTerm $termTxt $descTxt $tag
             }
             default {
-                # ul oder unknown — Bullet via Unicode \u2022 funktioniert
+                # ul or unknown — bullet via Unicode \u2022 works
                 # in Tk-Canvas zuverlaessiger als in pdf4tcl WinAnsi
                 _renderListItemMarker "\u2022  " $descTxt $tag
             }
@@ -393,7 +393,7 @@ proc docir::canvas::_renderListItemMarker {marker descTxt tag} {
     variable st
     set canvas [dict get $st canvas]
 
-    # Marker als eigenes Text-Item (kein Wrap)
+    # marker as its own text item (no wrap)
     set xBase [dict get $st margin]
     set yBase [dict get $st y]
     set markerId [$canvas create text $xBase $yBase \
@@ -403,7 +403,7 @@ proc docir::canvas::_renderListItemMarker {marker descTxt tag} {
     lassign $markerBbox _ _ markerR _
     set markerW [expr {$markerR - $xBase}]
 
-    # Description mit Hang-Indent
+    # description with a hanging indent
     set xText [expr {$xBase + $markerW}]
     set wText [expr {[dict get $st contentW] - $markerW}]
     if {$descTxt ne ""} {
@@ -500,7 +500,7 @@ proc docir::canvas::_renderTable {node tag} {
         set isHeader [expr {$hasHeader && $rowIndex == 0}]
         set yTop [dict get $st y]
 
-        # Erst alle Zellen rendern um die maximale Hoehe zu bekommen
+        # first render all cells to get the maximum height
         set cellIds {}
         set cellHeights {}
         set colIndex 0
@@ -560,7 +560,7 @@ proc docir::canvas::_renderTable {node tag} {
             -fill "#ccc" -width 1 -tags [list $tag]]
         _recordItem $lineId
 
-        # Bei erster Zeile auch obere Linie
+        # on the first row, also the top line
         if {$rowIndex == 0} {
             set lineId [$canvas create line $xL $yTop $xR $yTop \
                 -fill "#ccc" -width 1 -tags [list $tag]]
@@ -583,7 +583,7 @@ proc docir::canvas::_renderImageBlock {node tag} {
     set url [_dictDef $m url ""]
     set alt [_dictDef $m alt ""]
 
-    # Bild laden wenn möglich
+    # load the image if possible
     set imgLoaded 0
     if {$url ne "" && [file exists $url] && [file readable $url]} {
         if {[catch {image create photo -file $url} imgName] == 0} {
@@ -595,7 +595,7 @@ proc docir::canvas::_renderImageBlock {node tag} {
     set y [dict get $st y]
 
     if {$imgLoaded} {
-        # Skalieren wenn größer als contentW
+        # scale if larger than contentW
         set imgW [image width $imgName]
         set imgH [image height $imgName]
         set maxW [dict get $st contentW]
@@ -621,7 +621,7 @@ proc docir::canvas::_renderImageBlock {node tag} {
         _advanceY [expr {$h + 4}]
     }
 
-    # Caption (alt) drunter wenn nicht-trivial
+    # caption (alt) below if non-trivial
     if {$alt ne "" && $imgLoaded} {
         set y [dict get $st y]
         lassign [_drawText $x $y $alt [_font italic] [dict get $st contentW] $tag \
@@ -636,7 +636,7 @@ proc docir::canvas::_renderFootnoteSection {node tag} {
     set opts [dict get $st opts]
     set fontSize [dict get $opts fontSize]
 
-    # Trennlinie (kürzer als HR)
+    # separator line (shorter than HR)
     _advanceY [expr {$fontSize / 2}]
     set y [dict get $st y]
     set xL [dict get $st margin]
@@ -672,7 +672,7 @@ proc docir::canvas::_renderFootnoteDef {node tag} {
 
 proc docir::canvas::_renderDiv {node tag} {
     # div ist transparent — children rendern.
-    # Tag-Erweiterung mit class-Suffix wäre möglich, aber für 0.5
+    # a tag extension with a class suffix would be possible, but for 0.5
     # reicht es transparent zu sein.
     foreach child [dict get $node content] {
         _renderBlock $child $tag
@@ -706,7 +706,7 @@ proc docir::canvas::_drawPageBreak {tag} {
         -fill "#aaa" -dash {4 4} -tags [list $tag]]
     _recordItem $lineId
 
-    # Label neben der Linie
+    # label next to the line
     set labelId [$canvas create text $xR $y \
         -text " — page break — " -font [_font small] \
         -anchor e -fill "#888" -tags [list $tag]]

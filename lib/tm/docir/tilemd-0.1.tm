@@ -1,8 +1,8 @@
 # docir::tilemd -- DocIR -> Tile-strukturiertes Markdown
 #
-# Markdown ist ein lineares Format — keine 2-Spalten-Layout moeglich.
-# tilemd nutzt aber dieselbe DocIR-zu-Sheets/Tiles-Logik wie tilepdf/tilehtml,
-# rendert die Tile-Sections als linearen, KLAR STRUKTURIERTEN Markdown:
+# Markdown is a linear format — no 2-column layout possible.
+# tilemd uses the same DocIR-to-sheets/tiles logic as tilepdf/tilehtml, but
+# renders the tile sections as linear, CLEARLY STRUCTURED Markdown:
 #
 #   H1 Sheet-Titel
 #   ===
@@ -20,9 +20,9 @@
 #   ---  (hr nach jeder section)
 #
 # Bei Multi-Sheet:
-#   - TOC am Anfang (Liste mit MD-Anchors `#sheet-titel`)
+#   - TOC at the top (list with MD anchors `#sheet-title`)
 #   - Sheets durch Page-Break-Marker `<!-- pagebreak -->` getrennt
-#     (manche Renderer nutzen das fuer Print)
+#     (some renderers use this for print)
 #
 # API:
 #   docir::tilemd::render irStream outFile ?options?
@@ -57,10 +57,10 @@ proc docir::tilemd::_slugify {text} {
 }
 
 # Inline-Text (von tilecommon::inlinesToText) ist bereits Pseudo-Markdown
-# (** ` etc). Fuer tilemd ist das genau was wir wollen — einfach durchreichen.
-# Wir muessen nur sicherstellen dass die existing inline-image-Syntax
-# `![alt](url)` und link-Syntax `[text](url)` korrekt beibehalten werden,
-# weil das valide MD ist.
+# (** ` etc). For tilemd this is exactly what we want — just pass through.
+# We only need to make sure the existing inline image syntax
+# `![alt](url)` and link syntax `[text](url)` are preserved correctly,
+# because that is valid MD.
 
 # ---------------------------------------------------------------------------
 # Section-Rendering
@@ -190,7 +190,7 @@ proc docir::tilemd::render {ir outFile args} {
     return [renderSheets $sheets $outFile -toc $opts(-toc) -hr $opts(-hr)]
 }
 
-# renderSheets: alternative Public API -- fertige Sheets-Liste, schreibt MD.
+# renderSheets: alternative public API -- ready-made sheets list, writes MD.
 proc docir::tilemd::renderSheets {sheets outFile args} {
     array set opts {-toc auto -hr true}
     foreach {k v} $args {
@@ -204,7 +204,7 @@ proc docir::tilemd::renderSheets {sheets outFile args} {
         return -code error "docir::tilemd::renderSheets: leere Sheets-Liste"
     }
 
-    # TOC-Entscheidung: auto = wenn 2+ Sheets
+    # TOC decision: auto = when 2+ sheets
     set showToc 0
     if {$opts(-toc) eq "auto"} {
         set showToc [expr {[llength $sheets] >= 2}]
@@ -212,7 +212,7 @@ proc docir::tilemd::renderSheets {sheets outFile args} {
         set showToc 1
     }
 
-    # opts in dict-Form fuer _renderSection
+    # opts in dict form for _renderSection
     set rOpts [dict create -hr [expr {$opts(-hr) in {true 1 yes on}}]]
 
     set md ""

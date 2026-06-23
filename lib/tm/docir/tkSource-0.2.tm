@@ -1,27 +1,27 @@
-## tkSource-0.2.tm  --  Tk-Text-Widget -> DocIR (Quelle) + Bild-Bytes
+## tkSource-0.2.tm  --  Tk text widget -> DocIR (source) + image bytes
 ##
-## docir::tkSource::fromWidget $w ?i1 i2?   (Bereich wie bei ttd moeglich)
+## docir::tkSource::fromWidget $w ?i1 i2?   (range possible, like in ttd)
 ##
-## Liest einen Text-Widget-Dump und baut daraus DocIR. Erkennt die Tags,
-## die docir::renderer::tk vergibt:
+## Reads a text-widget dump and builds DocIR from it. Recognizes the tags
+## that docir::renderer::tk assigns:
 ##   heading$N -> heading (level N) | pre -> pre/code | strong/emphasis/
 ##   underline/strike/span_$cls/link_$n -> Inlines | eingebettete Bilder.
 ##
-## GRENZEN (bewusst, = ttd-vs-DocIR-Grenze): der Renderer stellt Tabellen
-## und Listen als monospaced Text/Bullets dar; das Widget haelt deren
-## Struktur nicht. Ein Dump liefert sie daher als paragraph/pre zurueck,
-## nicht als table/list. link-Ziele (href) und Bild-URLs sind im Widget
-## nicht zuverlaessig hinterlegt und werden best-effort gefuellt.
+## LIMITS (deliberate, = the ttd-vs-DocIR boundary): the renderer shows tables
+## and lists as monospaced text/bullets; the widget does not retain their
+## structure. A dump therefore returns them as paragraph/pre,
+## not as table/list. Link targets (href) and image URLs are not reliably
+## stored in the widget and are filled best-effort.
 
 package require Tcl 8.6
 
 namespace eval docir::tkSource {
     namespace export fromWidget media
-    variable _media {}   ;# url -> PNG-Bytes (aus letztem fromWidget)
+    variable _media {}   ;# url -> PNG bytes (from the last fromWidget)
     variable _imgN  0
 }
 
-## Bild zur portablen url -> liefert Media-Bytes (Datei oder via photo write)
+## Image to portable url -> returns media bytes (file or via photo write)
 proc docir::tkSource::media {} {
     variable _media
     return $_media
@@ -85,7 +85,7 @@ proc docir::tkSource::_mergeInlines {inlines} {
     return $out
 }
 
-## Zeilenklasse: heading-Level (oder -1), bzw. ob reine pre-Zeile
+## Line class: heading level (or -1), or whether it is a pure pre line
 proc docir::tkSource::_headingLevel {line} {
     foreach atom $line {
         if {[lindex $atom 0] ne "SEG"} continue
@@ -118,7 +118,7 @@ proc docir::tkSource::_lineInlines {line} {
     return [_mergeInlines $inl]
 }
 proc docir::tkSource::_lineImage {line} {
-    # liefert IMG-Namen, falls die Zeile nur aus einem Bild besteht
+    # returns IMG name if the line consists only of an image
     set imgs {}; set segs 0
     foreach atom $line {
         switch -- [lindex $atom 0] {

@@ -1,37 +1,37 @@
-# docir-txt-0.1.tm -- DocIR → Plain-Text Renderer (Senke)
+# docir-txt-0.1.tm -- DocIR -> plain text renderer (sink)
 #
-# Wandelt eine DocIR-Sequenz in einen reinen Text-String um. Siebte
-# Senke im DocIR-Hub (neben tk, html, md, svg, pdf, canvas).
+# Converts a DocIR sequence into a plain text string. The seventh
+# sink in the DocIR hub (next to tk, html, md, svg, pdf, canvas).
 #
 # Use cases:
-#   - CLI-Output von Doku-Tools (für Pager wie less/more)
-#   - E-Mail-Body, Log-Inserts, README-Klartextkopie
-#   - Inputs für nicht-Markdown-faehige Tools (grep, awk, etc.)
+#   - CLI output of doc tools (for pagers like less/more)
+#   - email body, log inserts, README plain-text copy
+#   - inputs for non-Markdown-capable tools (grep, awk, etc.)
 #
 # Public API:
 #   docir::txt::render ir ?options?
-#       options: dict mit
+#       options: dict with
 #         lineWidth   Integer (default 78)        Wort-Wrap-Breite
 #         bulletChar  "-" | "*" | "+"             (default "-")
 #         orderedDot  "."                          (default ".")
-#         codeIndent  Integer (default 4)         Spaces fuer code blocks
+#         codeIndent  Integer (default 4)         spaces for code blocks
 #         quotePrefix String                       (default "> ")
 #         hrChar      "-" | "=" | "*"              (default "-")
-#         heading1Underline Char (default "=")    Setext-Style fuer H1
-#         heading2Underline Char (default "-")    Setext-Style fuer H2
+#         heading1Underline Char (default "=")    Setext style for H1
+#         heading2Underline Char (default "-")    Setext style for H2
 #         showImageUrls 0|1 (default 0)           [image: alt] vs [image: alt (url)]
 #         linkStyle   "inline" | "footnote"        (default "inline" -> "text (url)")
-#       Returns: Plain-Text-String mit Newlines
+#       Returns: plain text string with newlines
 #
 #   docir::txt::renderInline inlines ?options?
-#       Wandelt Inline-Liste in Text-Fragment um (ohne Block-Wrap).
+#       Converts an inline list into a text fragment (without block wrap).
 #
 # Verhalten bei Sonderfaellen:
 #   - blank-Nodes ohne content -> Leerzeile
 #   - Unbekannte Block-Types     -> als Paragraph fallback
-#   - Tables                     -> ASCII-Tabelle mit | und -
-#   - Code-Blocks                -> mit codeIndent Spaces eingerueckt
-#   - Footnote-Section           -> am Ende, nummerierte Liste
+#   - Tables                     -> ASCII table with | and -
+#   - Code blocks                -> indented with codeIndent spaces
+#   - Footnote section           -> at the end, numbered list
 
 package provide docir::txt 0.1
 package require Tcl 8.6-
@@ -108,7 +108,7 @@ proc docir::txt::_renderBlock {node} {
         }
         default {
             if {[::docir::isSchemaOnly $t]} { return "" }
-            # Fallback: als Paragraph behandeln, wenn content vorhanden
+            # Fallback: treat as a paragraph if content is present
             if {[dict exists $node content]} {
                 return [_renderParagraph $node]
             }
@@ -163,7 +163,7 @@ proc docir::txt::_renderHeading {node} {
             [string length $text]]
         return "$text\n$under\n\n"
     } else {
-        # Level 3+: einfach mit Punkten am Ende
+        # Level 3+: simply with dots at the end
         set prefix [string repeat "  " [expr {$level - 3}]]
         return "${prefix}${text}\n\n"
     }
@@ -195,13 +195,13 @@ proc docir::txt::_renderPre {node} {
     set kind [_dictGet $meta kind ""]
     set indent [string repeat " " [dict get $opts codeIndent]]
     set text [_dictGet $node content ""]
-    # Falls content eine Inline-Liste ist (statt String), flatten
+    # If content is an inline list (instead of a string), flatten
     if {[string is list $text] && [llength $text] > 0 \
             && [catch {dict get [lindex $text 0] type}] == 0} {
         set text [_renderInlines $text]
     }
     if {$text eq ""} { return "\n" }
-    # Math-Block: $$...$$ erhalten (kein Indent)
+    # Math block: keep $$...$$ (no indent)
     if {$kind eq "math"} {
         return "\$\$\n${text}\n\$\$\n\n"
     }
@@ -246,7 +246,7 @@ proc docir::txt::_renderListItem {node depth {kind ul} {counter 1}} {
 
     set out ""
 
-    # Term (fuer dl/tp/ip/op/ap)
+    # term (for dl/tp/ip/op/ap)
     if {[dict exists $meta term] && [dict get $meta term] ne ""} {
         set termText [_renderInlines [dict get $meta term]]
         if {$marker ne ""} {
@@ -293,7 +293,7 @@ proc docir::txt::_renderTable {node} {
     set meta [_dictGet $node meta {}]
     set hasHeader [_dictGet $meta hasHeader 0]
 
-    # Sammle Zellen-Text und Spaltenbreiten
+    # collect cell text and column widths
     set matrix {}
     set widths {}
     foreach row $rows {
@@ -445,7 +445,7 @@ proc docir::txt::_renderInline {inline} {
             return [_dictGet $inline text [_dictGet $inline content ""]]
         }
         default {
-            # Bestes-Bemühen: text, dann content
+            # best effort: text, then content
             if {[dict exists $inline text]} { return [dict get $inline text] }
             if {[dict exists $inline content]} {
                 set c [dict get $inline content]
@@ -457,14 +457,14 @@ proc docir::txt::_renderInline {inline} {
     }
 }
 
-# Helper: rendert content das entweder Inline-Liste oder Block-Liste ist
+# helper: renders content that is either an inline list or a block list
 proc docir::txt::_renderInlinesOrBlocks {content} {
     if {[llength $content] == 0} { return "" }
     set first [lindex $content 0]
     if {[catch {dict get $first type} t]} {
         return [_renderInlines $content]
     }
-    # Wenn first.type ein Block-Type ist, render als Blocks
+    # If first.type is a block type, render as blocks
     if {$t in {paragraph heading list pre blockquote table hr image}} {
         set out ""
         foreach b $content {

@@ -1,9 +1,11 @@
 # pkgIndex.tcl -- automatisch generiert von tools/generate-pkgindex.tcl
 # Bei aenderungen oder neuen Modulen einfach neu generieren.
 
-package ifneeded docir                            0.1.1      [list source -encoding utf-8 [file join $dir docir-0.1.1.tm]]
+package ifneeded docir                            0.1.1    [list source -encoding utf-8 [file join $dir docir-0.1.1.tm]]
 package ifneeded docir::canvas                    0.1      [list source -encoding utf-8 [file join $dir docir canvas-0.1.tm]]
 package ifneeded docir::csdSource                 0.1      [list source -encoding utf-8 [file join $dir docir csdSource-0.1.tm]]
+package ifneeded docir::diag                      0.1      [list source -encoding utf-8 [file join $dir docir diag-0.1.tm]]
+package ifneeded docir::diagram                   0.1      [list source -encoding utf-8 [file join $dir docir diagram-0.1.tm]]
 package ifneeded docir::html                      0.1      [list source -encoding utf-8 [file join $dir docir html-0.1.tm]]
 package ifneeded docir::htmlSource                0.1      [list source -encoding utf-8 [file join $dir docir htmlSource-0.1.tm]]
 package ifneeded docir::md                        0.1      [list source -encoding utf-8 [file join $dir docir md-0.1.tm]]

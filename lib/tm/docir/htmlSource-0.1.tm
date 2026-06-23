@@ -1,16 +1,16 @@
-## htmlSource-0.1.tm  --  HTML -> DocIR  (Quelle)
+## htmlSource-0.1.tm  --  HTML -> DocIR  (source)
 ##
 ## docir::htmlSource::fromHtml $html   -> DocIR
 ##
-## Liest HTML per tdom (dom parse -html) und mappt die Dokument-Semantik
-## auf DocIR -- im selben Geist wie odtSource: semantisch, kein CSS/Layout.
-## Wrapper (div/section/article/figure) sind transparent; Nicht-Dokument-
-## Elemente (script/style/nav/footer/aside/head) werden uebersprungen.
+## Reads HTML via tdom (dom parse -html) and maps the document semantics
+## onto DocIR -- in the same spirit as odtSource: semantic, no CSS/layout.
+## Wrappers (div/section/article/figure) are transparent; non-document
+## elements (script/style/nav/footer/aside/head) are skipped.
 ##
 ## Passt insbesondere als Umkehrung von docir::html (Round-Trip):
 ##   docir-list-XXX -> kind, indent-N -> indentLevel, <colgroup> ->
-##   alignments, <th> -> Header. Funktioniert auch mit fremdem HTML
-##   (dann best-effort: alles Nicht-Dokumenthafte faellt weg).
+##   alignments, <th> -> header. Works with foreign HTML too
+##   (then best-effort: anything non-document is dropped).
 
 package require Tcl 8.6
 package require tdom
@@ -22,7 +22,7 @@ namespace eval docir::htmlSource {
 # ---- Inline-Ebene -------------------------------------------------
 
 proc docir::htmlSource::_elemText {node} {
-    # konkatenierter Textinhalt aller Text-Nachfahren (tdom liefert dekodiert)
+    # concatenated text content of all text descendants (tdom returns decoded)
     set s ""
     foreach n [$node childNodes] {
         switch -- [$n nodeType] {
@@ -43,10 +43,10 @@ proc docir::htmlSource::_mergeText {inlines} {
     return $out
 }
 
-# ein einzelner Knoten (Text/Element) -> Liste von Inlines (0..n)
+# a single node (text/element) -> list of inlines (0..n)
 proc docir::htmlSource::_ws {s} {
     # HTML-Whitespace-Regel im Inline-Fluss: Folgen von Whitespace -> 1 Space.
-    # (Nicht fuer pre verwenden -- pre nutzt _elemText direkt.)
+    # (Do not use for pre -- pre uses _elemText directly.)
     return [regsub -all {[ \t\r\n]+} $s " "]
 }
 proc docir::htmlSource::_inlineOf {n} {
@@ -102,7 +102,7 @@ proc docir::htmlSource::_inlineOf {n} {
     }
 }
 
-# childNodes -> Inline-Liste (nested ul/ol werden NICHT hier behandelt)
+# childNodes -> inline list (nested ul/ol are NOT handled here)
 proc docir::htmlSource::_inlines {node} {
     set out {}
     foreach n [$node childNodes] { lappend out {*}[_inlineOf $n] }
@@ -126,7 +126,7 @@ proc docir::htmlSource::_childElems {node tags} {
     return $out
 }
 proc docir::htmlSource::_onlyImg {node} {
-    # liefert das img-Element, falls der Knoten (ausser Whitespace) nur ein img enthaelt
+    # returns the img element if the node (aside from whitespace) contains only an img
     set img ""; set other 0
     foreach n [$node childNodes] {
         switch -- [$n nodeType] {
@@ -138,15 +138,15 @@ proc docir::htmlSource::_onlyImg {node} {
     return ""
 }
 
-# eine Liste (ul/ol/dl) -> [list-block] + verschachtelte als trailing (indentLevel+1)
+# a list (ul/ol/dl) -> [list-block] + nested ones as trailing (indentLevel+1)
 proc docir::htmlSource::_list {node depth} {
     set tag [string tolower [$node nodeName]]
     set cls [_class $node]
-    # kind: aus docir-list-XXX, sonst aus Tag
+    # kind: from docir-list-XXX, otherwise from the tag
     set kind $tag
     foreach tok [split $cls] { if {[string match "docir-list-*" $tok]} { set kind [string range $tok 11 end] } }
     if {$kind eq ""} { set kind $tag }
-    # indentLevel: aus indent-N, sonst Rekursionstiefe
+    # indentLevel: from indent-N, otherwise the recursion depth
     set indent $depth
     foreach tok [split $cls] { if {[regexp {^indent-([0-9]+)$} $tok -> n]} { set indent $n } }
 
@@ -162,7 +162,7 @@ proc docir::htmlSource::_list {node depth} {
         }
     } else {
         foreach li [_childElems $node {li}] {
-            # Inlines des li OHNE verschachtelte Listen; nested Listen sammeln
+            # inlines of the li WITHOUT nested lists; collect nested lists
             set inl {}
             foreach n [$li childNodes] {
                 if {[$n nodeType] eq "ELEMENT_NODE" && [string tolower [$n nodeName]] in {ul ol dl}} {
@@ -180,7 +180,7 @@ proc docir::htmlSource::_list {node depth} {
 }
 
 proc docir::htmlSource::_table {node} {
-    # alignments aus colgroup
+    # alignments from colgroup
     set aligns {}
     set cg [lindex [_childElems $node {colgroup}] 0]
     if {$cg ne ""} {
@@ -189,7 +189,7 @@ proc docir::htmlSource::_table {node} {
             if {[regexp {text-align:\s*(left|center|right)} $st -> a]} { lappend aligns $a } else { lappend aligns none }
         }
     }
-    # Zeilen einsammeln (auch in thead/tbody)
+    # collect rows (also in thead/tbody)
     set rowsNodes {}
     foreach sec [concat [list $node] [_childElems $node {thead tbody tfoot}]] {
         foreach tr [_childElems $sec {tr}] { lappend rowsNodes $tr }
@@ -211,7 +211,7 @@ proc docir::htmlSource::_table {node} {
     return [dict create type table content $rows meta $meta]
 }
 
-# childNodes eines Containers -> Block-Liste
+# childNodes of a container -> block list
 proc docir::htmlSource::_blocks {node depth} {
     set ir {}
     foreach n [$node childNodes] {
@@ -263,7 +263,7 @@ proc docir::htmlSource::_blocks {node depth} {
                 lappend ir {*}[_blocks $n $depth]
             }
             script - style - nav - header - footer - aside - head - title - meta - link - colgroup - figcaption {
-                # nicht-dokumenthaft / anderswo behandelt -> ueberspringen
+                # non-document / handled elsewhere -> skip
             }
             default { lappend ir {*}[_blocks $n $depth] }
         }

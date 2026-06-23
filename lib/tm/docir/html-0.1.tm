@@ -1,42 +1,44 @@
 # docir-html-0.1.tm -- DocIR → HTML Renderer
 #
-# Wandelt eine flache DocIR-Sequenz (Liste von type/content/meta-Dicts)
+# Converts a flat DocIR sequence (list of type/content/meta dicts)
 # in ein vollstaendiges HTML5-Dokument um. Komplementaer zu
-# docir-renderer-tk (Tk-Output) und docir-roff (nroff-Input).
+# docir-renderer-tk (Tk output) and docir-roff (nroff input).
 #
 # Public API:
 #   docir::html::render ir ?options?
-#       options: dict mit
-#         title       String         (Standard: aus doc_header oder erstes heading)
-#         standalone  Bool           (Standard 1; 0 = nur <body>-Inhalt ohne <html>-Wrapper)
+#       options: dict with
+#         title       String         (default: from doc_header or the first heading)
+#         standalone  Bool           (default 1; 0 = only <body> content without an <html> wrapper)
 #         indentSize  Int            (Standard 2; Einzug pro Verschachtelungsebene)
 #         lang        String         (Standard "en"; <html lang="...">)
-#         theme       String         (Standard "default"; "manpage" für nroff-Stil)
-#         viewport    Bool           (Standard 1; <meta name="viewport"> einfügen)
-#         includeToc  Bool           (Standard 0; Inhaltsverzeichnis aus headings)
+#         theme       String         (default "default"; "manpage" for nroff style)
+#         viewport    Bool           (default 1; insert <meta name="viewport">)
+#         includeToc  Bool           (default 0; table of contents from headings)
 #         linkMode    String         (Standard "local"; how to resolve link inlines)
-#         linkResolve Tcl-Cmd-Praefix (optional, für link-Inlines mit name/section)
-#         cssExtra    String         (zusätzliches CSS am Ende des <style>-Blocks)
-#         cssFile     Path           (Pfad zu externer CSS-Datei; ihr Inhalt wird
+#         linkResolve Tcl cmd prefix   (optional, for link inlines with name/section)
+#         cssExtra    String         (additional CSS at the end of the <style> block)
+#         cssFile     Path           (path to an external CSS file; its content is
 #                                     anstelle des theme-CSS eingebettet)
 #         part        String         (manpage-Stil: Section-Untertitel)
 #       Returns: HTML-String
 #
 #   docir::html::renderInline inlines
-#       Wandelt eine Inline-Liste in HTML-Fragment um (ohne Block-Wrapper).
-#       Nuetzlich fuer Konsumenten die Block-Wrapping selbst machen.
+#       Converts an inline list into an HTML fragment (without a block wrapper).
+#       Useful for consumers that do their own block wrapping.
 #
 # Defensive Behandlung (analog zu docir-renderer-tk):
-#   - blank-Nodes mit fehlendem content sind OK
-#   - unbekannte Block-Typen werden als <div class="docir-unknown">
-#     mit data-docir-type-Attribut gerendert
-#   - list.content das nicht-listItem-Knoten enthaelt wird mit einem
-#     <!-- schema warning -->-Kommentar gerendert (kein Crash)
-#   - unbekannte Inline-Typen werden als <span data-docir-type=...>
+#   - blank nodes with missing content are OK
+#   - unknown block types are rendered as <div class="docir-unknown">
+#     with a data-docir-type attribute
+#   - list.content that contains non-listItem nodes is rendered with a
+#     <!-- schema warning --> comment (no crash)
+#   - unknown inline types are rendered as <span data-docir-type=...>
 #     gerendert; ihr Text bleibt erhalten
 
 package provide docir::html 0.1
 package require docir 0.1
+package require docir::diag
+package require docir::diagram
 
 namespace eval ::docir::html {
     namespace export render renderInline
@@ -96,8 +98,8 @@ proc docir::html::render {ir {options {}}} {
         set title [_extractTitle $ir]
     }
 
-    # Auto-Part aus doc_header übernehmen wenn nicht explizit gesetzt
-    # (für linkMode=online: bestimmt TkCmd vs TclCmd)
+    # take auto-part from doc_header if not explicitly set
+    # (for linkMode=online: determines TkCmd vs TclCmd)
     if {[dict get $opts part] eq ""} {
         foreach node $ir {
             if {[dict get $node type] eq "doc_header"} {
@@ -110,7 +112,7 @@ proc docir::html::render {ir {options {}}} {
         }
     }
 
-    # TOC aufbauen wenn gewünscht
+    # build the TOC if requested
     set toc ""
     if {[dict get $opts includeToc]} {
         set toc [_buildToc $ir]
@@ -122,14 +124,14 @@ proc docir::html::render {ir {options {}}} {
         append body [_renderBlock $node 0]
     }
 
-    # Sachindex anhaengen wenn gewuenscht (nutzt die beim Rendern
+    # append the subject index if requested (uses the ones collected during
     # gesammelten [Begriff]{.index}-Vorkommen).
     if {[dict get $opts includeIndex]} {
         append body [_buildIndex]
     }
 
     if {![dict get $opts standalone]} {
-        # Body-only: TOC vor dem Body wenn vorhanden
+        # body-only: TOC before the body if present
         if {$toc ne ""} { return "${toc}${body}" }
         return $body
     }
@@ -172,7 +174,7 @@ proc docir::html::_inlinesToText {inlines} {
     return $out
 }
 
-# Sichere Anchor-ID aus Heading-Text generieren.
+# Generate a safe anchor ID from the heading text.
 # Lowercase, Sonderzeichen → "-", Mehrfach-"-" zusammen, trim "-".
 proc docir::html::_makeId {text} {
     set id [string tolower $text]
@@ -182,8 +184,8 @@ proc docir::html::_makeId {text} {
     return $id
 }
 
-# TOC aus den heading-Knoten im IR aufbauen.
-# Liefert HTML-String mit <nav class="toc"> oder leer wenn keine Headings.
+# Build the TOC from the heading nodes in the IR.
+# Returns an HTML string with <nav class="toc">, or empty if there are no headings.
 proc docir::html::_buildToc {ir} {
     set items {}
     foreach node $ir {
@@ -210,11 +212,11 @@ proc docir::html::_buildToc {ir} {
     return $out
 }
 
-# Baut den Sachindex aus den waehrend des Renderns gesammelten
+# Builds the subject index from the entries collected during rendering
 # [Begriff]{.index}-Vorkommen: Begriffe alphabetisch, je Begriff Links zu
-# allen Vorkommen. Linktext ist der Abschnittstitel; mehrere Vorkommen im
-# selben Abschnitt werden zu einem Link zusammengefasst. Ohne umgebenden
-# Abschnitt wird eine laufende Nummer als Linktext verwendet.
+# all occurrences. Link text is the section title; multiple occurrences in the
+# same section are merged into one link. Without a surrounding
+# section, a running number is used as the link text.
 proc docir::html::_buildIndex {} {
     variable opts
     variable indexEntries
@@ -222,7 +224,7 @@ proc docir::html::_buildIndex {} {
 
     set indexTitle [_dictDef $opts indexTitle "Index"]
 
-    # Begriff -> geordnete Liste von {anchor label}, dedupliziert pro Abschnitt.
+    # term -> ordered list of {anchor label}, deduplicated per section.
     set byTerm [dict create]
     set seen   [dict create]
     foreach e $indexEntries {
@@ -263,8 +265,8 @@ proc docir::html::_wrapDocument {title toc body} {
     set cssFile  [_dictDef $opts cssFile ""]
     set escTitle [_escapeHtml $title]
 
-    # CSS-Quelle: cssFile hat Vorrang vor theme. cssFile wird inline
-    # eingebettet (kein <link rel>, weil DocIR-HTML soll standalone sein).
+    # CSS source: cssFile takes precedence over theme. cssFile is embedded inline
+    # (no <link rel>, because DocIR HTML should be standalone).
     if {$cssFile ne "" && [file exists $cssFile]} {
         set fh [open $cssFile r]
         fconfigure $fh -encoding utf-8
@@ -279,8 +281,8 @@ proc docir::html::_wrapDocument {title toc body} {
         set viewportMeta "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n"
     }
 
-    # Optional: Mermaid + Math via CDN-Scripts. Strikt opt-in damit
-    # docir::html nicht "von selbst" ins Netz greift. Anwender muss
+    # Optional: Mermaid + Math via CDN scripts. Strictly opt-in so
+    # docir::html does not reach the network "on its own". The user must
     # enableMermaid=1 / enableMath=1 setzen.
     set extraScripts ""
     if {[dict get $opts enableMermaid]} {
@@ -460,9 +462,9 @@ proc docir::html::_renderBlock {node level} {
         image        { return [_renderImageBlock $node $level] }
         footnote_section { return [_renderFootnoteSection $node $level] }
         footnote_def {
-            # footnote_def auf Top-Level ist eine Schema-Verletzung —
-            # gehört in footnote_section. Wir rendern es trotzdem,
-            # mit Warnung, damit der Output nicht crasht.
+            # footnote_def at the top level is a schema violation —
+            # it belongs in footnote_section. We render it anyway,
+            # with a warning, so the output does not crash.
             return [_renderFootnoteDef $node $level]
         }
         div          { return [_renderDiv $node $level] }
@@ -520,14 +522,14 @@ proc docir::html::_renderHeading {node level} {
     if {$lv > 6} { set lv 6 }
     set inner [_renderInlines [dict get $node content]]
 
-    # ID: aus meta wenn da, sonst aus dem reinen Text generieren
+    # ID: from meta if present, otherwise generated from the plain text
     set id [_dictDef $m id ""]
     set txt [_inlinesToText [dict get $node content]]
     if {$id eq "" && $txt ne ""} {
         set id [_makeId $txt]
     }
 
-    # Aktuellen Abschnitt fuer den Index-Linktext merken.
+    # remember the current section for the index link text.
     variable currentSectionTitle
     variable currentSectionId
     set currentSectionTitle $txt
@@ -564,9 +566,9 @@ proc docir::html::_renderPre {node level} {
     set lang [_dictDef $m language ""]
     set ind [_indent $level]
 
-    # In <pre> rendert man Inline-Liste als reinen Text (kein <strong>
-    # u.s.w. — das ist Konvention für code-Blöcke). Aber: wenn der
-    # Inhalt aus echten formatierten Inlines besteht, behalten wir die
+    # In <pre>, an inline list is rendered as plain text (no <strong>
+    # etc. — that is the convention for code blocks). But: if the
+    # content consists of real formatted inlines, we keep the
     # Tags. Fuer "kind=code" purer Text.
     if {$kind eq "math"} {
         # Display-Math: <div class="math display">$$...$$</div>
@@ -585,19 +587,19 @@ proc docir::html::_renderPre {node level} {
         set txt [_inlinesToText [dict get $node content]]
         set escTxt [_escapeHtml $txt]
         # tuflow flow-diagram: render server-side to inline SVG (no JS needed).
-        # Lazy + defensive: if tuflow is missing or the source does not parse,
-        # fall through to plain code rendering.
-        if {[string tolower $lang] in {flow tuflow}} {
-            if {![catch {
-                package require tclutils::tuflow
-                set _svg [::tclutils::tudiagram::toSvg [::tclutils::tuflow::parse $txt]]
-            }]} {
+        # A failure here is reported through docir::diag (warn/strict/silent),
+        # then we fall through to plain code / mermaid rendering.
+        if {[docir::diagram::isNative $lang]} {
+            try {
+                set _svg [docir::diagram::renderSvg $txt $lang]
                 return "$ind<div class=\"docir-diagram\">$_svg</div>\n"
+            } on error {_m _o} {
+                docir::diag::report [dict get $_o -errorcode] "diagram/$lang: $_m"
             }
         }
         # Mermaid: <pre class="mermaid"> -- erlaubt einbettung von
-        # mermaid.js fuer Diagramm-Rendering im Browser.
-        if {[string tolower $lang] eq "mermaid"} {
+        # mermaid.js for diagram rendering in the browser.
+        if {[docir::diagram::isBrowserPreferred $lang]} {
             return "$ind<pre class=\"mermaid\">$escTxt</pre>\n"
         }
         if {$lang ne ""} {
@@ -622,7 +624,7 @@ proc docir::html::_renderList {node level} {
         ol      { set tag ol; set itemTag li; set wrapClass docir-list-ol }
         ul      { set tag ul; set itemTag li; set wrapClass docir-list-ul }
         ip      {
-            # IP-Liste: ul mit iplist-Klasse (mvmantohtml-Konvention)
+            # IP list: ul with the iplist class (mvmantohtml convention)
             set tag ul; set itemTag li
             set wrapClass "docir-list-ip iplist"
         }
@@ -633,7 +635,7 @@ proc docir::html::_renderList {node level} {
         default { set tag ul; set itemTag li; set wrapClass docir-list-unknown }
     }
 
-    # indent-N Klasse anhängen wenn indentLevel > 0
+    # append the indent-N class if indentLevel > 0
     if {$indentLevel > 0 && $indentLevel <= 4} {
         append wrapClass " indent-$indentLevel"
     }
@@ -689,8 +691,8 @@ proc docir::html::_renderListItemInside {item parentTag itemTag level {loose 0}}
 }
 
 proc docir::html::_renderListItem {item level} {
-    # Wenn ein listItem als Top-Level-Block auftaucht: defensiv
-    # rendern, das ist eigentlich ein Schema-Fehler.
+    # If a listItem appears as a top-level block: render
+    # defensively, this is really a schema error.
     set ind [_indent $level]
     set inner [_renderInlines [dict get $item content]]
     return "$ind<!-- schema warning: standalone listItem -->\n$ind<div class=\"docir-list-orphan\">$inner</div>\n"
@@ -703,10 +705,10 @@ proc docir::html::_renderBlank {node level} {
     set ind [_indent $level]
     set out ""
     for {set i 0} {$i < $lines} {incr i} {
-        # Self-closing form (<br/>) damit XML-strict-Kontexte (z.B. SVG
-        # foreignObject mit XHTML-Namespace) das Markup parsen koennen.
+        # self-closing form (<br/>) so XML-strict contexts (e.g. SVG
+        # foreignObject with an XHTML namespace) can parse the markup.
         # Im normalen HTML5-Kontext ist die Self-closing-Form ebenfalls
-        # gueltig und semantisch gleich.
+        # valid and semantically equivalent.
         append out "$ind<br/>\n"
     }
     return $out
@@ -728,8 +730,8 @@ proc docir::html::_renderTable {node level} {
 
     set out "$ind<table class=\"$tableClass\">\n"
 
-    # Per-Spalten-Alignment via colgroup. Spec: alignments-Liste mit
-    # Werten left/center/right/none pro Spalte. Alles andere wird
+    # per-column alignment via colgroup. Spec: alignments list with
+    # values left/center/right/none per column. Everything else is
     # ignoriert (none = no styling).
     if {[llength $alignments] > 0} {
         append out "$ind  <colgroup>\n"
@@ -765,8 +767,8 @@ proc docir::html::_renderTable {node level} {
                 continue
             }
             set inner [_renderInlines [dict get $cell content]]
-            # Per-Cell-Alignment via style — wirkt auch wenn colgroup-
-            # Variante vom CSS-Reset ueberschrieben wird.
+            # per-cell alignment via style — works even when the colgroup
+            # variant is overridden by the CSS reset.
             set align ""
             if {$colIndex < [llength $alignments]} {
                 set a [lindex $alignments $colIndex]
@@ -799,7 +801,7 @@ proc docir::html::_renderImageBlock {node level} {
         append out " title=\"[_escapeAttr $title]\""
     }
     append out "/>\n"
-    # figcaption wenn alt-text non-trivial ist
+    # figcaption if the alt text is non-trivial
     if {$alt ne ""} {
         append out "${ind}  <figcaption>[_escapeHtml $alt]</figcaption>\n"
     }
@@ -830,7 +832,7 @@ proc docir::html::_renderFootnoteDef {node level} {
     set id [_dictDef $m id ""]
     set escId [_escapeAttr $id]
 
-    # Inhalt der Footnote als gerenderte Inlines
+    # content of the footnote as rendered inlines
     set content [_renderInlines [dict get $node content]]
 
     # <li id="fn-ID">CONTENT <a href="#fnref-ID" class="back">↩</a></li>
@@ -927,8 +929,8 @@ proc docir::html::_renderInline {inline} {
         softbreak  { return "\n" }
         span {
             # <span class="..." id="...">text</span> — class/id optional.
-            # Ein span mit class "index" wird zugleich als Sachindex-Eintrag
-            # erfasst und bekommt einen Sprung-Anker (falls keine eigene id).
+            # A span with class "index" is also captured as a subject-index entry
+            # and gets a jump anchor (if it has no id of its own).
             set cls [_dictDef $inline class ""]
             set spanId [_dictDef $inline id ""]
             if {[lsearch -exact [split $cls] index] >= 0} {
@@ -951,16 +953,16 @@ proc docir::html::_renderInline {inline} {
             return "<span$attrs>$escTxt</span>"
         }
         footnote_ref {
-            # <sup><a href="#fn-ID">TEXT</a></sup> mit ID = id-Feld
+            # <sup><a href="#fn-ID">TEXT</a></sup> with ID = the id field
             set id [_dictDef $inline id ""]
             set escId [_escapeAttr $id]
             return "<sup class=\"footnote-ref\"><a href=\"#fn-$escId\" id=\"fnref-$escId\">$escTxt</a></sup>"
         }
         math {
-            # Pandoc-Konvention fuer KaTeX/MathJax-Integration:
+            # Pandoc convention for KaTeX/MathJax integration:
             # <span class="math inline">$...$</span> bzw.
             # <span class="math display">$$...$$</span>
-            # Der Browser laedt KaTeX/MathJax separat und rendert sie.
+            # The browser loads KaTeX/MathJax separately and renders them.
             set disp [_dictDef $inline display 0]
             set raw [_dictDef $inline text ""]
             set escRaw [_escapeHtml $raw]
@@ -970,7 +972,7 @@ proc docir::html::_renderInline {inline} {
             return "<span class=\"math inline\">\$${escRaw}\$</span>"
         }
         default {
-            # Unbekannter Inline-Typ — Text bewahren mit data-Attribut
+            # unknown inline type — preserve the text with a data attribute
             return "<span data-docir-inline=\"[_escapeAttr $t]\">$escTxt</span>"
         }
     }

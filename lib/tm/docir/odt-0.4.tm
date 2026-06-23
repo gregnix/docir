@@ -21,12 +21,15 @@
 ##   Heading_1..6, Code (paragraph); Bold, Italic, Mono, Underline, Strike (text).
 
 package require Tcl 8.6 9
+package require docir::diag
+package require docir::diagram
 package require odf::text
 package require odf::style
 
 namespace eval docir::odt {
     namespace export write
     variable _flowCnt 0
+    variable _flowFontFile ""   ;# render-scoped: optional ttf for flow diagrams
 }
 
 ## ---------- helpers ----------
@@ -166,24 +169,26 @@ proc docir::odt::_fillList {txt listEl listsVar iVar L} {
 ## One non-list block onto the body via $txt; image blocks embed bytes into $pkg.
 ## Render a tuflow flow-diagram block to a PNG, add it as a package part and
 ## reference it. Returns 1 on success, 0 to fall back to a Code paragraph.
-proc docir::odt::_emitFlow {txt pkg node mediaOutVar} {
+proc docir::odt::_emitFlow {txt pkg node lang mediaOutVar} {
     upvar 1 $mediaOutVar mediaOut
     variable _flowCnt
+    variable _flowFontFile
     set src ""
     foreach i [dict get $node content] {
         if {[dict exists $i text]} { append src [dict get $i text] }
     }
-    if {[catch {
-        package require tclutils::tuflow
-        set png [::tclutils::tudiagram::toPng [::tclutils::tuflow::parse $src]]
-    }]} { return 0 }
-    set name "Pictures/flow[incr _flowCnt].png"
-    if {[catch {
+    try {
+        set fontOpt [expr {$_flowFontFile eq "" ? {} : [list -fontfile $_flowFontFile]}]
+        set png [docir::diagram::renderPng $src $lang {*}$fontOpt]
+        set name "Pictures/flow[incr _flowCnt].png"
         $pkg addpart $name $png [_mediaType $png $name]
         dict set mediaOut $name $png
         $txt appendImageFit $name -name img -anchor as-char
-    }]} { return 0 }
-    return 1
+        return 1
+    } on error {m o} {
+        docir::diag::report [dict get $o -errorcode] "diagram/$lang: $m"
+        return 0
+    }
 }
 
 proc docir::odt::_block {txt pkg node mediaInVar mediaOutVar} {
@@ -201,8 +206,8 @@ proc docir::odt::_block {txt pkg node mediaInVar mediaOutVar} {
         }
         pre {
             set lang [_dictDef $meta language ""]
-            if {[string tolower $lang] in {flow tuflow mermaid} \
-                    && [_emitFlow $txt $pkg $node mediaOut]} {
+            if {[docir::diagram::isDiagram $lang] \
+                    && [_emitFlow $txt $pkg $node $lang mediaOut]} {
                 # embedded as a diagram image
             } else {
                 _inlines $txt [$txt appendParagraph "" Code] [dict get $node content]
@@ -278,6 +283,8 @@ proc docir::odt::_defineStyles {pkg} {
 
 ## ---------- public API ----------
 proc docir::odt::write {ir path {options {}}} {
+    variable _flowFontFile
+    set _flowFontFile [_dictDef $options flowFont ""]
     set mediaIn  [_dictDef $options media {}]
     set mediaOut {}
 

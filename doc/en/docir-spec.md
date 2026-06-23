@@ -1,7 +1,7 @@
-# DocIR 0.5 – Intermediate Representation Spec
+# DocIR 0.6 – Intermediate Representation Spec
 
-Date: 2026-05-07
-Version: 0.5
+Date: 2026-06-22
+Version: 0.6
 Status: Stable
 
 ---
@@ -34,7 +34,7 @@ Concrete consequences:
 | Aspect | AST (e.g. `nroffparser`) | DocIR |
 |---|---|---|
 | Vocabulary | Mirrors the source (`section` = `.SH`, `subsection` = `.SS`, `heading` = `.TH`) | Sink-near, source-format-neutral (`heading` with `level 1..6`, `doc_header`) |
-| Inline set | Small and source-near (in the nroff AST: `text`/`strong`/`emphasis`) | Richer and sink-near (13 types incl. `underline`/`strike`/`code`/`link`/`image`/`linebreak`/`softbreak`/`span`/`footnote_ref`) |
+| Inline set | Small and source-near (in the nroff AST: `text`/`strong`/`emphasis`) | Richer and sink-near (14 types incl. `underline`/`strike`/`code`/`link`/`image`/`linebreak`/`softbreak`/`span`/`footnote_ref`/`math`) |
 | Variability | Differs per source format | One spec for all sources |
 | Responsibility | Preserves what the source says | Provides what sinks need |
 
@@ -109,6 +109,7 @@ The current set of block types accepted by `docir::validate`:
 | `footnote_section` | footnote-def list | `{}`                              |
 | `footnote_def` | Inline list        | `id`, `num` (display marker)        |
 | `div`        | Block list           | `class`, `id` (TIP-700)             |
+| `math_block` | Inline list          | `kind math` (display math, since 0.6)|
 
 ### Notes on the new block types
 
@@ -306,6 +307,7 @@ Inlines are dicts `{type <t> text <s>}` plus optional fields:
 | `softbreak`    | (none)                    | –                    |
 | `span`         | `text`                    | `class`, `id`        |
 | `footnote_ref` | `text` (= display num)    | `id` (target)        |
+| `math`         | `text` (= source)         | –                    |
 
 ### Notes on the new types
 
@@ -342,6 +344,13 @@ Sinks without link-targets emit `[1]`.
 inlines (the nroff parser's `detectLinks` step in SEE ALSO sections,
 or markdown's link references). The DocIR mapper preserves them
 unchanged.
+
+**`math`** — inline math (since 0.6). The `text` field holds the math
+source, typically LaTeX from `$...$` (inline) or `$$...$$` (which a source
+may instead map to a `math_block`). Renderers that have no math engine show
+the source in a monospace/`code`-like style (the Tk renderer uses a dedicated
+`math` tag); a future sink may typeset it. `math_block` is the block-level
+counterpart for display equations.
 
 ---
 
@@ -446,7 +455,7 @@ canvas \- create and manipulate 'canvas' widgets
 
 ---
 
-## Renderer Support (docir/rendererTk-0.1.tm)
+## Renderer Support (docir/rendererTk-0.2.tm)
 
 | DocIR Type   | Rendering                                              |
 |--------------|--------------------------------------------------------|
@@ -462,6 +471,33 @@ canvas \- create and manipulate 'canvas' widgets
 | `table`      | Monospace columns, widths computed across all cells;   |
 |              | inline formatting inside cells preserved               |
 
+## Available Sources
+
+A source reads some input and produces a DocIR stream (naming convention
+`docir::FORMATSource`). Two are pure AST mappers (they take an already-parsed
+tree); the others read a format or a Tcl declaration directly:
+
+| Source              | Module             | Input                                            |
+|---------------------|--------------------|--------------------------------------------------|
+| `docir::roffSource` | roffSource-0.1.tm  | nroff AST (from `nroffparser`) — mapper          |
+| `docir::mdSource`   | mdSource-0.1.tm    | Markdown AST (from `mdparser`) — mapper          |
+| `docir::htmlSource` | htmlSource-0.1.tm  | HTML, read via `tdom` (semantic, not CSS/layout) |
+| `docir::odtSource`  | odtSource-0.4.tm   | OpenDocument Text (.odt), via `odf`              |
+| `docir::csdSource`  | csdSource-0.1.tm   | CSD — Tcl-declarative cheat-sheet definitions    |
+| `docir::tkSource`   | tkSource-0.2.tm    | Tk text-widget dump (+ embedded image bytes)     |
+
+Entry points: `docir::roff::fromAst` / `docir::md::fromAst` (the mappers, whose
+namespaces are `::docir::roff` / `::docir::md`), `docir::htmlSource::fromHtml`,
+`docir::odtSource::fromOdt`, `docir::tkSource::fromWidget` (plus `::media` for
+image bytes), and `docir::csdSource::toSheet` / `::toSheets`.
+
+Two sources are round-trip inverses of a sink: `htmlSource` ↔ `docir::html` and
+`tkSource` ↔ `docir::rendererTk`. They are semantic, not pixel-exact — e.g. the
+Tk renderer shows tables/lists as monospaced text, so a widget dump returns them
+as `paragraph` / `pre`, not `table` / `list` (the documented ttd-vs-DocIR
+boundary). `csdSource` produces the sheet structure consumed by the `tile*`
+sinks rather than a linear block list.
+
 ## Available Sinks
 
 DocIR currently has the following sinks (`docir::*` modules). Each
@@ -471,20 +507,24 @@ sink takes a DocIR stream and produces an output format:
 |--------------------|------------------------|-------------------------------------------------|
 | `docir::html`      | html-0.1.tm            | HTML5 with semantic classes                     |
 | `docir::md`        | md-0.1.tm              | Markdown (CommonMark + GFM)                     |
-| `docir::pdf`       | pdf-0.1.tm             | PDF via pdf4tcl, standard layout                |
+| `docir::pdf`       | pdf-0.2.tm             | PDF via pdf4tcl, standard layout                |
 | `docir::roff`      | roff-0.1.tm            | nroff/groff (man pages)                         |
+| `docir::odt`       | odt-0.4.tm             | OpenDocument Text (.odt)                         |
+| `docir::txt`       | txt-0.1.tm             | plain text (pagers, e-mail, logs)               |
 | `docir::svg`       | svg-0.1.tm             | SVG graphics                                    |
 | `docir::canvas`    | canvas-0.1.tm          | Tk canvas items (for GUI display)               |
 | `docir::tilepdf`   | tilepdf-0.1.tm         | 2-column tile PDF (cheatsheet style)            |
 | `docir::tilehtml`  | tilehtml-0.1.tm        | 2-column tile HTML with CSS Grid                |
 | `docir::tilemd`    | tilemd-0.1.tm          | Tile-structured Markdown (linear)               |
-| `docir::rendererTk`| rendererTk-0.1.tm      | Tk text widget (interactive viewer)             |
+| `docir::rendererTk`| rendererTk-0.2.tm      | Tk text widget (interactive viewer)             |
 
 Plus shared helper:
 
 | Helper             | Module                 | Function                                        |
 |--------------------|------------------------|-------------------------------------------------|
 | `docir::tilecommon`| tilecommon-0.1.tm      | DocIR → sheets/sections logic (used by tilepdf, tilehtml, tilemd) |
+| `docir::diagram`   | diagram-0.1.tm         | diagram-language seam (fenced code → tuflow facade; used by all sinks) |
+| `docir::diag`      | diag-0.1.tm            | central diagnostic policy (warn/strict/silent) for sinks |
 
 ### Tile sinks comparison
 
@@ -524,6 +564,37 @@ Both classes satisfy the DocIR spec — the spec marks
 
 ---
 
+## Diagram code blocks (since 0.6)
+
+A fenced code block whose language is a diagram language is rendered as a real
+diagram instead of verbatim code. The policy lives in one place, `docir::diagram`
+(the diagram seam), so every sink shares the same language gate and the
+parse/render dispatch rather than carrying its own copy.
+
+- **native** (`flow`, `tuflow`, `pie`) — rendered through the
+  `tclutils::tuflow` facade: inline `<svg>` in HTML, an embedded PNG in the
+  raster sinks (pdf / odt / rendererTk).
+- **browser** (`mermaid`) — HTML keeps these as `<pre class="mermaid">` for
+  client-side mermaid.js (full fidelity in a browser); the raster sinks have no
+  browser and render them through the same facade (best effort — the facade
+  handles the graph-like mermaid types and throws for the rest).
+- any other language stays a normal `pre` / code block.
+
+`docir::diagram` has **no** `catch`: a render error
+(`{TCLUTILS TUFLOW|TUDIAGRAM|TUPIE ...}`, `{TCL PACKAGE ...}`) propagates to the
+calling sink, which wraps it in `try` / `on error` and hands the `errorCode` to
+`docir::diag` — the central diagnostic policy with modes warn (log + continue,
+default), strict (re-throw with the original `errorCode`, for CI/tests) and
+silent (log only). So a missing `tclutils::tuflow` or a parse failure is
+observable via the diag log, not a silent fallback to a code box.
+
+The raster sinks (pdf / odt / rendererTk) accept a render option
+`flowFont <ttf>`, passed to the facade for real-font diagram labels (otherwise
+the built-in bitmap font is used). HTML uses inline SVG with the viewer font and
+ignores it.
+
+---
+
 ## Versioning
 
 | Version | Date       | Change                                                  |
@@ -533,3 +604,4 @@ Both classes satisfy the DocIR spec — the spec marks
 | 0.3     | 2026-03-06 | docir/md-0.1.tm (mdparser mapper); Renderer: blockquote, ul/ol, dl |
 | 0.4     | 2026-05-05 | `table`/`tableRow`/`tableCell` block types; `.SO`/`.SE` mapping; documented `blank` content optionality; `link` inline canonicalised |
 | 0.5     | 2026-05-07 | `doc_meta` block type with `irSchemaVersion` field; helper procs `docir::schemaVersion` / `docir::checkSchemaVersion`; sources emit `doc_meta` as first block; validator lenient towards IRs without `doc_meta` (transition phase) |
+| 0.6     | 2026-06-22 | `math` inline + `math_block` block types; `docir::diagram` seam for fenced diagram code (flow/tuflow/pie native, mermaid browser/best-effort) via the tuflow facade, with `docir::diag` diagnostics and a `flowFont` render option; `docir::odt` (odt-0.4) and `docir::txt` (txt-0.1) sinks documented; "Available Sources" section (roff/md/html/odt/csd/tk); pdf → 0.2, rendererTk → 0.2 |

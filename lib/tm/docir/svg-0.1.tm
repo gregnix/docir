@@ -1,25 +1,25 @@
 # docir-svg-0.1.tm -- DocIR → SVG Renderer
 #
-# Wandelt eine DocIR-Sequenz in SVG um. Zwei Modi:
+# Converts a DocIR sequence into SVG. Two modes:
 #
-#   foreignObject (Standard): nutzt docir-html intern und packt das
+#   foreignObject (default): uses docir-html internally and wraps the
 #                             Ergebnis in ein <foreignObject>-Element.
 #                             Renderbar in Browsern, NICHT in Inkscape
-#                             oder den meisten SVG→PDF-Tools.
+#                             or most SVG->PDF tools.
 #
-#   native: eigenes Layout mit nativen <text>-Elementen. Renderbar in
+#   native: own layout with native <text> elements. Renderable in
 #           Inkscape, svg2pdf, etc. Konservatives Zeichenbreite-Schaetzen
-#           (fontSize * 0.6 fuer sans, * 0.62 fuer mono); Heights
+#           (fontSize * 0.6 for sans, * 0.62 for mono); heights
 #           akkumulieren je Block-Typ. Auto-Height nach Layout.
 #
 # Public API:
 #   docir::svg::render ir ?options?
-#       options: dict mit
+#       options: dict with
 #         mode         "foreignObject" (default) | "native"
 #         width        Int                 (default 800)
 #         height       Int|"auto"          (default "auto" — berechnet)
-#         standalone   Bool                (default 1; 0 = nur <svg> ohne <?xml>)
-#         title        String              (Standard: aus DocIR ermittelt)
+#         standalone   Bool                (default 1; 0 = only <svg> without <?xml>)
+#         title        String              (default: derived from DocIR)
 #         cssExtra     String              (zusaetzliches CSS)
 #         fontSize     Int                 (default 14)
 #         fontFamily   String              (default "sans-serif")
@@ -29,7 +29,7 @@
 
 package provide docir::svg 0.1
 
-# Wir laden docir-html für den foreignObject-Modus
+# We load docir-html for the foreignObject mode
 package require docir::html
 
 namespace eval ::docir::svg {
@@ -248,8 +248,8 @@ proc docir::svg::_wrap {text maxWidth fontSize {mono 0}} {
             } else {
                 if {$current ne ""} { lappend lines $current }
                 set current $w
-                # Wenn ein einzelnes Wort breiter als maxChars ist,
-                # einfach so stehen lassen — kein hartes Brechen.
+                # If a single word is wider than maxChars,
+                # just leave it as is — no hard breaking.
             }
         }
         if {$current ne ""} { lappend lines $current }
@@ -324,7 +324,7 @@ proc docir::svg::_layoutHeading {node x y contentWidth} {
     }
 
     if {$lv == 1} {
-        # Underline für h1
+        # underline for h1
         set ulY [expr {$yLine - $lh + 4}]
         append svg "<line x1=\"$x\" y1=\"$ulY\" x2=\"[expr {$x + $contentWidth}]\" y2=\"$ulY\" stroke=\"#888\" stroke-width=\"1\"/>\n"
     }
@@ -340,8 +340,8 @@ proc docir::svg::_layoutParagraph {node x y contentWidth} {
     set m [dict get $node meta]
     set class [_dictDef $m class ""]
 
-    # Plaintext rendern (mit minimaler Inline-Formatierung
-    # über tspan-Spans wenn nötig). Erstmal: alles als ein Block.
+    # render plaintext (with minimal inline formatting
+    # via tspan spans if needed). For now: everything as one block.
     set txt [_inlinesToText [dict get $node content]]
     set lines [_wrap $txt $contentWidth $fontSize]
 
@@ -375,7 +375,7 @@ proc docir::svg::_layoutPre {node x y contentWidth} {
     set lh [_lineHeight $fontSize]
 
     set txt [_inlinesToText [dict get $node content]]
-    # In pre: Zeilen am Newline trennen, NICHT umbrechen (wäre semantisch falsch)
+    # In pre: split lines at the newline, do NOT wrap (would be semantically wrong)
     set lines [split $txt "\n"]
 
     # Hintergrundbox vorbereiten
@@ -410,7 +410,7 @@ proc docir::svg::_layoutList {node x y contentWidth} {
         set itemType [dict get $item type]
         if {$itemType ne "listItem"} {
             # Schema-Verletzung — Kommentar als <!-- … --> ist in SVG zwar
-            # technisch erlaubt, aber wir machen sichtbares Warnzeichen
+            # technically allowed, but we emit a visible warning marker
             set yCur [expr {$yCur + 4}]
             append svg "<text x=\"$x\" y=\"[expr {$yCur + $fontSize}]\" font-size=\"${fontSize}\" fill=\"#a00\">⚠ schema warning: $itemType in list.content</text>\n"
             set yCur [expr {$yCur + $lh}]
@@ -445,7 +445,7 @@ proc docir::svg::_layoutList {node x y contentWidth} {
                 incr ord
             }
             tp - ip - op - ap - dl {
-                # Term auf eigener Zeile (fett), description darunter mit Einzug
+                # term on its own line (bold), description below with an indent
                 set termTxt [_inlinesToText $itemTerm]
                 set descTxt [_inlinesToText $itemDescInlines]
                 set indent [expr {2 * [_charWidth $fontSize]}]
@@ -468,7 +468,7 @@ proc docir::svg::_layoutList {node x y contentWidth} {
                 set yCur [expr {$yCur + 2}]
             }
             default {
-                # ul oder unknown
+                # ul or unknown
                 set marker "•"
                 set markerW [expr {2 * [_charWidth $fontSize]}]
                 set xText [expr {$x + $markerW}]
@@ -495,7 +495,7 @@ proc docir::svg::_layoutList {node x y contentWidth} {
 }
 
 proc docir::svg::_layoutListItem {node x y contentWidth} {
-    # Standalone listItem (Schema-Fehler) — wie paragraph rendern
+    # standalone listItem (schema error) — render like a paragraph
     variable opts
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
@@ -549,7 +549,7 @@ proc docir::svg::_layoutTable {node x y contentWidth} {
         set rowH [expr {$lh + 2 * $padY}]
         set isHeader [expr {$hasHeader && $rowIndex == 0}]
 
-        # Hintergrund für Header-Zeile
+        # background for the header row
         if {$isHeader} {
             append svg "<rect x=\"$x\" y=\"$yCur\" width=\"$contentWidth\" height=\"$rowH\" fill=\"#f4f4f4\"/>\n"
         }
@@ -570,9 +570,9 @@ proc docir::svg::_layoutTable {node x y contentWidth} {
             append svg "<line x1=\"$xCell\" y1=\"$yCur\" x2=\"$xCell\" y2=\"[expr {$yCur + $rowH}]\" stroke=\"#ccc\" stroke-width=\"1\"/>\n"
             incr colIndex
         }
-        # rechte Außenkante
+        # right outer edge
         append svg "<line x1=\"[expr {$x + $contentWidth}]\" y1=\"$yCur\" x2=\"[expr {$x + $contentWidth}]\" y2=\"[expr {$yCur + $rowH}]\" stroke=\"#ccc\" stroke-width=\"1\"/>\n"
-        # untere Linie der Zeile
+        # bottom line of the row
         append svg "<line x1=\"$x\" y1=\"[expr {$yCur + $rowH}]\" x2=\"[expr {$x + $contentWidth}]\" y2=\"[expr {$yCur + $rowH}]\" stroke=\"#ccc\" stroke-width=\"1\"/>\n"
         if {$rowIndex == 0} {
             append svg "<line x1=\"$x\" y1=\"$yCur\" x2=\"[expr {$x + $contentWidth}]\" y2=\"$yCur\" stroke=\"#ccc\" stroke-width=\"1\"/>\n"
@@ -592,7 +592,7 @@ proc docir::svg::_layoutImageBlock {node x y contentWidth} {
     set url [_dictDef $m url ""]
     set alt [_dictDef $m alt ""]
 
-    # Default-Größe — könnte als Option exposed werden
+    # default size — could be exposed as an option
     set imgW [expr {min($contentWidth, 200)}]
     set imgH 150
     set svg "<image x=\"$x\" y=\"$y\" width=\"$imgW\" height=\"$imgH\" href=\"[_xmlEscape $url]\""

@@ -1,38 +1,38 @@
-# docir-md-0.1.tm -- DocIR → Markdown Renderer (Senke)
+# docir-md-0.1.tm -- DocIR -> Markdown renderer (sink)
 #
-# Wandelt eine DocIR-Sequenz in eine Markdown-Datei um. Sechste Senke
+# Converts a DocIR sequence into a Markdown file. The sixth sink
 # im DocIR-Hub (neben tk, html, svg, pdf, canvas).
 #
-# Verhaeltnis zu docir::mdSource: dies hier ist die SENKE (DocIR -> MD,
+# Relation to docir::mdSource: this here is the SINK (DocIR -> MD,
 # `docir::md::render`). Die QUELLE (MD-AST -> DocIR, `docir::md::fromAst`)
 # lebt im separaten Paket `docir::mdSource`. Beide Module schreiben in
-# den gleichen Namespace `::docir::md::*`, aber mit unterschiedlichen
-# Procs -- sie koennen problemlos GLEICHZEITIG geladen werden:
+# the same namespace `::docir::md::*`, but with different
+# procs -- they can be loaded SIMULTANEOUSLY without problems:
 #
 #   package require docir::md          ;# Sink (DocIR -> MD)
 #   package require docir::mdSource    ;# Source (MD-AST -> DocIR)
 #
-# Ein Roundtrip Markdown -> DocIR -> Markdown ist damit moeglich.
+# A round trip Markdown -> DocIR -> Markdown is therefore possible.
 #
 # Public API:
 #   docir::md::render ir ?options?
-#       options: dict mit
-#         linkResolve  Tcl-Cmd-Praefix     (optional, fuer link-Inlines mit name/section)
+#       options: dict with
+#         linkResolve  Tcl cmd prefix       (optional, for link inlines with name/section)
 #         listMarker   "-" | "+" | "*"     (default "-")
 #         strongStyle  "**" | "__"          (default "**")
 #         emphStyle    "*" | "_"             (default "*")
 #       Returns: Markdown-String
 #
 #   docir::md::renderInline inlines
-#       Wandelt Inline-Liste in Markdown-Fragment um (ohne Block-Wrap).
+#       Converts an inline list into a Markdown fragment (without block wrap).
 #
 # Defensive Behandlung:
 #   - blank-Nodes ohne content → mehrfache Leerzeile
 #   - unbekannte Block-Typen → HTML-Kommentar als Marker, content
-#     wird als Inline-Text gerendert (kein Crash)
+#     is rendered as inline text (no crash)
 #   - Schema-Verletzungen in list.content / table.content → HTML-
 #     Kommentar als Warnung
-#   - Markdown-Escaping fuer text-Inlines (\*, \_, \`, \[, \])
+#   - Markdown escaping for text inlines (\*, \_, \`, \[, \])
 
 package provide docir::md 0.1
 package require docir 0.1
@@ -63,9 +63,9 @@ proc docir::md::render {ir {options {}}} {
         dict set opts $k [dict get $options $k]
     }
 
-    # Auto-Shift: wenn ein doc_header im IR ist und headingShift="auto",
-    # shifte alle headings um +1 — so wird "# title" das einzige h1,
-    # alle .SH-Headings werden h2 (konsistent mit ast2md-Output und
+    # Auto-shift: if there is a doc_header in the IR and headingShift="auto",
+    # shift all headings by +1 — so "# title" becomes the only h1,
+    # all .SH headings become h2 (consistent with ast2md output and
     # allgemein besseres Markdown).
     if {[dict get $opts headingShift] eq "auto"} {
         set shift 0
@@ -140,7 +140,7 @@ proc docir::md::_renderDocHeader {node} {
     set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
     if {$name eq ""} { return "" }
 
-    # H1 ist der Name. Untertitel mit zusaetzlichen Feldern.
+    # H1 is the name. Subtitle with additional fields.
     set out "# [_escapeMd $name]"
     if {$section ne ""} {
         # nroff-Style: name(section) — z.B. "ls(1)"
@@ -148,7 +148,7 @@ proc docir::md::_renderDocHeader {node} {
     }
     append out "\n\n"
 
-    # Subtitel-Zeile mit version/part, falls vorhanden.
+    # subtitle line with version/part, if present.
     set subtitle {}
     if {$version ne ""} { lappend subtitle [_escapeMd $version] }
     if {$part    ne ""} { lappend subtitle [_escapeMd $part] }
@@ -177,7 +177,7 @@ proc docir::md::_renderParagraph {node} {
     if {$txt eq ""} { return "" }
 
     if {$class eq "blockquote"} {
-        # > prefix für jede Zeile
+        # > prefix for each line
         set lines [split $txt "\n"]
         set out ""
         foreach line $lines {
@@ -193,7 +193,7 @@ proc docir::md::_renderPre {node} {
     set kind [_dictDef $m kind ""]
     set lang [_dictDef $m language ""]
 
-    # Im Code-Block: Inline-Liste als plain text (kein Markdown-Escaping)
+    # In a code block: inline list as plain text (no Markdown escaping)
     set content [dict get $node content]
     if {[string is list $content] && [llength $content] > 0 \
             && [catch {dict get [lindex $content 0] type}] == 0} {
@@ -237,13 +237,13 @@ proc docir::md::_renderList {node} {
 
         switch $itemKind {
             ol {
-                # Wenn descMd Newlines enthält: weitere Zeilen einrücken
+                # If descMd contains newlines: indent the further lines
                 set descMd [_indentContinuationLines $descMd 4]
                 append out "${indent}${ord}. $descMd\n"
                 incr ord
             }
             tp - ip - op - ap - dl {
-                # Term fett auf eigener Zeile, desc darunter mit 4-Space-Einzug
+                # term bold on its own line, desc below with a 4-space indent
                 set termMd [_renderInlines $itemTerm]
                 if {$termMd ne ""} {
                     append out "${indent}[dict get $opts strongStyle]${termMd}[dict get $opts strongStyle]\n\n"
@@ -295,7 +295,7 @@ proc docir::md::_renderTable {node} {
         return "<!-- table without columns -->\n\n"
     }
 
-    # Separator-Zeile mit Per-Spalten-Alignment.
+    # separator line with per-column alignment.
     # Markdown-Syntax: ` --- ` (default), `:---` (left), `:---:` (center), `---:` (right).
     set sep "|"
     for {set i 0} {$i < $columns} {incr i} {
@@ -311,7 +311,7 @@ proc docir::md::_renderTable {node} {
         }
     }
 
-    # Pseudo-Header wenn hasHeader=0
+    # pseudo header if hasHeader=0
     set pseudo "|"
     for {set i 0} {$i < $columns} {incr i} {
         append pseudo "   |"
@@ -326,7 +326,7 @@ proc docir::md::_renderTable {node} {
             continue
         }
 
-        # Vor erster Zeile: Pseudo-Header wenn hasHeader=0
+        # before the first row: pseudo header if hasHeader=0
         if {$rowIndex == 0 && !$hasHeader} {
             append out "$pseudo\n$sep\n"
         }
@@ -335,13 +335,13 @@ proc docir::md::_renderTable {node} {
         foreach cell [dict get $row content] {
             if {[dict get $cell type] ne "tableCell"} { continue }
             set cellMd [_renderInlines [dict get $cell content]]
-            # Pipes und Newlines im Zelleninhalt escapen / mappen
+            # escape / map pipes and newlines in the cell content
             set cellMd [string map [list "|" "\\|" "\n" " "] $cellMd]
             append rowMd " $cellMd |"
         }
         append out "$rowMd\n"
 
-        # Separator nach erster Zeile wenn echter Header
+        # separator after the first row if it is a real header
         if {$rowIndex == 0 && $hasHeader} {
             append out "$sep\n"
         }
@@ -365,7 +365,7 @@ proc docir::md::_renderImageBlock {node} {
 
 proc docir::md::_renderFootnoteSection {node} {
     # Markdown rendert footnote-defs einfach als [^id]: text
-    # (sie erscheinen am Doc-Ende; mdparser sammelt sie in eine Section)
+    # (they appear at the end of the doc; mdparser collects them into a section)
     set out ""
     foreach def [dict get $node content] {
         if {[dict get $def type] ne "footnote_def"} continue
@@ -377,7 +377,7 @@ proc docir::md::_renderFootnoteSection {node} {
 proc docir::md::_renderFootnoteDef {node} {
     set m [dict get $node meta]
     set id [_dictDef $m id ""]
-    # Inhalt der Definition als Inlines rendern
+    # render the content of the definition as inlines
     set body [_renderInlines [dict get $node content]]
     return "\[^$id\]: $body\n\n"
 }
@@ -458,8 +458,8 @@ proc docir::md::_renderInline {inline} {
         underline  { return "<u>$escTxt</u>" }
         strike     { return "~~${escTxt}~~" }
         code       {
-            # Code-Inlines: kein Markdown-Escaping; aber Backticks im Text
-            # erfordern doppelte Backticks außen
+            # code inlines: no Markdown escaping; but backticks in the text
+            # require double backticks on the outside
             if {[string first "`" $txt] >= 0} {
                 return "`` $txt ``"
             }
@@ -478,9 +478,9 @@ proc docir::md::_renderInline {inline} {
             return $out
         }
         linebreak {
-            # Hard break: zwei Spaces + Newline. In Markdown wird zur
-            # Erleichterung des Lesens auch ein <br/>-Tag akzeptiert,
-            # aber die "echte" Markdown-Form sind zwei trailing Spaces.
+            # Hard break: two spaces + newline. In Markdown, for
+            # easier reading a <br/> tag is also accepted,
+            # but the "real" Markdown form is two trailing spaces.
             return "  \n"
         }
         softbreak {
@@ -490,11 +490,11 @@ proc docir::md::_renderInline {inline} {
         }
         span {
             # TIP-700 span — Markdown hat keine Standard-Notation.
-            # Wir nutzen die Pandoc-Erweiterung [text]{.class #id}
+            # We use the Pandoc extension [text]{.class #id}
             set cls [_dictDef $inline class ""]
             set id  [expr {[dict exists $inline id]    ? [dict get $inline id]    : ""}]
             if {$cls eq "" && $id eq ""} {
-                # Ohne Attribute ist span ein No-Op — nur den Text zurückgeben
+                # Without attributes, span is a no-op — just return the text
                 return $escTxt
             }
             set attrs ""
@@ -508,7 +508,7 @@ proc docir::md::_renderInline {inline} {
             return "\[^$id\]"
         }
         math {
-            # Pandoc-Style math: $...$ (inline) oder $$...$$ (display)
+            # Pandoc-style math: $...$ (inline) or $$...$$ (display)
             set disp [_dictDef $inline display 0]
             if {$disp} {
                 return "\$\$${txt}\$\$"
@@ -516,7 +516,7 @@ proc docir::md::_renderInline {inline} {
             return "\$${txt}\$"
         }
         default {
-            # Unbekannter Inline-Typ — Text bewahren mit HTML-Kommentar-Marker
+            # unknown inline type — preserve the text with an HTML comment marker
             return "<!--$t-->$escTxt"
         }
     }
@@ -528,7 +528,7 @@ proc docir::md::_renderLinkInline {inline} {
     set escTxt [_escapeMd $txt]
 
     set href ""
-    # Nur ein NICHT-LEERES href-Feld nehmen — DocIR-Knoten haben
+    # take only a NON-EMPTY href field — DocIR nodes have
     # manchmal href="" plus name/section (vom roff-Mapper)
     if {[dict exists $inline href] && [dict get $inline href] ne ""} {
         set href [dict get $inline href]
@@ -569,10 +569,10 @@ proc docir::md::_inlinesToText {inlines} {
     return $out
 }
 
-# Markdown-Escaping fuer text-Inlines.
-# Wir escapen die schmerzhaftesten Sonderzeichen. Nicht alle weil das
-# den Output haesslich macht — Markdown-Parser sind tolerant gegenueber
-# nicht-escapten Zeichen wenn der Kontext klar ist.
+# Markdown escaping for text inlines.
+# We escape the most painful special characters. Not all, because that
+# makes the output ugly — Markdown parsers are tolerant of
+# non-escaped characters when the context is clear.
 proc docir::md::_escapeMd {s} {
     return [string map {
         "\\" "\\\\"
@@ -584,8 +584,8 @@ proc docir::md::_escapeMd {s} {
     } $s]
 }
 
-# Hängt Continuation-Lines (Newlines im Text) auf gleichbleibender
-# Einrueckung — nuetzlich fuer Listen mit mehrzeiligem Inhalt.
+# Appends continuation lines (newlines in the text) at a constant
+# indentation — useful for lists with multi-line content.
 proc docir::md::_indentContinuationLines {text indent} {
     set lines [split $text "\n"]
     if {[llength $lines] <= 1} { return $text }

@@ -1,12 +1,12 @@
 # docir::tilehtml -- DocIR -> 2-spaltiges Tile-HTML
 #
-# Adaption von docir::tilepdf fuer HTML-Output. Nutzt die gleiche
-# DocIR-Stream-Logik (docir::tile-common), rendert aber als HTML mit
+# Adaptation of docir::tilepdf for HTML output. Uses the same
+# DocIR stream logic (docir::tile-common), but renders as HTML with
 # CSS Grid statt PDF.
 #
 # Vorteile vs tilepdf:
 #  - Browserbar, suchbar, kopierbar
-#  - Print-CSS: Browser kann das in PDF rendern
+#  - print CSS: the browser can render this to PDF
 #  - Theme-Switching dynamisch (light/dark/auto)
 #  - Hyperlinks funktionieren
 #  - CSS Grid + break-inside: avoid macht atomare Tiles
@@ -45,22 +45,22 @@ proc docir::tilehtml::_escape {text} {
 # Inline-Renderer: Pseudo-Markdown -> HTML
 # ---------------------------------------------------------------------------
 #
-# Die tile-common::inlinesToText liefert Pseudo-Markdown. Wir tokenisieren
-# es zu Spans mit den passenden HTML-Tags.
+# tile-common::inlinesToText returns pseudo-markdown. We tokenize
+# it into spans with the matching HTML tags.
 
 proc docir::tilehtml::_richHtml {text} {
-    # Erst Inline-Images herausziehen, dann Links — beide werden NICHT
-    # durch tokenize geleitet weil ihre Markdown-Syntax (`![..](..)` und
-    # `[..](..)`) nicht in der pseudo-Markdown-Tokenisierung steckt.
+    # first extract inline images, then links — neither is
+    # passed through tokenize because their Markdown syntax (`![..](..)` and
+    # `[..](..)`) is not part of the pseudo-markdown tokenization.
     set out ""
     set pos 0
-    # Image kommt vor Link weil Image-Regex auch Link-Pattern matcht (mit !)
+    # image comes before link because the image regex also matches the link pattern (with !)
     set imgRe {!\[([^\]]*)\]\(([^)]+)\)}
     set linkRe {\[([^\]]+)\]\(([^)]+)\)}
 
     set len [string length $text]
     while {$pos < $len} {
-        # Naechster Match: image oder link
+        # next match: image or link
         set imgMatch [regexp -indices -start $pos $imgRe $text imIdx imAlt imUrl]
         set linkMatch [regexp -indices -start $pos $linkRe $text lnIdx lnTxt lnUrl]
 
@@ -68,8 +68,8 @@ proc docir::tilehtml::_richHtml {text} {
         if {$imgMatch && $linkMatch} {
             set imgStart [lindex $imIdx 0]
             set linkStart [lindex $lnIdx 0]
-            # Image wird durch ! VOR der [ erkannt — wenn imgStart == linkStart-1,
-            # ist es das Image (linkStart geht ueber den ! Char weg)
+            # an image is recognized by the ! BEFORE the [ — if imgStart == linkStart-1,
+            # it is the image (linkStart skips past the ! char)
             if {$imgStart < $linkStart} {
                 set which image
             } else {
@@ -179,7 +179,7 @@ proc docir::tilehtml::_renderSection {section} {
             append out "      </ul>\n"
         }
         image {
-            # content: Liste von {url alt title}
+            # content: list of {url alt title}
             foreach img $content {
                 lassign $img url alt ttl
                 set escUrl [_escape $url]
@@ -208,13 +208,13 @@ proc docir::tilehtml::_renderSection {section} {
 # ---------------------------------------------------------------------------
 
 proc docir::tilehtml::_slugify {text} {
-    # Title -> URL-safe slug. Unicode wird ASCII-foldet wo moeglich.
+    # title -> URL-safe slug. Unicode is ASCII-folded where possible.
     set s [string tolower $text]
     # Umlaute via Unicode-Codepoint (encoding-sicher in source-Files)
     set s [string map [list \
         \u00e4 ae \u00f6 oe \u00fc ue \u00df ss \
         \u00c4 ae \u00d6 oe \u00dc ue] $s]
-    # Alles was nicht alphanumerisch oder dash ist -> dash
+    # anything that is not alphanumeric or a dash -> dash
     regsub -all {[^a-z0-9]+} $s - s
     # Trimm leading/trailing dashes
     set s [string trim $s "-"]
@@ -567,8 +567,8 @@ proc docir::tilehtml::render {ir outFile args} {
         -theme $opts(-theme) -lang $opts(-lang) -columns $opts(-columns)]
 }
 
-# renderSheets: alternative Public API -- nimmt eine fertige Sheets-Liste
-# (z.B. von docir::csd::toSheets) und schreibt HTML.
+# renderSheets: alternative public API -- takes a ready-made sheets list
+# (e.g. from docir::csd::toSheets) and writes HTML.
 proc docir::tilehtml::renderSheets {sheets outFile args} {
     array set opts {-theme light -lang de -columns 2}
     foreach {k v} $args {
@@ -592,7 +592,7 @@ proc docir::tilehtml::renderSheets {sheets outFile args} {
         return -code error "docir::tilehtml::renderSheets: leere Sheets-Liste"
     }
 
-    # Title fuer <title>-Tag
+    # title for the <title> tag
     set pageTitle [dict get [lindex $sheets 0] title]
     if {$pageTitle eq ""} { set pageTitle "Tile" }
 
