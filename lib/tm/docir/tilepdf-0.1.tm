@@ -567,7 +567,7 @@ proc docir::tilepdf::_renderSection {pdf section yVar colVar title subtitle} {
             # content: list of {url alt title}
             foreach img $content {
                 lassign $img url alt ttl
-                # Bilder schwer vorab zu vermessen -- konservativ: 80px reservieren
+                # images hard to measure in advance -- conservative: reserve 80px
                 if {$y + 80 > $C(y_max)} {
                     set y [_col $pdf [expr {$C(y_max)+1}] col $title $subtitle]
                     set y [_section $pdf "$secTitle (cont.)" $y $col]

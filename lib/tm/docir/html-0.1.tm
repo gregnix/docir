@@ -125,7 +125,7 @@ proc docir::html::render {ir {options {}}} {
     }
 
     # append the subject index if requested (uses the ones collected during
-    # gesammelten [Begriff]{.index}-Vorkommen).
+    # collected [term]{.index} occurrences).
     if {[dict get $opts includeIndex]} {
         append body [_buildIndex]
     }
@@ -213,7 +213,7 @@ proc docir::html::_buildToc {ir} {
 }
 
 # Builds the subject index from the entries collected during rendering
-# [Begriff]{.index}-Vorkommen: Begriffe alphabetisch, je Begriff Links zu
+# [term]{.index} occurrences: terms alphabetically, per term links to
 # all occurrences. Link text is the section title; multiple occurrences in the
 # same section are merged into one link. Without a surrounding
 # section, a running number is used as the link text.
@@ -588,8 +588,11 @@ proc docir::html::_renderPre {node level} {
         set escTxt [_escapeHtml $txt]
         # tuflow flow-diagram: render server-side to inline SVG (no JS needed).
         # A failure here is reported through docir::diag (warn/strict/silent),
-        # then we fall through to plain code / mermaid rendering.
-        if {[docir::diagram::isNative $lang]} {
+        # then we fall through to plain code / mermaid rendering. preferNative
+        # also covers a ```mermaid``` block whose inner type renders more
+        # reliably via the facade (e.g. architecture-beta); on failure it falls
+        # through to the <pre class="mermaid"> path below (mermaid.js fallback).
+        if {[docir::diagram::preferNative $lang $txt]} {
             try {
                 set _svg [docir::diagram::renderSvg $txt $lang]
                 return "$ind<div class=\"docir-diagram\">$_svg</div>\n"

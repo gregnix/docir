@@ -1,22 +1,22 @@
 # docir-pdf-0.2.tm -- DocIR → PDF Renderer
 # BUILD-ID: pdf-0.2 seam+heightfit+logicalsize 2026-06-21 id=5f4d4dc4867621fe
-# Wandelt eine DocIR-Sequenz in ein PDF-Dokument um. Nutzt
-# pdf4tcl (>=0.9) als Low-Level-Backend und pdf4tcllib (>=0.2)
-# für Font-Embedding (TTF), Unicode-Sanitization und
+# Converts a DocIR sequence into a PDF document. Uses
+# pdf4tcl (>=0.9) as the low-level backend and pdf4tcllib (>=0.2)
+# for font embedding (TTF), Unicode sanitization and
 # Page-Helpers (Header/Footer).
 #
 # Public API:
 #   docir::pdf::render ir outputPath ?options?
-#       options: dict mit
+#       options: dict with
 #         paper          a4|letter|...      (default a4)
 #         margin         Int (pt)           (default 56 ≈ 20mm)
 #         fontSize       Int                (default 11)
-#         title          String             (default: aus DocIR)
+#         title          String             (default: from DocIR)
 #         author         String             (default "")
-#         subtitle       String             (default ""; nur Titelseite)
-#         date           String             (default ""; nur Titelseite)
+#         subtitle       String             (default ""; title page only)
+#         date           String             (default ""; title page only)
 #         titlePage      Bool   (default 0)  eigene Titelseite vor dem TOC
-#         sansFont       Pfad zu TTF        (optional, sonst pdf4tcllib-Default)
+#         sansFont       path to TTF        (optional, else pdf4tcllib default)
 #         sansBoldFont, sansItalicFont, sansBoldItalicFont, monoFont
 #         header         String             (Header-Template, %p = Pagenumber)
 #         footer         String             (Footer-Template, %p = Pagenumber)
@@ -28,36 +28,36 @@
 #         tocDepth       Int    (default 2) Heading-Level bis zu welchem TOC-Eintraege
 #         generateIndex  Bool   (default 0) Stichwortverzeichnis am Ende
 #         indexTitle     String (default "Stichwortverzeichnis")
-#         indexLevel     Int    (default 3) Heading-Level der als Index-Eintrag gilt
+#         indexLevel     Int    (default 3) heading level that counts as an index entry
 #         bookmarks      Bool   (default 1) PDF-Outline-Bookmarks bei Headings
 #       Returns: nichts (schreibt nach outputPath)
 #
 #   docir::pdf::renderToHandle pdfHandle ir ?options?
-#       Schreibt in einen vorhandenen pdf4tcl-Handle.
-#       Caller ist verantwortlich fuer pdf4tcl::new / startPage / write / destroy.
-#       Nuetzlich um DocIR in einen vorhandenen PDF-Workflow einzuspeisen
-#       (z.B. mehrere Dokumente in eine Datei oder mit Header/Footer).
+#       Writes into an existing pdf4tcl handle.
+#       The caller is responsible for pdf4tcl::new / startPage / write / destroy.
+#       Useful to feed DocIR into an existing PDF workflow
+#       (e.g. several documents into one file, or with header/footer).
 #
-# Architektur fuer TOC + Index (0.2):
+# Architecture for TOC + index (0.2):
 #   - Single-Pass-Rendering
-#   - Headings werden waehrend des Renders in st(headingsSeen) gesammelt
-#     mit Seitennummer und y-Position
+#   - headings are collected during rendering in st(headingsSeen)
+#     with page number and y position
 #   - Bei -bookmarks 1: pdf bookmarkAdd direkt beim Heading-Render (Sidebar)
-#   - Bei -generateToc 1: TOC-Block wird VOR den Hauptteil gerendert
-#       Limitation Single-Pass: TOC-Eintraege haben keine Seitenzahlen
-#       (klickbare Sidebar-Bookmarks kompensieren das)
-#   - Bei -generateIndex 1: Index-Block wird NACH dem Hauptteil gerendert
-#       Index-Eintraege haben Seitenzahlen (sind dann bekannt)
+#   - with -generateToc 1: the TOC block is rendered BEFORE the main body
+#       single-pass limitation: TOC entries have no page numbers
+#       (clickable sidebar bookmarks compensate for this)
+#   - with -generateIndex 1: the index block is rendered AFTER the main body
+#       index entries have page numbers (which are known by then)
 
 package provide docir::pdf 0.2
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
 
-# pdf4tcl + pdf4tcllib werden lazy beim ersten render-Aufruf geladen,
-# nicht beim Modul-Source. So kann das Modul auch auf Systemen ohne
-# diese Backends geparst werden
-# (z.B. fuer Tests die nur _wrap o.ae. testen wuerden, oder fuer
+# pdf4tcl + pdf4tcllib are loaded lazily on the first render call,
+# not at module source time. This way the module can be parsed even on
+# systems without these backends
+# (e.g. for tests that would only test _wrap or similar, or for
 # package-Inventarisierung).
 
 namespace eval ::docir::pdf {
@@ -199,20 +199,20 @@ proc docir::pdf::_normalizeOptions {options} {
         dict set opts $k [dict get $options $k]
     }
 
-    # Theme-Optionen anwenden (override defaults wenn gesetzt)
+    # apply theme options (override defaults if set)
     set themeName [dict get $opts theme]
     if {$themeName ne ""} {
         if {![catch {package require mdstack::theme}]} {
             if {![catch {set thopts [::mdstack::theme::toPdfOpts $themeName]}]} {
-                # mdstack::theme::toPdfOpts liefert: fontsize, margin, colorLink, colorCode
+                # mdstack::theme::toPdfOpts returns: fontsize, margin, colorLink, colorCode
                 if {[dict exists $thopts fontsize]} {
                     dict set opts fontSize [dict get $thopts fontsize]
                 }
                 if {[dict exists $thopts margin]} {
                     dict set opts margin [dict get $thopts margin]
                 }
-                # Farben übernehmen — Theme-Werte sind Hex-Strings (#0066cc).
-                # Wir speichern sie als-is und konvertieren bei Verwendung
+                # take over colors — theme values are hex strings (#0066cc).
+                # we store them as-is and convert on use
                 # in pdf4tcl-RGB-Tripel (0..1).
                 if {[dict exists $thopts colorLink]} {
                     dict set opts colorLink [dict get $thopts colorLink]
@@ -227,8 +227,8 @@ proc docir::pdf::_normalizeOptions {options} {
     return $opts
 }
 
-# Initialisiert pdf4tcllib::fonts mit TTF-Pfaden aus opts.
-# Muss EINMAL pro pdf-Lifecycle vor dem ersten setFont gerufen werden.
+# Initializes pdf4tcllib::fonts with TTF paths from opts.
+# Must be called ONCE per pdf lifecycle before the first setFont.
 proc docir::pdf::_initFonts {} {
     variable opts
     set fontArgs {}
@@ -245,20 +245,20 @@ proc docir::pdf::_initFonts {} {
         }
     }
     # CID-Modus: volles Unicode-Subset (Greek, Math, Cyrillic, Pfeile ...)
-    # statt des 256-Zeichen-Encodings. Nur Glyphen, die der Font wirklich
-    # hat, werden gerendert; fehlende (z.B. CJK in DejaVu) bleiben .notdef/?.
+    # instead of the 256-character encoding. Only glyphs the font actually
+    # has are rendered; missing ones (e.g. CJK in DejaVu) stay .notdef/?.
     if {[dict exists $opts cid] && [dict get $opts cid]} {
         lappend fontArgs -cid 1
     }
-    # Wenn fontArgs leer: pdf4tcllib::fonts::init nutzt seine
+    # if fontArgs is empty: pdf4tcllib::fonts::init uses its
     # eingebauten Defaults (Standard-PDF-Fonts ohne Embedding)
     ::pdf4tcllib::fonts::init {*}$fontArgs
 }
 
-# Konvertiert einen Hex-Color-String wie "#0066cc" oder "#06c"
+# Converts a hex color string like "#0066cc" or "#06c"
 # in pdf4tcl-kompatible RGB-Floats (0..1).
 # Returns: list {r g b}, jeweils 0..1.
-# Bei ungültigem Input: {0 0 0} (schwarz).
+# on invalid input: {0 0 0} (black).
 proc docir::pdf::_hexToRgb {hex} {
     set hex [string trimleft $hex "#"]
     set len [string length $hex]
@@ -283,7 +283,7 @@ proc docir::pdf::_hexToRgb {hex} {
 # ============================================================
 #
 # docir-pdf rendert Inlines NICHT mehr flach (via _inlinesToText) —
-# sondern als Segmente mit eigenem Style. Pipeline:
+# but as segments with their own style. Pipeline:
 #
 #   Inlines → _inlinesToSegments → liste{(text, style, url?)}
 #          → _wrapStyledSegments → liste{liste{(text, style, url?)}}
@@ -291,7 +291,7 @@ proc docir::pdf::_hexToRgb {hex} {
 #
 # Style-Werte: normal, bold, italic, bolditalic, code, url, strike, break
 
-# Liefert den passenden Font-Namen für einen Style.
+# Returns the matching font name for a style.
 proc docir::pdf::_styleToFont {style} {
     switch $style {
         normal     { return [::pdf4tcllib::fonts::fontSans] }
@@ -342,8 +342,8 @@ proc docir::pdf::_coalesceIndexSpans {inlines} {
     return $out
 }
 
-# Wandelt eine docir-IR Inline-Liste in Segmente um.
-# Jedes Segment: {text style url}.  url ist nur bei link-Inlines gesetzt.
+# Converts a docir-IR inline list into segments.
+# Each segment: {text style url}.  url is set only for link inlines.
 proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
     set inlines [_coalesceIndexSpans $inlines]
     set segs {}
@@ -399,11 +399,11 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                 lappend segs [list " " $parentStyle ""]
             }
             span {
-                # TIP-700 span: Text mit parentStyle durchreichen. Ein span
-                # mit der Klasse "index" markiert einen Sachindex-Begriff:
-                # der Begriff bleibt sichtbar und wird ueber das vierte
+                # TIP-700 span: pass text through with parentStyle. A span
+                # with the class "index" marks a subject-index term:
+                # the term stays visible and is captured via the fourth
                 # Segment-Feld bis _renderStyledLine getragen, wo die finale
-                # Seite erfasst wird (siehe _renderIndex).
+                # page (see _renderIndex).
                 set cls [_dictDef $inline class ""]
                 set idxTerm ""
                 if {[lsearch -exact [split $cls] index] >= 0} {
@@ -417,7 +417,7 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
             }
             math {
                 # Inline-Math: $...$ als monospace, raw LaTeX
-                # (kein PDF-LaTeX-Rendering ohne externe Engine).
+                # (no PDF-LaTeX rendering without an external engine).
                 set txt [_dictDef $inline text ""]
                 set disp [_dictDef $inline display 0]
                 if {$disp} {
@@ -436,12 +436,12 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
     return $segs
 }
 
-# Wraps styled segments in Lines mit echter Font-Breite via getStringWidth.
+# Wraps styled segments into lines with real font width via getStringWidth.
 proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
     variable st
     set pdf [dict get $st pdf]
 
-    # 1. Wörter extrahieren
+    # 1. extract words
     set words {}
     set prevTrailing 0
     foreach seg $segments {
@@ -539,7 +539,7 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
     return $lines
 }
 
-# Rendert eine Line mit Font-Wechsel + Strike + Hyperlinks.
+# Renders a line with font switching + strike + hyperlinks.
 proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
     variable st
     variable opts
@@ -596,7 +596,7 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
 # Layout state — page geometry
 # ============================================================
 #
-# State-Variablen werden bei jedem _renderInto-Aufruf zurueckgesetzt.
+# State variables are reset on every _renderInto call.
 # Y in pdf4tcl: 0 = oben links (y waechst nach unten).
 #
 
@@ -608,25 +608,25 @@ proc docir::pdf::_initState {pdf} {
     variable opts
     variable st
 
-    # getDrawableArea liefert {width height} der bedruckbaren Fläche
-    # nach Abzug der pdf4tcl-internen Margins.
-    # (Hinweis: einige Doku-Quellen behaupten {x y w h} — das stimmt
-    # mit der echten pdf4tcl-Implementierung nicht ueberein.)
+    # getDrawableArea returns {width height} of the printable area
+    # after subtracting pdf4tcl-internal margins.
+    # (note: some doc sources claim {x y w h} — that does not
+    # match the real pdf4tcl implementation.)
     lassign [$pdf getDrawableArea] pageW pageH
     set margin [dict get $opts margin]
 
     set headerTemplate [dict get $opts header]
     set footerTemplate [dict get $opts footer]
 
-    # Wenn Header/Footer aktiv: topY und bottomY müssen Platz machen.
-    # Header sitzt bei y = margin*0.5, braucht etwa 1.5em darunter.
-    # Footer sitzt bei y = pageH - margin*0.5.
+    # if header/footer active: topY and bottomY must make room.
+    # Header sits at y = margin*0.5, needs about 1.5em below it.
+    # Footer sits at y = pageH - margin*0.5.
     set fontSize [dict get $opts fontSize]
     set topY $margin
     set bottomY [expr {$pageH - $margin}]
     if {$headerTemplate ne ""} {
         # Header-Zone reservieren: kleine Schrift ($fontSize - 1) plus
-        # ein bisschen Luft. Wir verschieben topY ein Stück nach unten.
+        # a bit of air. We shift topY down a little.
         set topY [expr {$margin + ($fontSize + 4)}]
     }
     if {$footerTemplate ne ""} {
@@ -648,9 +648,9 @@ proc docir::pdf::_initState {pdf} {
         footerTemplate $footerTemplate \
         headingsSeen   {} \
         indexEntries   {}]
-    # headingsSeen: Liste von dicts {level, text, page, anchor, isIndexEntry}
+    # headingsSeen: list of dicts {level, text, page, anchor, isIndexEntry}
     # Wird von _renderHeading bei jedem Heading befuellt. Spaeter
-    # ausgewertet von _renderToc (Vorab) und _renderIndex (Nach Hauptteil).
+    # evaluated by _renderToc (beforehand) and _renderIndex (after the main body).
 }
 
 proc docir::pdf::_advanceY {dy} {
@@ -765,18 +765,18 @@ proc docir::pdf::_newPage {} {
     variable st
     set pdf [dict get $st pdf]
 
-    # Footer für aktuelle Page schreiben (vor endPage)
+    # write the footer for the current page (before endPage)
     _writeFooter
 
-    # pdf4tcl: kein 'newPage' — endPage + startPage
+    # pdf4tcl: no 'newPage' — endPage + startPage
     $pdf endPage
     $pdf startPage
 
-    # Page-Counter erhöhen
+    # increment the page counter
     dict set st pageNo [expr {[dict get $st pageNo] + 1}]
     dict set st y [dict get $st topY]
 
-    # Header für neue Page
+    # header for the new page
     _writeHeader
 }
 
@@ -796,7 +796,7 @@ proc docir::pdf::_renderInto {pdf ir} {
         _renderTitlePage
     }
 
-    # Header für die erste Page
+    # header for the first page
     _writeHeader
 
     # TOC vor dem Hauptteil rendern (Single-Pass: ohne Seitenzahlen)
@@ -808,18 +808,18 @@ proc docir::pdf::_renderInto {pdf ir} {
         }
     }
 
-    # Hauptteil — befuellt nebenbei st(headingsSeen) mit Seitenzahlen
+    # main body — fills st(headingsSeen) with page numbers along the way
     foreach node $ir {
         _renderBlock $node
     }
 
-    # Index am Ende (Single-Pass: kennt jetzt alle Seitenzahlen)
+    # index at the end (single-pass: now knows all page numbers)
     if {[info exists opts] && [dict exists $opts generateIndex] \
             && [dict get $opts generateIndex]} {
         _renderIndex
     }
 
-    # Footer für die letzte Page (kein _newPage am Ende)
+    # footer for the last page (no _newPage at the end)
     _writeFooter
 }
 
@@ -898,8 +898,8 @@ proc docir::pdf::_wrap {text maxWidth} {
 proc docir::pdf::_setFont {size {style ""}} {
     variable st
     # Font-Namen kommen jetzt von pdf4tcllib::fonts. Diese Helper
-    # liefern entweder den TTF-Namen (wenn pdf4tcllib::fonts::init
-    # gerufen wurde mit TTF-Pfaden) oder die Standard-PDF-Schriftnamen
+    # return either the TTF name (if pdf4tcllib::fonts::init
+    # was called with TTF paths) or the standard PDF font names
     # als Fallback.
     switch $style {
         bold        { set name [::pdf4tcllib::fonts::fontSansBold] }
@@ -975,8 +975,8 @@ proc docir::pdf::_renderHeading {node} {
     set fontSize [expr {$baseFontSize + [lindex $bonus $lv]}]
     set lh [_lineHeight $fontSize]
 
-    # Per-Inline-Pipeline mit baseStyle "bold" (Heading ist von Natur fett)
-    # Inline-Strong/Emphasis innerhalb wird zu bolditalic etc.
+    # per-inline pipeline with baseStyle "bold" (a heading is bold by nature)
+    # inline strong/emphasis within becomes bolditalic etc.
     set inlines [dict get $node content]
     set segs    [_inlinesToSegments $inlines "bold"]
     set lines   [_wrapStyledSegments $segs [dict get $st contentW] $fontSize]
@@ -985,22 +985,22 @@ proc docir::pdf::_renderHeading {node} {
     _advanceY 6
     _ensureSpace [expr {[llength $lines] * $lh + 4}]
 
-    # Heading-Text als Plain-String fuer Bookmark + Tracking
+    # heading text as a plain string for bookmark + tracking
     set plainText [_inlinesToText $inlines]
 
-    # PDF-Outline-Bookmark setzen wenn aktiviert (zeigt auf aktuelle Seite)
+    # set the PDF outline bookmark if enabled (points to the current page)
     # pdf4tcl-Konvention: Level 0 = Top-Level, Level 1 = Child eines L0,
     # usw. Daher `lv - 1` (H1 in Markdown = Level 0 in pdf4tcl-Outline).
     if {[dict get $opts bookmarks]} {
         set bmLevel [expr {$lv - 1}]
         if {$bmLevel < 0} { set bmLevel 0 }
         if {[catch {$pdf bookmarkAdd -title $plainText -level $bmLevel}]} {
-            # bookmarkAdd nicht verfuegbar oder fehlerhaft — silently
-            # ignorieren, damit der Render trotzdem laeuft.
+            # bookmarkAdd not available or faulty — silently
+            # ignore, so the render still runs.
         }
     }
 
-    # Heading in headingsSeen registrieren (fuer TOC + Index)
+    # register the heading in headingsSeen (for TOC + index)
     set indexLv [dict get $opts indexLevel]
     set anchorIdx [llength [dict get $st headingsSeen]]
     set entry [dict create \
@@ -1127,8 +1127,8 @@ proc docir::pdf::_renderPre {node} {
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
 
-    # Math-Block: Raw-LaTeX mit $$...$$ Wrapper -- kein PDF-LaTeX-Rendering
-    # ohne externe Engine. Wir markieren mit $$ um den Math-Inhalt visuell
+    # math block: raw LaTeX with $$...$$ wrapper -- no PDF-LaTeX rendering
+    # without an external engine. We mark with $$ to set the math content off visually
     # vom normalen Code-Block zu trennen.
     set m [dict get $node meta]
     set kind [_dictDef $m kind ""]
@@ -1220,7 +1220,7 @@ proc docir::pdf::_renderPre {node} {
     _ensureSpace $rectH
     set yTop [dict get $st y]
 
-    # Code-Block-Hintergrund: Theme-Farbe oder Default
+    # code block background: theme color or default
     lassign [_hexToRgb [dict get $opts colorCode]] cr cg cb
     $pdf setFillColor $cr $cg $cb
     $pdf rectangle $x $yTop [dict get $st contentW] $rectH -filled true -stroke false
@@ -1228,7 +1228,7 @@ proc docir::pdf::_renderPre {node} {
 
     _advanceY $padding
     foreach line $lines {
-        # Im pre: kein Wrap — sollte vom Autor schon richtig formatiert sein
+        # in pre: no wrap — should already be formatted correctly by the author
         set y [expr {[dict get $st y] + $fontSize}]
         $pdf text [::pdf4tcllib::unicode::sanitize $line] -x [expr {$x + 4}] -y $y
         _advanceY $lh
@@ -1247,7 +1247,7 @@ proc docir::pdf::_renderList {node} {
     set m [dict get $node meta]
     set kind [_dictDef $m kind "ul"]
     set indentLevel [_dictDef $m indentLevel 0]
-    # Indent: 12pt pro Level (Standard fuer geschachtelte Listen)
+    # indent: 12pt per level (standard for nested lists)
     set indentX [expr {$indentLevel * 12}]
 
     set ord 1
@@ -1312,7 +1312,7 @@ proc docir::pdf::_renderListItemMarker {marker descInlines markerW {indentX 0} {
     set xText [expr {$xBase + $markerW}]
     set wText [expr {[dict get $st contentW] - $markerW - $indentX}]
 
-    # Per-Inline-Pipeline für die Beschreibung
+    # per-inline pipeline for the description
     set segs  [_inlinesToSegments $descInlines "normal"]
     set lines [_wrapStyledSegments $segs $wText $fontSize]
 
@@ -1357,7 +1357,7 @@ proc docir::pdf::_renderListItemTerm {termInlines descInlines {indentX 0}} {
 
     set x [expr {[dict get $st margin] + $indentX}]
 
-    # Term in bold rendern (auch mit per-inline-Pipeline für nested style)
+    # render the term in bold (also with per-inline pipeline for nested style)
     if {[llength $termInlines] > 0} {
         set termSegs [_inlinesToSegments $termInlines "bold"]
         set termLines [_wrapStyledSegments $termSegs \
@@ -1370,7 +1370,7 @@ proc docir::pdf::_renderListItemTerm {termInlines descInlines {indentX 0}} {
         }
     }
 
-    # Description eingerückt + per-inline
+    # description indented + per-inline
     if {[llength $descInlines] > 0} {
         $pdf setFont $fontSize [::pdf4tcllib::fonts::fontSans]
         set indent [expr {2 * [$pdf getStringWidth "X"]}]
@@ -1390,7 +1390,7 @@ proc docir::pdf::_renderListItemTerm {termInlines descInlines {indentX 0}} {
 
 proc docir::pdf::_renderListItem {node} {
     # Standalone listItem als Paragraph rendern (schema-fehlhaft,
-    # sollte nicht vorkommen)
+    # should not happen)
     _renderUnknown $node "standalone listItem"
 }
 
@@ -1447,8 +1447,8 @@ proc docir::pdf::_renderTable {node} {
             continue
         }
 
-        # PASS 1: Pre-process Zellen — klassifizieren + Bild-Höhe ermitteln
-        # cellsInfo ist liste{dict mit type, text-or-images, height}
+        # PASS 1: pre-process cells — classify + determine image height
+        # cellsInfo is a list{dict with type, text-or-images, height}
         set cellsInfo {}
         set maxImgH 0
         foreach cell [dict get $row content] {
@@ -1464,7 +1464,7 @@ proc docir::pdf::_renderTable {node} {
             }
         }
 
-        # Effektive Row-Höhe: max(text-line-height, image-höhe) + padding
+        # effective row height: max(text line height, image height) + padding
         set contentH [expr {$maxImgH > $lh ? $maxImgH : $lh}]
         set rowH [expr {$contentH + 2 * $padY}]
         _ensureSpace $rowH
@@ -1493,13 +1493,13 @@ proc docir::pdf::_renderTable {node} {
 
             switch [dict get $info type] {
                 images {
-                    # Bilder mittig vertikal+horizontal in der Zelle platzieren
+                    # place images centered vertically+horizontally in the cell
                     _renderCellImages $info $xCell $yTop $colW $rowH
                 }
                 text {
-                    # Text vertikal mittig in der Zelle platzieren.
+                    # place text vertically centered in the cell.
                     # baseline-y = yTop + (rowH + fontSize) / 2
-                    # Damit liegen Text und ggf. Bilder in benachbarten Cells
+                    # this way text and possibly images in adjacent cells
                     # auf gleicher visuellem Mittelpunkt.
                     set yText [expr {$yTop + ($rowH + $fontSize) / 2}]
                     $pdf text [::pdf4tcllib::unicode::sanitize [dict get $info text]] \
@@ -1521,7 +1521,7 @@ proc docir::pdf::_renderTable {node} {
             $pdf setStrokeColor 0 0 0
             incr colIndex
         }
-        # rechte Außenkante
+        # right outer edge
         $pdf setStrokeColor 0.7 0.7 0.7
         set xR [expr {[dict get $st margin] + [dict get $st contentW]}]
         $pdf line $xR $yTop $xR [expr {$yTop + $rowH}]
@@ -1538,10 +1538,10 @@ proc docir::pdf::_renderTable {node} {
     _advanceY 4
 }
 
-# Klassifiziert eine Tabellen-Zelle:
-# - "images" wenn nur image-Inlines (lädt Bilder, skaliert auf Spaltenbreite)
-# - "text"   wenn keine Bilder
-# - "mixed"  wenn Mix (Text-Fallback mit [image: alt]-Markern)
+# Classifies a table cell:
+# - "images" if only image inlines (loads images, scales to column width)
+# - "text"   if no images
+# - "mixed"  if mixed (text fallback with [image: alt] markers)
 proc docir::pdf::_classifyCell {cell colW padX lh} {
     variable st
     set pdf [dict get $st pdf]
@@ -1567,25 +1567,25 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
     }
 
     if {[llength $imageInlines] == 0} {
-        # Keine Bilder → text
+        # no images -> text
         return [dict create type text text [_inlinesToText $inlines]]
     }
 
     if {$hasNonImage} {
-        # Mixed → Text mit [image: alt]-Marker (Fallback)
+        # mixed -> text with [image: alt] marker (fallback)
         return [dict create type mixed text [_inlinesToText $inlines]]
     }
 
-    # Nur Bilder → laden, skalieren
-    # Verfügbare Breite für ALLE Bilder zusammen
+    # only images -> load, scale
+    # available width for ALL images together
     set availW [expr {$colW - 2 * $padX}]
     set nImages [llength $imageInlines]
-    # Pro Bild verfügbare Breite (mit kleinem Spacing zwischen)
+    # available width per image (with small spacing between)
     set perImgW [expr {($availW - ($nImages - 1) * 2) / $nImages}]
     if {$perImgW < 1} { set perImgW 1 }
 
-    # Max-Höhe für Bilder in Zellen: 1.75 Zeilen-Höhen
-    # (bei fontSize 11: ~26pt — Icons 32x32 werden auf 26x26 skaliert,
+    # max height for images in cells: 1.75 line heights
+    # (at fontSize 11: ~26pt — icons 32x32 are scaled to 26x26,
     # Widgets 84x64 auf ca. 34x26)
     set maxImgH [expr {int(1.75 * $lh)}]
 
@@ -1597,7 +1597,7 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
         set alt [_dictDef $inl alt ""]
         set resolved [_resolveImagePath $url]
         if {$resolved eq "" || ![file exists $resolved] || ![file readable $resolved]} {
-            # Kann nicht laden — alt-text als fallback
+            # cannot load — alt text as fallback
             lappend images [dict create kind text text "\[$alt\]" w 0 h $lh]
             continue
         }
@@ -1607,10 +1607,10 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
         }
         lassign [$pdf getImageSize $imgId] origW origH
 
-        # Skalierung: respektiere perImgW UND maxImgH
+        # scaling: respect perImgW AND maxImgH
         set scaleW [expr {double($perImgW) / $origW}]
         set scaleH [expr {double($maxImgH) / $origH}]
-        # Nicht hoch-skalieren über Original (Pixel-perfekt für Icons)
+        # do not upscale beyond the original (pixel-perfect for icons)
         set scale [expr {min($scaleW, $scaleH, 1.0)}]
         set w [expr {int($origW * $scale)}]
         set h [expr {int($origH * $scale)}]
@@ -1624,13 +1624,13 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
     return [dict create type images images $images height $maxH]
 }
 
-# Rendert die Bilder einer Zelle, mittig vertikal + horizontal
+# Renders the images of a cell, centered vertically + horizontally
 proc docir::pdf::_renderCellImages {info xCell yTop colW rowH} {
     variable st
     set pdf [dict get $st pdf]
     set images [dict get $info images]
 
-    # Berechne gesamte Breite der Bilder + Zwischenräume
+    # compute total width of the images + gaps
     set spacing 2
     set totalW 0
     foreach img $images {
@@ -1638,7 +1638,7 @@ proc docir::pdf::_renderCellImages {info xCell yTop colW rowH} {
     }
     incr totalW [expr {([llength $images] - 1) * $spacing}]
 
-    # Horizontal mittig in der Zelle
+    # horizontally centered in the cell
     set xStart [expr {$xCell + ($colW - $totalW) / 2}]
     if {$xStart < $xCell + 2} { set xStart [expr {$xCell + 2}] }
 
@@ -1662,8 +1662,8 @@ proc docir::pdf::_renderCellImages {info xCell yTop colW rowH} {
 }
 
 proc docir::pdf::_renderImageBlock {node} {
-    # Block-Image. pdf4tcl::addImage lädt die Datei direkt von Disk
-    # (PNG/JPG ohne Tk-Dependency). Wir lösen relative Pfade gegen
+    # block image. pdf4tcl::addImage loads the file directly from disk
+    # (PNG/JPG without a Tk dependency). We resolve relative paths against
     # opts.root auf. Bei Fehler: Fallback auf [image: alt]-Marker.
     variable opts
     variable st
@@ -1675,14 +1675,14 @@ proc docir::pdf::_renderImageBlock {node} {
     set url [_dictDef $m url ""]
     set alt [_dictDef $m alt ""]
 
-    # Pfad gegen opts.root auflösen
+    # resolve the path against opts.root
     set resolvedPath [_resolveImagePath $url]
     set canLoad [expr {$resolvedPath ne "" && \
                        [file exists $resolvedPath] && \
                        [file readable $resolvedPath]}]
 
     if {$canLoad && [catch {$pdf addImage $resolvedPath} imgId] == 0} {
-        # Bild geladen via pdf4tcl::addImage (kein Tk nötig)
+        # image loaded via pdf4tcl::addImage (no Tk needed)
         if {[catch {
             lassign [$pdf getImageSize $imgId] imgW imgH
 
@@ -1717,15 +1717,15 @@ proc docir::pdf::_renderImageBlock {node} {
     }
 }
 
-# Löst einen Image-URL relativ zur opts.root auf.
-# - Absolute Pfade (file:// oder /...) bleiben unverändert
-# - HTTP/HTTPS-URLs sind nicht ladbar — return ""
-# - Relative Pfade werden gegen opts.root aufgelöst
+# Resolves an image URL relative to opts.root.
+# - absolute paths (file:// or /...) stay unchanged
+# - HTTP/HTTPS URLs are not loadable — return ""
+# - relative paths are resolved against opts.root
 proc docir::pdf::_resolveImagePath {url} {
     variable opts
     if {$url eq ""} { return "" }
 
-    # http(s) wird nicht über file-system geladen
+    # http(s) is not loaded via the file system
     if {[string match "http://*" $url] || [string match "https://*" $url]} {
         return ""
     }
@@ -1740,7 +1740,7 @@ proc docir::pdf::_resolveImagePath {url} {
         return $url
     }
 
-    # Relativ — gegen opts.root auflösen
+    # relative — resolve against opts.root
     set root [dict get $opts root]
     if {$root ne ""} {
         return [file join $root $url]
@@ -1750,7 +1750,7 @@ proc docir::pdf::_resolveImagePath {url} {
 }
 
 proc docir::pdf::_renderImageFallback {url alt} {
-    # Wenn Bild nicht ladbar: textueller Marker
+    # if the image is not loadable: textual marker
     variable opts
     variable st
     set pdf [dict get $st pdf]
@@ -1770,7 +1770,7 @@ proc docir::pdf::_renderImageFallback {url alt} {
 }
 
 proc docir::pdf::_renderFootnoteSection {node} {
-    # Trennlinie + alle footnote_defs als kleine Paragraphen
+    # separator line + all footnote_defs as small paragraphs
     variable opts
     variable st
     set pdf [dict get $st pdf]
@@ -1844,23 +1844,23 @@ proc docir::pdf::_renderUnknown {node reason} {
 }
 
 # ============================================================
-# TOC und Index (neu in 0.2)
+# TOC and index (new in 0.2)
 # ============================================================
 #
-# Beide procs arbeiten auf st(headingsSeen), das vom _renderHeading
-# waehrend des normalen Render-Laufs befuellt wird.
+# Both procs work on st(headingsSeen), which is filled by _renderHeading
+# during the normal render run.
 #
-# _renderToc wird VOR dem Hauptteil aufgerufen — zu diesem Zeitpunkt
-# ist headingsSeen noch LEER. Daher generiert _renderToc keinen
-# Inhalt aus tatsaechlich gesehenen Headings, sondern aus einer
-# vorab-gescannten Liste. Wir pre-scannen die DocIR-Sequenz im
-# render-Wrapper und reichen die Heading-Liste durch.
+# _renderToc is called BEFORE the main body — at this point
+# headingsSeen is still EMPTY. Therefore _renderToc generates no
+# content from actually seen headings, but from a
+# pre-scanned list. We pre-scan the DocIR sequence in the
+# render wrapper and pass the heading list through.
 #
-# _renderIndex wird NACH dem Hauptteil aufgerufen — zu diesem Zeitpunkt
-# enthaelt headingsSeen alle Headings mit korrekten Seitenzahlen.
+# _renderIndex is called AFTER the main body — at this point
+# headingsSeen contains all headings with correct page numbers.
 
-# Helper: scannt DocIR-Sequenz und sammelt alle Headings als
-# Liste von dicts {level, text} (ohne page/anchor — die kommen erst
+# helper: scans the DocIR sequence and collects all headings as
+# a list of dicts {level, text} (without page/anchor — those come
 # beim Render).
 proc docir::pdf::_scanHeadings {ir} {
     set out {}
@@ -1875,7 +1875,7 @@ proc docir::pdf::_scanHeadings {ir} {
     return $out
 }
 
-# Rendert das TOC vor dem Hauptteil. Eingabe: vorgescannte Heading-Liste.
+# Renders the TOC before the main body. Input: pre-scanned heading list.
 # Ohne Seitenzahlen (Single-Pass-Limitation), aber hierarchisch eingerueckt.
 proc docir::pdf::_renderToc {tocHeadings} {
     variable opts
@@ -1885,7 +1885,7 @@ proc docir::pdf::_renderToc {tocHeadings} {
     set tocDepth [dict get $opts tocDepth]
     set tocTitle [dict get $opts tocTitle]
 
-    # TOC-Header (gross, fett)
+    # TOC header (large, bold)
     set titleSize [expr {$fontSize + 8}]
     set titleLh [_lineHeight $titleSize]
     _ensureSpace [expr {$titleLh * 2}]
@@ -1903,10 +1903,10 @@ proc docir::pdf::_renderToc {tocHeadings} {
     $pdf setStrokeColor 0 0 0
     _advanceY 8
 
-    # TOC-Eintraege rendern. Wenn opts(_tocPageList) gefuellt ist (zweiter
-    # Render-Durchlauf), wird je Eintrag die Seitenzahl rechtsbuendig gesetzt.
-    # Der Index laeuft ueber ALLE gescannten Headings (auch die nach tocDepth
-    # uebersprungenen), damit er zu st(headingsSeen)/_tocPageList passt.
+    # render TOC entries. If opts(_tocPageList) is filled (second
+    # render pass), the page number is set right-aligned per entry.
+    # The index runs over ALL scanned headings (also those skipped after
+    # tocDepth), so that it matches st(headingsSeen)/_tocPageList.
     set pageList [expr {[dict exists $opts _tocPageList] ? [dict get $opts _tocPageList] : {}}]
     set showPages [expr {[llength $pageList] > 0}]
     set rightEdge [expr {[dict get $st margin] + [dict get $st contentW]}]
@@ -1924,7 +1924,7 @@ proc docir::pdf::_renderToc {tocHeadings} {
         set indent [expr {($lv - 1) * 14}]
         set entryX [expr {[dict get $st margin] + $indent}]
 
-        # Schriftgroesse: leicht reduziert mit Level
+        # font size: slightly reduced with level
         set entryFontSize [expr {$fontSize + (2 - $lv)}]
         if {$entryFontSize < $fontSize - 1} { set entryFontSize [expr {$fontSize - 1}] }
 
@@ -1934,8 +1934,8 @@ proc docir::pdf::_renderToc {tocHeadings} {
             _setFont $entryFontSize ""
         }
 
-        # Seitenzahl rechtsbuendig — Breite reserviert den Platz am rechten
-        # Rand, damit der Titel nicht in die Zahl laeuft. getStringWidth misst
+        # page number right-aligned — width reserves the space at the right
+        # edge, so the title does not run into the number. getStringWidth measures
         # im gerade gesetzten Eintrags-Font.
         set pageStr ""
         set pageW 0
@@ -1946,7 +1946,7 @@ proc docir::pdf::_renderToc {tocHeadings} {
 
         set sanitized [::pdf4tcllib::unicode::sanitize [dict get $h text]]
 
-        # Wrap falls noetig — Platz fuer die Seitenzahl rechts abziehen.
+        # wrap if needed — subtract space for the page number on the right.
         set maxW [expr {[dict get $st contentW] - $indent - $pageW}]
         set wrappedLines [_wrap $sanitized $maxW]
         set firstLine 1
@@ -1968,7 +1968,7 @@ proc docir::pdf::_renderToc {tocHeadings} {
 }
 
 # Rendert den Index am Ende. Wird AUFGERUFEN nach dem Hauptteil —
-# headingsSeen ist dann komplett mit korrekten Seitenzahlen.
+# headingsSeen is then complete with correct page numbers.
 proc docir::pdf::_renderIndex {} {
     variable opts
     variable st
@@ -1976,8 +1976,8 @@ proc docir::pdf::_renderIndex {} {
     set fontSize [dict get $opts fontSize]
     set indexTitle [dict get $opts indexTitle]
 
-    # Sachindex aus [Begriff]{.index}-Markierungen (st indexEntries):
-    # Begriff -> Liste von Seiten. Fallback (keine Marker vorhanden): der
+    # subject index from [term]{.index} markers (st indexEntries):
+    # term -> list of pages. Fallback (no markers present): the
     # fruehere Heading-Index (Ueberschriften auf indexLevel), kompatibel.
     set byTerm [dict create]
     foreach e [dict get $st indexEntries] {
@@ -1995,13 +1995,13 @@ proc docir::pdf::_renderIndex {} {
         return
     }
 
-    # Begriffe alphabetisch; Seiten je Begriff dedupliziert + numerisch sortiert.
+    # terms alphabetically; pages per term deduplicated + numerically sorted.
     set entries {}
     foreach term [lsort -dictionary [dict keys $byTerm]] {
         lappend entries [list $term [lsort -integer -unique [dict get $byTerm $term]]]
     }
 
-    # Neue Seite fuer Index
+    # new page for the index
     _newPage
 
     # Index-Titel
@@ -2022,7 +2022,7 @@ proc docir::pdf::_renderIndex {} {
     $pdf setStrokeColor 0 0 0
     _advanceY 8
 
-    # Bookmark fuer Index selbst (Top-Level)
+    # bookmark for the index itself (top level)
     if {[dict get $opts bookmarks]} {
         catch {$pdf bookmarkAdd -title $indexTitle -level 0}
     }
@@ -2035,7 +2035,7 @@ proc docir::pdf::_renderIndex {} {
     foreach e $entries {
         lassign $e text pages
 
-        # Anfangsbuchstabe (mit Umlaut-Normalisierung)
+        # initial letter (with umlaut normalization)
         set initial [string toupper [string index $text 0]]
         switch -- $initial {
             "Ä" { set initial "A" }
@@ -2060,12 +2060,12 @@ proc docir::pdf::_renderIndex {} {
         set ey [expr {[dict get $st y] + $fontSize}]
         set entryX [expr {$x + 8}]
 
-        # Seitenliste rechtsbuendig (z.B. "3, 7, 12"); Breite via getStringWidth.
+        # page list right-aligned (e.g. "3, 7, 12"); width via getStringWidth.
         set pageStr [join $pages ", "]
         set pageW [$pdf getStringWidth $pageStr]
         set pageX [expr {$rightEdge - $pageW}]
 
-        # Begriff links; bei Bedarf kuerzen, damit die Seitenspalte frei bleibt.
+        # term on the left; truncate if needed so the page column stays free.
         set maxTextW [expr {[dict get $st contentW] - 8 - $pageW - 12}]
         set displayText [::pdf4tcllib::unicode::sanitize $text]
         set tw [$pdf getStringWidth $displayText]
@@ -2085,11 +2085,11 @@ proc docir::pdf::_renderIndex {} {
 }
 
 # ============================================================
-# Render-Wrapper mit TOC + Index Unterstuetzung
+# Render wrapper with TOC + index support
 # ============================================================
 
-# Patch: render und renderToHandle erweitert um TOC + Index Phasen.
-# Bei -generateToc wird _renderToc vor _renderInto gerufen
-# (mit pre-scanned Heading-Liste).
-# Bei -generateIndex wird _renderIndex nach _renderInto gerufen
-# (nutzt die im Render gesammelten Headings + Seitenzahlen).
+# Patch: render and renderToHandle extended with TOC + index phases.
+# with -generateToc, _renderToc is called before _renderInto
+# (with pre-scanned heading list).
+# with -generateIndex, _renderIndex is called after _renderInto
+# (uses the headings + page numbers collected during the render).

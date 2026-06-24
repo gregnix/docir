@@ -11,7 +11,7 @@
 # Public API:
 #   docir::txt::render ir ?options?
 #       options: dict with
-#         lineWidth   Integer (default 78)        Wort-Wrap-Breite
+#         lineWidth   Integer (default 78)        word wrap width
 #         bulletChar  "-" | "*" | "+"             (default "-")
 #         orderedDot  "."                          (default ".")
 #         codeIndent  Integer (default 4)         spaces for code blocks
@@ -489,7 +489,7 @@ proc docir::txt::_metaGet {node key {default ""}} {
     return [_dictGet $m $key $default]
 }
 
-# Word wrap auf gegebene Breite
+# word wrap to the given width
 proc docir::txt::_wordWrap {text width} {
     if {$width <= 0} { return $text }
     set out ""

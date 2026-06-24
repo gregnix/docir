@@ -15,6 +15,14 @@
 #                                 facade understands the graph-like mermaid
 #                                 types and throws UNSUPPORTED for the rest).
 #
+# Native-preferred mermaid subtypes: some inner diagram types render more
+# reliably through the facade than through the browser's mermaid.js (e.g.
+# `architecture-beta`, where mermaid.js 11.x is stricter than tuflow and may
+# throw "Syntax error" on input the facade accepts). For a ```mermaid``` block
+# whose first keyword is in `nativeMermaid`, an HTML sink can render natively
+# (inline SVG, consistent with the PDF output) and fall back to <pre class=
+# "mermaid"> only if the facade render fails. See `preferNative`.
+#
 # The render entry points are thin wrappers over the tuflow facade; the facade
 # detects the diagram kind from the source, so the language argument is only
 # carried for the caller's diagnostics. This module has NO catch: render errors
@@ -30,8 +38,18 @@ namespace eval ::docir {}
 namespace eval ::docir::diagram {
     variable native  {flow tuflow pie}
     variable browser {mermaid}
+    # mermaid inner diagram types an HTML sink should render natively (facade)
+    # instead of deferring to mermaid.js. Matched against the first keyword of
+    # the source. These are types where mermaid.js 11.x is fragile (throws
+    # "Syntax error" on input tuflow accepts -- architecture-beta on lenient
+    # ids/labels, mindmap on special characters / indentation) while the facade
+    # renders them reliably. Add a type here to move it from the browser to the
+    # native path; set the whole list empty to defer every mermaid block to the
+    # browser, or see preferNative for an all-native policy. Keep lowercase.
+    variable nativeMermaid {architecture-beta architecture mindmap}
     namespace export \
-        isDiagram isNative isBrowserPreferred languages renderSvg renderPng
+        isDiagram isNative isBrowserPreferred preferNative languages \
+        renderSvg renderPng
 }
 
 proc ::docir::diagram::_norm {lang} {
@@ -61,6 +79,34 @@ proc ::docir::diagram::isNative {lang} {
 proc ::docir::diagram::isBrowserPreferred {lang} {
     variable browser
     return [expr {[_norm $lang] in $browser}]
+}
+
+# First diagram keyword: first token of the first non-empty, non-comment line.
+proc ::docir::diagram::_firstKeyword {source} {
+    foreach line [split $source \n] {
+        set t [string trim $line]
+        if {$t eq "" || [string match {%%*} $t]} continue
+        return [string tolower [lindex [split $t] 0]]
+    }
+    return ""
+}
+
+# True if an HTML sink should render this block natively (facade -> inline SVG)
+# rather than defer to the browser. That is the case for a native language, or
+# for a browser language whose inner diagram type is native-preferred (e.g. a
+# ```mermaid``` block that begins with `architecture-beta` or `mindmap`). The
+# sink should still fall back to its browser path if the facade render fails.
+#
+# For an all-native policy ("never depend on mermaid.js; render every diagram via
+# tuflow, fall back to the browser only when the facade can't"), replace the
+# `nativeMermaid` membership test below with `return [isBrowserPreferred $lang]`.
+proc ::docir::diagram::preferNative {lang source} {
+    if {[isNative $lang]} { return 1 }
+    if {[isBrowserPreferred $lang]} {
+        variable nativeMermaid
+        return [expr {[_firstKeyword $source] in $nativeMermaid}]
+    }
+    return 0
 }
 
 # Keep only the options the tuflow facade understands.

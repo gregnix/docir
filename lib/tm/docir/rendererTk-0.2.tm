@@ -670,7 +670,7 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 $textWidget insert end $text $spanTag
             }
             image {
-                # Inline-Image. Tk-Text kann Bilder via image create einbetten.
+                # inline image. Tk text can embed images via image create.
                 # We try to load the image locally; on failure
                 # fallback auf "[image: alt]" Plain-Text.
                 set url [_dictDef $inline url ""]

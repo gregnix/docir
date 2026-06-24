@@ -854,4 +854,59 @@ test "html.index.same_section_deduplicated" {
     assert [expr {$linkCount == 1}] "duplicate occurrences in one section collapse to one link ($linkCount)"
 }
 
+# ============================================================
+# Z. Diagram seam: native-preferred mermaid subtypes
+# ============================================================
+# A ```mermaid``` block whose inner type renders reliably via the facade
+# (architecture-beta) is rendered to inline SVG in HTML instead of being
+# deferred to mermaid.js; other mermaid types stay <pre class="mermaid">.
+
+proc _htmlCodeBlock {lang src} {
+    return [list [dict create type pre \
+        content [list [dict create type text text $src]] \
+        meta [dict create kind code language $lang]]]
+}
+
+test "html.diagram.architecture_beta_renders_native" {
+    if {[catch {package require tclutils::tuflow 0.2}]} {
+        test::skip "tclutils::tuflow not installed"
+    }
+    set src "architecture-beta\n  service a(server)\[A\]\n  service b(database)\[B\]\n  a:R --> L:b"
+    set out [docir::html::render [_htmlCodeBlock mermaid $src] [dict create standalone 0]]
+    assert [string match {*docir-diagram*} $out] "architecture-beta rendered as native diagram"
+    assert [string match {*<svg*} $out] "inline SVG present"
+    assert [expr {![string match {*class="mermaid"*} $out]}] "not deferred to mermaid.js"
+}
+
+test "html.diagram.other_mermaid_stays_browser" {
+    set src "flowchart TB\n  A --> B"
+    set out [docir::html::render [_htmlCodeBlock mermaid $src] [dict create standalone 0]]
+    assert [string match {*class="mermaid"*} $out] "flowchart still deferred to mermaid.js"
+    assert [expr {![string match {*docir-diagram*} $out]}] "not rendered natively"
+}
+
+test "html.diagram.mindmap_renders_native" {
+    if {[catch {package require tclutils::tuflow 0.2}]} {
+        test::skip "tclutils::tuflow not installed"
+    }
+    # mindmap is fragile in mermaid.js (special chars / indentation) but solid in
+    # the facade -> it is native-preferred and renders to inline SVG.
+    set src "mindmap\n  root((Tcl/Tk))\n    Tcl\n      Listen & Dicts\n    Ökosystem\n      mdstack"
+    set out [docir::html::render [_htmlCodeBlock mermaid $src] [dict create standalone 0]]
+    assert [string match {*docir-diagram*} $out] "mindmap rendered as native diagram"
+    assert [expr {![string match {*class="mermaid"*} $out]}] "mindmap not deferred to mermaid.js"
+}
+
+test "html.diagram.architecture_beta_falls_back_on_error" {
+    if {[catch {package require tclutils::tuflow 0.2}]} {
+        test::skip "tclutils::tuflow not installed"
+    }
+    catch {docir::diag::configure -mode silent}
+    # a lone group (no services) makes the facade throw EMPTY -> fall back
+    set src "architecture-beta\n  group only(cloud)\[Only\]"
+    set out [docir::html::render [_htmlCodeBlock mermaid $src] [dict create standalone 0]]
+    assert [string match {*class="mermaid"*} $out] "failed native render falls back to mermaid.js"
+}
+
+
 test::runAll

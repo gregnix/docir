@@ -5,7 +5,7 @@
 ## Reads a text-widget dump and builds DocIR from it. Recognizes the tags
 ## that docir::renderer::tk assigns:
 ##   heading$N -> heading (level N) | pre -> pre/code | strong/emphasis/
-##   underline/strike/span_$cls/link_$n -> Inlines | eingebettete Bilder.
+##   underline/strike/span_$cls/link_$n -> inlines | embedded images.
 ##
 ## LIMITS (deliberate, = the ttd-vs-DocIR boundary): the renderer shows tables
 ## and lists as monospaced text/bullets; the widget does not retain their

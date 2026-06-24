@@ -491,7 +491,7 @@ proc docir::md::_mapInlines {inlines} {
             default {
                 # Unbekannter Inline-Typ (span, strike, mark, ...).
                 # If 'content' is present (nested inlines):
-                # rekursiv verarbeiten — damit verlieren wir den Text
+                # process recursively — this way we lose the text
                 # not. Otherwise take 'value', otherwise the marker text.
                 #
                 # Important: escape the brackets with \[..\], otherwise

@@ -1,15 +1,15 @@
 # docir-roff-0.1.tm – Mapper: nroff-AST → DocIR
 #
-# Wandelt den AST von nroffparser-0.2 in einen DocIR-Stream um.
-# Kein Parser-Umbau nötig – reiner Mapping-Layer.
+# Converts the AST from nroffparser-0.2 into a DocIR stream.
+# No parser rework needed – a pure mapping layer.
 #
 # Namespace: ::docir::roff
 # Tcl 8.6+ / 9.x kompatibel
 #
-# 2026-06-20: doc_header-Meta-Felder werden ent-escaped (Version "0\&.10" →
-#   "0.10"); redundante blank-Knoten nach selbst-trennenden Bloecken
-#   (paragraph/heading/list/pre/table/...) werden verworfen, damit `.sp`
-#   zwischen SYNOPSIS-Zeilen nicht zu Dreifach-Abstand fuehrt.
+# 2026-06-20: doc_header meta fields are un-escaped (version "0\&.10" →
+#   "0.10"); redundant blank nodes after self-separating blocks
+#   (paragraph/heading/list/pre/table/...) are discarded, so that `.sp`
+#   between SYNOPSIS lines does not lead to triple spacing.
 
 package provide docir::roffSource 0.1
 package require Tcl 8.6-
@@ -21,10 +21,10 @@ namespace eval ::docir::roff {}
 # docir::roff::fromAst -- Haupteinstiegspunkt
 #
 # Argumente:
-#   ast  - Rückgabe von nroffparser::parse
+#   ast  - return value of nroffparser::parse
 #
-# Rückgabe:
-#   DocIR-Stream (Liste von Block-Nodes)
+# Returns:
+#   DocIR stream (list of block nodes)
 # ============================================================
 
 proc docir::roff::_dictDef {d k {def ""}} {
@@ -35,14 +35,14 @@ proc docir::roff::_dictDef {d k {def ""}} {
 proc docir::roff::fromAst {ast} {
     set ir {}
     # doc_meta als allererster Block (irSchemaVersion seit 0.5).
-    # Wird IMMER emittiert, auch wenn der nroff-AST kein .TH hat.
+    # Always emitted, even if the nroff AST has no .TH.
     lappend ir [dict create \
         type    doc_meta \
         content {} \
         meta    [dict create irSchemaVersion 1]]
-    # Transient-Flag: nächster pre-Node soll als Tabelle gemappt werden,
-    # falls möglich. Wird bei .SH STANDARD OPTIONS oder ähnlich gesetzt
-    # und nach Verarbeitung des nächsten pre wieder gelöscht.
+    # Transient flag: the next pre node should be mapped as a table,
+    # if possible. Set on .SH STANDARD OPTIONS or similar
+    # and cleared again after processing the next pre.
     set expectStdOptionsTable 0
 
     foreach node $ast {
@@ -71,8 +71,8 @@ proc docir::roff::fromAst {ast} {
                 # .SH → heading level=1
                 set txt [docir::roff::_inlinesToText $content]
                 set id  [docir::roff::_makeId $txt]
-                # Markiere: nächster pre soll als Tabelle versucht werden,
-                # wenn die Section "STANDARD OPTIONS" heißt (case-insens.)
+                # Mark: the next pre should be tried as a table,
+                # if the section is called "STANDARD OPTIONS" (case-insens.)
                 set normTxt [string toupper [string trim $txt]]
                 if {$normTxt eq "STANDARD OPTIONS"} {
                     set expectStdOptionsTable 1
@@ -108,8 +108,8 @@ proc docir::roff::fromAst {ast} {
             pre {
                 set kind [_dictDef $meta kind "code"]
 
-                # Wenn wir gerade nach .SH STANDARD OPTIONS sind, versuche
-                # den pre-Block als Tabelle zu mappen. Wenn das nicht
+                # If we are right after .SH STANDARD OPTIONS, try
+                # to map the pre block as a table. If that does not
                 # gelingt (z.B. inkonsistente Spaltenzahl), bleibt's pre.
                 set tableNode {}
                 if {$expectStdOptionsTable} {
@@ -135,7 +135,7 @@ proc docir::roff::fromAst {ast} {
                     set desc [_dictDef $item desc {}]
                     set termIr [docir::roff::_mapInlines $term]
                     set descIr [docir::roff::_mapInlines $desc]
-                    # listItem als vollständiger DocIR-Node
+                    # listItem as a complete DocIR node
                     lappend items [dict create \
                         type    listItem \
                         content $descIr \
@@ -166,7 +166,7 @@ proc docir::roff::fromAst {ast} {
             }
 
             default {
-                # Unbekannte Typen überspringen
+                # skip unknown types
             }
         }
     }
@@ -177,26 +177,26 @@ proc docir::roff::fromAst {ast} {
 # Interne Helfer
 # ============================================================
 
-# _unescapeNroff -- löst nroff-Escape-Sequenzen in einem Rohstring auf.
+# _unescapeNroff -- resolves nroff escape sequences in a raw string.
 #
-# Wird für Textfelder benötigt, die nicht durch nroffparser::parseInlines
-# gegangen sind — typisch sind .OP-Terms (Format "cmdName|dbName|dbClass"
-# als Rohstring) und ähnliche Listen-Term-Strings.
+# Needed for text fields that did not go through nroffparser::parseInlines
+# — typically .OP terms (format "cmdName|dbName|dbClass"
+# as a raw string) and similar list-term strings.
 #
 # Behandelt:
-#   \-   → -    (literal hyphen, der Bug-Auslöser)
+#   \-   → -    (literal hyphen, the bug trigger)
 #   \.   → .    (literal period)
-#   \&   →      (zero-width space, wird entfernt)
+#   \&   →      (zero-width space, removed)
 #   \\   → \    (literal backslash)
-#   \fB \fI \fR \fP  →  (entfernt — wir können in einem Plain-String
-#                        keine Bold/Italic-Zustände tracken; das ist
-#                        ein dokumentierter Verlust für Term-Strings)
+#   \fB \fI \fR \fP  →  (removed — in a plain string we cannot
+#                        track bold/italic states; this is
+#                        a documented loss for term strings)
 #
 # Die Funktion arbeitet konservativ: unbekannte Escape-Sequenzen bleiben
-# unverändert (besser als falsches Ersetzen).
+# unchanged (better than a wrong replacement).
 proc docir::roff::_unescapeNroff {s} {
-    # Reihenfolge wichtig: \\ zuerst (sonst greifen die anderen
-    # Regeln auch auf Doppel-Backslashes)
+    # Order matters: \\  first (otherwise the other
+    # rules would also apply to double backslashes)
     set s [string map {
         "\\\\" "\x01"
         "\\-"  "-"
@@ -208,30 +208,30 @@ proc docir::roff::_unescapeNroff {s} {
         "\\fP" ""
         "\\e"  "\\"
     } $s]
-    # Platzhalter für \\\\ → echter Backslash
+    # placeholder for \\\\ → real backslash
     return [string map {"\x01" "\\"} $s]
 }
 
 proc docir::roff::_mapInlines {content} {
     # content kann sein:
-    #   - Liste von Inline-Dicts {type text text ...}
+    #   - list of inline dicts {type text text ...}
     #   - Rohstring (alt, Fallback)
-    #   - Leere Liste {}
+    #   - empty list {}
 
     if {[llength $content] == 0} { return {} }
 
-    # Prüfen: erstes Element ein Dict mit 'type'-Schlüssel?
+    # Check: is the first element a dict with a 'type' key?
     set first [lindex $content 0]
     if {[catch {dict exists $first type} ok] || !$ok} {
-        # Rohstring → text-Inline. Vorher nroff-Escapes auflösen
+        # raw string → text inline. First resolve nroff escapes
         # (z.B. .OP-Terms kommen als Rohstring "\\-autoseparators|...")
         return [list [dict create type text text [_unescapeNroff $content]]]
     }
 
     # Inline-Dicts: text-Felder ebenfalls von Rohescapes befreien
-    # (Parser hat das meiste schon erledigt, aber nicht alle Pfade —
-    #  z.B. nroff-Listen-Items wo der Term durch parseInlines ging
-    #  aber einzelne Inlines noch Resterzeugnisse haben).
+    # (the parser handled most of it already, but not all paths —
+    #  e.g. nroff list items where the term went through parseInlines
+    #  but individual inlines still have leftover artifacts).
 
     # Inline-Dicts mappen
     set result {}
@@ -252,7 +252,7 @@ proc docir::roff::_mapInlines {content} {
                 lappend result [dict create type link text $text name $name section $section href $href]
             }
             default {
-                # Unbekannte Inlines als text übernehmen
+                # take unknown inlines as text
                 lappend result [dict create type text text $text]
             }
         }
@@ -281,31 +281,31 @@ proc docir::roff::_makeId {text} {
 }
 
 # ============================================================
-# _tryStandardOptionsTable -- versucht einen pre-Block aus einer
-# .SO/.SE-Sektion in einen DocIR-table-Node umzuwandeln.
+# _tryStandardOptionsTable -- tries to convert a pre block from a
+# .SO/.SE section into a DocIR table node.
 #
 # Argumente:
-#   content - Liste von Inline-Dicts aus dem pre-Block
+#   content - list of inline dicts from the pre block
 #
-# Rückgabe:
-#   table-Node-Dict bei Erfolg, leere Liste bei Misserfolg.
+# Returns:
+#   table node dict on success, empty list on failure.
 #
 # Strategie:
-#   1. Inlines zu Klartext zusammenfügen.
+#   1. join inlines into plain text.
 #   2. An \n in Zeilen splitten.
-#   3. Jede Zeile an \t in Zellen splitten.
-#   4. Konsistenz prüfen (gleiche Spaltenzahl in jeder Zeile,
-#      mindestens 2 Zeilen mit mindestens 2 Spalten).
+#   3. split each line at \t into cells.
+#   4. check consistency (same column count in each row,
+#      at least 2 rows with at least 2 columns).
 #   5. tableRow/tableCell-Nodes bauen.
 #
-# Zellen-Inhalt ist Plain-Text-Inline. Tk-.SO-Optionen sind
-# Bezeichner wie "-background" — wir wickeln sie in strong, weil
-# die nroff-Quelle \fB...\fR um sie hatte (was beim Parser im
+# cell content is a plain-text inline. Tk .SO options are
+# identifiers like "-background" — we wrap them in strong because
+# the nroff source had \fB...\fR around them (which the parser
 # pre-Mode aber als plain text durchgereicht wurde — Detail unten).
 # ============================================================
 
 proc docir::roff::_tryStandardOptionsTable {content} {
-    # Klartext aus Inlines zusammenbauen
+    # build plain text from inlines
     set text ""
     foreach inline $content {
         if {[dict exists $inline text]} {
@@ -322,10 +322,10 @@ proc docir::roff::_tryStandardOptionsTable {content} {
     }
     if {[llength $lines] == 0} { return {} }
 
-    # Maximale Spaltenzahl über alle Zeilen ermitteln. Inkonsistente
-    # Tk-Manpages (ttk_progressbar etc.) haben uneinheitliche
-    # Spalten-Anzahl pro Zeile — wir nehmen das Maximum und füllen
-    # kürzere Zeilen mit leeren Zellen auf.
+    # determine the max column count over all rows. Inconsistent
+    # Tk manpages (ttk_progressbar etc.) have non-uniform
+    # column counts per row — we take the maximum and fill
+    # shorter rows with empty cells.
     set numCols 0
     foreach ln $lines {
         set cols [llength [split $ln "\t"]]
@@ -333,14 +333,14 @@ proc docir::roff::_tryStandardOptionsTable {content} {
     }
     if {$numCols < 2} { return {} }
 
-    # Alle Zeilen prüfen: gleiche Spaltenzahl?
-    # Letzte Zeile darf weniger Spalten haben (typisch in Tk-Manpages —
-    # "Lückenfüller"-Zeile am Ende). Toleranter Modus: alle Zeilen mit
-    # weniger Spalten als firstCols werden mit leeren Zellen aufgefüllt.
+    # check all rows: same column count?
+    # the last row may have fewer columns (typical in Tk manpages —
+    # a "filler" row at the end). Tolerant mode: all rows with
+    # fewer columns than firstCols are padded with empty cells.
     set rows {}
     foreach ln $lines {
         set cells [split $ln "\t"]
-        # Auffüllen falls kürzer
+        # pad if shorter
         while {[llength $cells] < $numCols} {
             lappend cells ""
         }
@@ -348,10 +348,10 @@ proc docir::roff::_tryStandardOptionsTable {content} {
         set rowCells {}
         foreach cell $cells {
             set cellText [string trim $cell]
-            # Tk-Standard-Options sind Bezeichner wie "-background",
-            # in der nroff-Quelle als \fB...\fR (bold). Wir geben sie
-            # als strong-Inline aus, damit der Renderer sie passend
-            # darstellt. Leere Zellen → leere content-Liste.
+            # Tk standard options are identifiers like "-background",
+            # in the nroff source as \fB...\fR (bold). We output them
+            # as a strong inline, so the renderer displays them
+            # appropriately. Empty cells → empty content list.
             if {$cellText eq ""} {
                 set inlines {}
             } else {

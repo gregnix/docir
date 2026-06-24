@@ -1,7 +1,7 @@
-# docir-roff-0.1.tm -- DocIR → nroff (Senke)
+# docir-roff-0.1.tm -- DocIR -> nroff (sink)
 #
-# Wandelt eine DocIR-Sequenz in nroff-Markup um. Siebte Senke im
-# DocIR-Hub. Zielformat: Tcl/Tk-Manpage-Konvention (.TH, .SH, .SS,
+# Converts a DocIR sequence into nroff markup. The seventh sink in
+# DocIR hub. Target format: Tcl/Tk manpage convention (.TH, .SH, .SS,
 # .PP, .CS/.CE, .TP, .IP, .OP, .SO/.SE, .QW).
 #
 # Naming-Konflikt: docir-roff-source ist die QUELLE (nroff-AST → DocIR
@@ -16,18 +16,18 @@
 #
 # Optionen:
 #   headingShift   integer (default 0): zur Verschiebung von Heading-Levels
-#   wrapColumn     integer (default 0): wenn > 0, harte Zeilenumbrüche
-#                  innerhalb von Paragraphen bei dieser Spalte
-#   forceQuoting   bool (default 0): Strings mit Sonderzeichen in .QW
+#   wrapColumn     integer (default 0): if > 0, hard line breaks
+#                  within paragraphs at this column
+#   forceQuoting   bool (default 0): strings with special characters in .QW
 #                  einwickeln (statt inline-Escapes)
 #
 # Round-Trip-Hinweise:
 #   - Soft-Hyphen, Kerning-Hints, manuelle Layout-Anweisungen gehen
-#     verloren (DocIR ist semantisch, nicht typographisch)
-#   - Whitespace-Normalisierung: aufeinanderfolgende Spaces werden zu
+#     lost (DocIR is semantic, not typographic)
+#   - whitespace normalization: consecutive spaces become
 #     einem zusammengefasst (nroff verhalten sich ohnehin so)
-#   - Tabellen werden zur Standard-Options-Pattern (.SO/.SE) gemappt
-#     wenn meta.kind eq "standardOptions", sonst zu .TS/.TE-Block
+#   - tables are mapped to the standard-options pattern (.SO/.SE)
+#     if meta.kind eq "standardOptions", otherwise to a .TS/.TE block
 
 package provide docir::roff 0.1
 package require docir 0.1
@@ -42,7 +42,7 @@ namespace eval ::docir::roff {
 # ------------------------------------------------------------------
 
 # render ir ?options?
-#   options: dict mit Keys headingShift / wrapColumn / forceQuoting
+#   options: dict with keys headingShift / wrapColumn / forceQuoting
 proc docir::roff::_dictDef {d k {def ""}} {
     if {[dict exists $d $k]} { return [dict get $d $k] }
     return $def
@@ -117,7 +117,7 @@ proc ::docir::roff::_renderDocHeader {node} {
         lappend parts [_quoteArg $version]
     }
     if {$part ne ""} {
-        # Wenn version leer ist aber part da, brauchen wir einen
+        # If version is empty but part is present, we need a
         # Platzhalter dazwischen
         if {$version eq ""} {
             lappend parts {""}
@@ -140,9 +140,9 @@ proc ::docir::roff::_renderHeading {node} {
 
     set txt [_renderInlines [dict get $node content]]
 
-    # Heading-Texte werden in nroff traditionell GROSSGESCHRIEBEN
-    # für .SH (Top-Level). Wir ändern das nicht automatisch — der
-    # User-Source liefert es schon so. Wenn nicht, ist das eine
+    # Heading texts are traditionally UPPERCASED in nroff
+    # for .SH (top level). We do not change that automatically — the
+    # user source already provides it that way. If not, that is a
     # bewusste Entscheidung des Autoren.
 
     if {$lv == 1} {
@@ -164,15 +164,15 @@ proc ::docir::roff::_renderParagraph {node} {
 }
 
 # ------------------------------------------------------------------
-# pre → .CS … .CE (Tk-Konvention) ODER .nf/.fi (klassisch)
+# pre -> .CS … .CE (Tk convention) OR .nf/.fi (classic)
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderPre {node} {
     set m    [_dictDef $node meta {}]
     set kind [_dictDef $m kind "code"]
 
-    # Inhalt: pre kann entweder einen text-Inline mit dem Code als
-    # text-Feld haben, oder rohe Zeilen.
+    # content: a pre can either have a text inline with the code as
+    # the text field, or raw lines.
     set content [dict get $node content]
     set raw ""
     foreach inline $content {
@@ -181,7 +181,7 @@ proc ::docir::roff::_renderPre {node} {
         }
     }
 
-    # Code-Zeilen müssen vor Punkt-am-Zeilenanfang geschützt werden
+    # code lines must be protected against a dot at the line start
     set protectedLines {}
     foreach line [split $raw "\n"] {
         lappend protectedLines [_protectLeadingDot $line]
@@ -218,7 +218,7 @@ proc ::docir::roff::_renderList {node} {
         append out [_renderListItem $item $kind $itemNum]
     }
 
-    # Schließe alle .RS mit entsprechend vielen .RE
+    # close all .RS with a matching number of .RE
     for {set i 0} {$i < $indentLevel} {incr i} {
         append out ".RE\n"
     }
@@ -273,7 +273,7 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
             # .OP cmdName dbName dbClass\ndesc
             # Term ist meist "cmdName|dbName|dbClass" als Text vom
             # docir-roff-source (siehe Bug-Geschichte).
-            # Wir versuchen das Pattern zu erkennen, fallback ist
+            # we try to recognize the pattern, fallback is
             # cmdName=term, dbName=cmdName, dbClass=term.
             set parts [split $termText "|"]
             if {[llength $parts] >= 3} {
@@ -285,8 +285,8 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
                 set db  $termText
                 set cls $termText
             }
-            # cmd hat oft ein literales "-" davor das in nroff
-            # geschützt werden muss als "\-"
+            # cmd often has a literal "-" before it that in nroff
+            # must be protected as "\-"
             if {[string match "-*" $cmd]} {
                 set cmd "\\$cmd"
             }
@@ -296,7 +296,7 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
         }
         ap {
             # Argument-Pattern: .AP type name in/out\ndesc
-            # Wir haben keine spezifischen Felder im listItem-meta,
+            # we have no specific fields in the listItem meta,
             # daher Fallback auf .TP-Verhalten
             set out ".TP\n"
             if {$termText ne ""} {
@@ -315,15 +315,15 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
     }
 }
 
-# Ein listItem auf Top-Level (außerhalb einer list) — selten,
-# meist Schema-Verletzung. Wir geben es als Paragraph aus.
+# A listItem at the top level (outside a list) — rare,
+# usually a schema violation. We output it as a paragraph.
 proc ::docir::roff::_renderOrphanedListItem {node} {
     set out [_renderUnknown $node "orphaned listItem (outside list)"]
     return $out
 }
 
 # ------------------------------------------------------------------
-# blank → leere Zeile / .sp
+# blank -> empty line / .sp
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderBlank {node} {
@@ -336,18 +336,18 @@ proc ::docir::roff::_renderBlank {node} {
 }
 
 # ------------------------------------------------------------------
-# hr → "\(em" Linie als Annäherung — nroff hat keine HR
+# hr → "\(em" line as an approximation — nroff has no HR
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderHr {node} {
-    # Beste Annäherung: eine .sp + Linie aus em-Dashes.
-    # Aber: das ist semantisch nicht das gleiche. Konservativ:
-    # einfach eine extra Leerzeile.
+    # best approximation: a .sp + line of em dashes.
+    # But: this is semantically not the same. Conservative:
+    # just an extra empty line.
     return ".sp 2\n"
 }
 
 # ------------------------------------------------------------------
-# table → standard-options pattern (.SO/.SE) oder .TS/.TE
+# table -> standard-options pattern (.SO/.SE) or .TS/.TE
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderTable {node} {
@@ -360,12 +360,12 @@ proc ::docir::roff::_renderTable {node} {
     return [_renderGenericTable $node]
 }
 
-# Standard-Options-Tabelle: rückwärts-Mapping zur Tk-Konvention
+# standard-options table: reverse mapping to the Tk convention
 # .SO [classname]
 # .SE
 #
-# Inhalt der Tabelle: tableRows mit tableCells, jede Zelle ein Option.
-# Die Tk-Konvention listet nur Options ohne Werte — sie sind
+# table content: tableRows with tableCells, each cell an option.
+# The Tk convention lists only options without values — they are
 # Cross-Referenzen.
 proc ::docir::roff::_renderStandardOptionsTable {node} {
     set m         [_dictDef $node meta {}]
@@ -383,10 +383,10 @@ proc ::docir::roff::_renderStandardOptionsTable {node} {
             set txt [_renderInlines [dict get $cell content]]
             set txt [string trim $txt]
             if {$txt ne ""} {
-                # Optionsnamen brauchen kein -, das wird im Konsumenten
-                # erwartet aber traditionell hängt das von der nroff-
-                # Quelle ab. Wir geben sie ohne führendes \- aus —
-                # die original Tk-Manpages haben sie auch ohne.
+                # option names need no -, that is expected in the consumer
+                # but traditionally that depends on the nroff
+                # source. We output them without a leading \- aus —
+                # the original Tk manpages also have them without.
                 append out "$txt\n"
             }
         }
@@ -396,14 +396,14 @@ proc ::docir::roff::_renderStandardOptionsTable {node} {
 }
 
 # Generische Tabelle als .TS/.TE-Block (tbl-Format).
-# Vorsicht: nicht jeder nroff-Renderer hat tbl. In Tcl/Tk-Manpages
-# wird tbl praktisch nicht genutzt — die Standard-Options sind das
+# Caution: not every nroff renderer has tbl. In Tcl/Tk manpages
+# tbl is practically unused — the standard options are the
 # einzige Tabellen-Pattern. Daher ist generic-table eher Fallback.
 proc ::docir::roff::_renderGenericTable {node} {
     set out ".TS\n"
     set rows [dict get $node content]
 
-    # Erste Zeile: Spalten-Spec aus Anzahl Zellen
+    # first row: column spec from the number of cells
     set firstRow [lindex $rows 0]
     if {$firstRow ne "" && [dict exists $firstRow content]} {
         set ncols [llength [dict get $firstRow content]]
@@ -429,7 +429,7 @@ proc ::docir::roff::_renderGenericTable {node} {
 # ------------------------------------------------------------------
 
 proc ::docir::roff::_renderImageBlock {node} {
-    # nroff kann keine Bilder rendern. Marker als italic-Plain-Text.
+    # nroff cannot render images. Marker as italic plain text.
     set m [dict get $node meta]
     set url [_dictDef $m url ""]
     set alt [_dictDef $m alt ""]
@@ -448,8 +448,8 @@ proc ::docir::roff::_renderImageBlock {node} {
 }
 
 proc ::docir::roff::_renderFootnoteSection {node} {
-    # Footnotes werden als eigene Sektion mit .SH "FOOTNOTES" gerendert.
-    # Jeder footnote_def wird zu .TP "[N]" body
+    # Footnotes are rendered as their own section with .SH "FOOTNOTES".
+    # Each footnote_def becomes .TP "[N]" body
     set defs [dict get $node content]
     if {[llength $defs] == 0} { return "" }
 
@@ -475,8 +475,8 @@ proc ::docir::roff::_renderFootnoteDef {node} {
 }
 
 proc ::docir::roff::_renderDiv {node} {
-    # nroff hat kein div-Konzept. Wir rendern children transparent.
-    # class und id gehen verloren.
+    # nroff has no div concept. We render children transparently.
+    # class and id are lost.
     set out ""
     foreach child [dict get $node content] {
         append out [_renderBlock $child]
@@ -503,10 +503,10 @@ proc ::docir::roff::_renderInlines {inlines} {
     if {[llength $inlines] == 0} { return "" }
     set out ""
 
-    # Liste oder Rohstring?
+    # list or raw string?
     set first [lindex $inlines 0]
     if {[catch {dict exists $first type} ok] || !$ok} {
-        # Rohstring (sollte nicht passieren bei sauberem DocIR,
+        # raw string (should not happen with clean DocIR,
         # aber defensive)
         return [_escapeText $inlines]
     }
@@ -522,17 +522,17 @@ proc ::docir::roff::_renderInlines {inlines} {
             underline { append out "\\fI[_escapeText $itext]\\fR" }
             code      { append out "\\fB[_escapeText $itext]\\fR" }
             strike {
-                # nroff hat keine native Strike-Through. Konvention für
-                # Tk-Manpages: einfach Plain-Text — der Strike-Effekt
-                # geht verloren. Pragmatisch: kursivieren, damit der
-                # User wenigstens sieht "das ist anders".
+                # nroff has no native strike-through. Convention for
+                # Tk manpages: just plain text — the strike effect
+                # is lost. Pragmatic: italicize, so the
+                # user at least sees "this is different".
                 append out "\\fI[_escapeText $itext]\\fR"
             }
             linebreak {
-                # Hard-Break: nroff-Macro .br muss am Zeilenanfang
-                # stehen. Wir fügen einen Newline ein, gefolgt von .br
-                # und einem weiteren Newline, damit der nächste Inline
-                # auf einer neuen Zeile landet.
+                # Hard break: the nroff macro .br must be at the line start
+                # We insert a newline, followed by .br
+                # and another newline, so the next inline
+                # lands on a new line.
                 append out "\n.br\n"
             }
             softbreak {
@@ -541,13 +541,13 @@ proc ::docir::roff::_renderInlines {inlines} {
             }
             span {
                 # nroff hat keine class/id-Attribute — Text durchreichen.
-                # In manchen nroff-Dialekten gibt es .ds-Strings für
-                # User-defined-Macros, aber das ist nicht portabel.
+                # In some nroff dialects there are .ds strings for
+                # user-defined macros, but that is not portable.
                 append out [_escapeText $itext]
             }
             image {
-                # nroff kann keine Bilder rendern. Marker als
-                # Plain-Text, damit User weiß was gemeint war.
+                # nroff cannot render images. Marker as
+                # plain text, so the user knows what was meant.
                 set url [_dictDef $inline url ""]
                 if {$itext ne "" && $url ne ""} {
                     append out "\\fI\[image: [_escapeText $itext] ([_escapeText $url])\]\\fR"
@@ -561,19 +561,19 @@ proc ::docir::roff::_renderInlines {inlines} {
             }
             footnote_ref {
                 # nroff hat keine bidirektionalen Links. Marker als
-                # Hochzahl-Imitation: \u\sN\d\sR (super) wäre möglich
-                # aber nicht portabel. Einfach [N] — die Defs werden
-                # später als footnote_section gerendert.
+                # superscript imitation: \u\sN\d\sR (super) would be possible
+                # but not portable. Just [N] — the defs are
+                # rendered later as a footnote_section.
                 set marker [_dictDef $inline text "?"]
                 append out "\[[_escapeText $marker]\]"
             }
             link {
-                # In nroff sind Links keine eigene Konstruktion —
-                # in Tk-Manpages wird "name(section)" geschrieben.
+                # In nroff, links are not a separate construct —
+                # in Tk manpages "name(section)" is written.
                 set name [_dictDef $inline name $itext]
                 set sec  [_dictDef $inline section ""]
-                # Leerer Link → komplett überspringen statt leere
-                # Bold-Tags zu schreiben ("\fB\fR" wäre kein gültiger
+                # empty link -> skip entirely instead of writing empty
+                # bold tags ("\fB\fR" would not be a valid
                 # nroff-Output)
                 if {$name eq "" && $itext eq ""} { continue }
                 if {$name eq ""} { set name $itext }
@@ -596,34 +596,34 @@ proc ::docir::roff::_renderInlines {inlines} {
 # Escaping & Helper
 # ==================================================================
 
-# _escapeText -- escape rohen Text für nroff-Inline-Kontext
+# _escapeText -- escape raw text for an nroff inline context
 #
 # Reihenfolge wichtig:
-#   1. Backslash → "\\\\" (sonst greifen die anderen Regeln auch
+#   1. backslash → "\\\\" (otherwise the other rules also apply
 #      auf neu erzeugte Backslashes)
 #   2. Hyphen → "\-"  (literal Bindestrich)
 #
-# Punkt am Zeilenanfang wird NICHT hier behandelt — das macht
-# _protectLeadingDot auf Block-Ebene (mit Wissen über Kontext).
+# a dot at the line start is NOT handled here — that is done by
+# _protectLeadingDot at the block level (with knowledge of the context).
 proc ::docir::roff::_escapeText {s} {
     # Schritt 1: Backslashes
     set s [string map {"\\" "\\e"} $s]
-    # Schritt 2: Hyphens (nur wenn KEIN Teil einer bereits eskapierten
-    # Sequenz wie \fB)
-    # Wir machen es einfach: alle Hyphens werden \- — das ist
+    # Step 2: hyphens (only if NOT part of an already-escaped
+    # sequence like \fB)
+    # We keep it simple: all hyphens become \- — that is
     # konservativ aber korrekt
     set s [string map {"-" "\\-"} $s]
     return $s
 }
 
-# _protectLeadingDot -- bei "." oder "'" am Zeilenanfang ein "\&"
-# voranstellen, sodass nroff es nicht als Befehl interpretiert.
+# _protectLeadingDot -- at a leading "." or "'", prepend a "\&"
+# so that nroff does not interpret it as a command.
 # Operates auf MULTI-LINE-Strings.
 proc ::docir::roff::_protectLeadingDot {s} {
     set lines [split $s "\n"]
     set protected {}
     foreach line $lines {
-        # Wenn die Zeile mit "." oder "'" beginnt: \& voranstellen
+        # If the line starts with "." or "'": prepend \&
         if {[regexp {^[.']} $line]} {
             lappend protected "\\&$line"
         } else {
@@ -633,14 +633,14 @@ proc ::docir::roff::_protectLeadingDot {s} {
     return [join $protected "\n"]
 }
 
-# _quoteArg -- Argument für nroff-Macro quoten
+# _quoteArg -- quote an argument for an nroff macro
 #
-# nroff-Macros wie .TH, .SH, .SS nehmen entweder unquoted Wörter oder
-# in Doppel-Quotes eingewickelte Strings. Wenn der Text Spaces enthält
-# muss er gequotet sein.
+# nroff macros like .TH, .SH, .SS take either unquoted words or
+# strings wrapped in double quotes. If the text contains spaces
+# it must be quoted.
 proc ::docir::roff::_quoteArg {s} {
     if {$s eq ""} { return {""} }
-    # Internal Doppel-Quotes verdoppeln (nroff-Konvention)
+    # double internal double-quotes (nroff convention)
     set s [string map {"\"" "\"\""} $s]
     if {[regexp {[[:space:]]} $s]} {
         return "\"$s\""

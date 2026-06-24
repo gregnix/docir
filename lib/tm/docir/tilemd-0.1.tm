@@ -113,7 +113,7 @@ proc docir::tilemd::_renderSection {section opts} {
             append out "\n"
         }
         hint {
-            # blockquote so dass es visuell hervorsticht
+            # blockquote so that it stands out visually
             foreach line $content {
                 append out "> $line\n"
             }
