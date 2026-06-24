@@ -40,13 +40,19 @@ namespace eval ::docir::diagram {
     variable browser {mermaid}
     # mermaid inner diagram types an HTML sink should render natively (facade)
     # instead of deferring to mermaid.js. Matched against the first keyword of
-    # the source. These are types where mermaid.js 11.x is fragile (throws
-    # "Syntax error" on input tuflow accepts -- architecture-beta on lenient
-    # ids/labels, mindmap on special characters / indentation) while the facade
-    # renders them reliably. Add a type here to move it from the browser to the
-    # native path; set the whole list empty to defer every mermaid block to the
-    # browser, or see preferNative for an all-native policy. Keep lowercase.
-    variable nativeMermaid {architecture-beta architecture mindmap}
+    # the source. These are types where mermaid.js 11.x is fragile or absent
+    # while the facade renders them reliably: architecture-beta (lenient ids/
+    # labels), mindmap (special chars / indentation), and the tclutils 2D
+    # renderers kanban / packet-beta / treemap-beta / radar-beta (own engines,
+    # not 1:1 with mermaid.js). Mature graph types (flowchart, sequence, state,
+    # pie, er, class, gantt, ...) stay on mermaid.js where it renders them well.
+    # Add a type here to move it from the browser to the native path; set the
+    # list empty to defer every mermaid block, or see preferNative for an
+    # all-native policy. Keep lowercase.
+    variable nativeMermaid {
+        architecture-beta architecture mindmap
+        kanban packet-beta packet treemap-beta treemap radar-beta radar
+    }
     namespace export \
         isDiagram isNative isBrowserPreferred preferNative languages \
         renderSvg renderPng

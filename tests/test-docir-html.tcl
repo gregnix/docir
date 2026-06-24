@@ -885,6 +885,21 @@ test "html.diagram.other_mermaid_stays_browser" {
     assert [expr {![string match {*docir-diagram*} $out]}] "not rendered natively"
 }
 
+test "html.diagram.twod_facade_renders_native" {
+    if {[catch {package require tclutils::tuflow 0.2}]} {
+        test::skip "tclutils::tuflow not installed"
+    }
+    # the tclutils 2D renderers (kanban/packet/treemap/radar) are native-preferred
+    foreach src {
+        "kanban\n  Col\n    Card@{ priority: High }"
+        "packet-beta\n  title F\n  0-7: \"A\"\n  8-15: \"B\""
+    } {
+        set out [docir::html::render [_htmlCodeBlock mermaid $src] [dict create standalone 0]]
+        assert [string match {*docir-diagram*} $out] "2D facade type rendered natively"
+        assert [expr {![string match {*class="mermaid"*} $out]}] "not deferred to mermaid.js"
+    }
+}
+
 test "html.diagram.mindmap_renders_native" {
     if {[catch {package require tclutils::tuflow 0.2}]} {
         test::skip "tclutils::tuflow not installed"
