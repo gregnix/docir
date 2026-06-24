@@ -885,6 +885,25 @@ test "html.diagram.other_mermaid_stays_browser" {
     assert [expr {![string match {*docir-diagram*} $out]}] "not rendered natively"
 }
 
+test "html.diagram.mode_toggle" {
+    if {[catch {package require tclutils::tuflow 0.2}]} {
+        test::skip "tclutils::tuflow not installed"
+    }
+    set seq "sequenceDiagram\n A->>B: x"
+    set mm  "mindmap\n  root((R))\n    a"
+    # all: a mature type (sequence) also renders natively
+    set ha [docir::html::render [_htmlCodeBlock mermaid $seq] [dict create standalone 0 nativeDiagrams all]]
+    assert [string match {*docir-diagram*} $ha] "mode=all renders sequence natively"
+    # browser: even a native-preferred type (mindmap) defers to mermaid.js
+    set hb [docir::html::render [_htmlCodeBlock mermaid $mm] [dict create standalone 0 nativeDiagrams browser]]
+    assert [string match {*class="mermaid"*} $hb] "mode=browser defers mindmap to mermaid.js"
+    # the per-render option must not leak: default mode is still curated
+    assert [string eq [docir::diagram::mode] curated] "per-render option does not change the global mode"
+    # curated (default): sequence -> mermaid.js, mindmap -> native
+    set hc [docir::html::render [_htmlCodeBlock mermaid $seq] [dict create standalone 0]]
+    assert [string match {*class="mermaid"*} $hc] "curated defers sequence to mermaid.js"
+}
+
 test "html.diagram.twod_facade_renders_native" {
     if {[catch {package require tclutils::tuflow 0.2}]} {
         test::skip "tclutils::tuflow not installed"

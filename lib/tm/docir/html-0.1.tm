@@ -77,6 +77,7 @@ proc docir::html::render {ir {options {}}} {
         linkMode    "local" \
         enableMermaid 0 \
         enableMath  0 \
+        nativeDiagrams "" \
         part        ""]
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
@@ -561,6 +562,7 @@ proc docir::html::_renderParagraph {node level} {
 }
 
 proc docir::html::_renderPre {node level} {
+    variable opts
     set m [dict get $node meta]
     set kind [_dictDef $m kind ""]
     set lang [_dictDef $m language ""]
@@ -592,7 +594,7 @@ proc docir::html::_renderPre {node level} {
         # also covers a ```mermaid``` block whose inner type renders more
         # reliably via the facade (e.g. architecture-beta); on failure it falls
         # through to the <pre class="mermaid"> path below (mermaid.js fallback).
-        if {[docir::diagram::preferNative $lang $txt]} {
+        if {[docir::diagram::preferNative $lang $txt [_dictDef $opts nativeDiagrams ""]]} {
             try {
                 set _svg [docir::diagram::renderSvg $txt $lang]
                 return "$ind<div class=\"docir-diagram\">$_svg</div>\n"

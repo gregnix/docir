@@ -53,9 +53,18 @@ namespace eval ::docir::diagram {
         architecture-beta architecture mindmap
         kanban packet-beta packet treemap-beta treemap radar-beta radar
     }
+    # rendering policy for ```mermaid``` blocks in an HTML sink (runtime-togglable
+    # via [configure -mode ...]; default curated):
+    #   curated  - native for `native` langs + the nativeMermaid list, the rest
+    #              deferred to mermaid.js (a good balance)
+    #   all      - every diagram rendered natively via the facade, mermaid.js
+    #              only as a fallback when the facade can't ("never the browser")
+    #   browser  - only true-native langs (flow/tuflow/pie) inline, every mermaid
+    #              block deferred to mermaid.js (the original behaviour)
+    variable mode curated
     namespace export \
         isDiagram isNative isBrowserPreferred preferNative languages \
-        renderSvg renderPng
+        renderSvg renderPng configure mode
 }
 
 proc ::docir::diagram::_norm {lang} {
@@ -102,17 +111,52 @@ proc ::docir::diagram::_firstKeyword {source} {
 # for a browser language whose inner diagram type is native-preferred (e.g. a
 # ```mermaid``` block that begins with `architecture-beta` or `mindmap`). The
 # sink should still fall back to its browser path if the facade render fails.
-#
-# For an all-native policy ("never depend on mermaid.js; render every diagram via
-# tuflow, fall back to the browser only when the facade can't"), replace the
-# `nativeMermaid` membership test below with `return [isBrowserPreferred $lang]`.
-proc ::docir::diagram::preferNative {lang source} {
-    if {[isNative $lang]} { return 1 }
-    if {[isBrowserPreferred $lang]} {
-        variable nativeMermaid
-        return [expr {[_firstKeyword $source] in $nativeMermaid}]
+# Runtime policy switch. `configure -mode curated|all|browser` flips how HTML
+# sinks treat ```mermaid``` blocks; with no args returns the current mode.
+#   curated (default): native langs + the nativeMermaid list render natively
+#   all:               every diagram renders natively (browser only as fallback)
+#   browser:           every mermaid block is deferred to mermaid.js
+proc ::docir::diagram::configure {args} {
+    variable mode
+    if {![llength $args]} { return [list -mode $mode] }
+    foreach {k v} $args {
+        switch -- $k {
+            -mode {
+                if {$v ni {curated all browser}} {
+                    return -code error -errorcode {DOCIR DIAGRAM BADMODE} \
+                        "unknown mode \"$v\": want curated|all|browser"
+                }
+                set mode $v
+            }
+            default {
+                return -code error -errorcode {DOCIR DIAGRAM BADOPT} \
+                    "unknown option \"$k\""
+            }
+        }
     }
-    return 0
+    return [list -mode $mode]
+}
+
+# current mode (read-only accessor)
+proc ::docir::diagram::mode {} { variable mode; return $mode }
+
+# True if an HTML sink should render this block natively (facade -> inline SVG)
+# rather than defer to the browser. Honours the policy set by [configure -mode]:
+# `browser` -> only true-native langs; `all` -> every diagram; `curated` -> native
+# langs plus the native-preferred mermaid subtypes. On native-render failure the
+# sink falls back to its browser path.
+proc ::docir::diagram::preferNative {lang source {modeArg ""}} {
+    if {$modeArg eq ""} { variable mode; set m $mode } else { set m $modeArg }
+    if {[isNative $lang]} { return 1 }
+    if {![isBrowserPreferred $lang]} { return 0 }
+    switch -- $m {
+        browser { return 0 }
+        all     { return 1 }
+        default {
+            variable nativeMermaid
+            return [expr {[_firstKeyword $source] in $nativeMermaid}]
+        }
+    }
 }
 
 # Keep only the options the tuflow facade understands.
