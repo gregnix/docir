@@ -1,7 +1,7 @@
-# docir-pdf-0.2.tm -- DocIR → PDF Renderer
-# BUILD-ID: pdf-0.2 seam+heightfit+logicalsize 2026-06-21 id=5f4d4dc4867621fe
+# docir-pdf-0.3.tm -- DocIR → PDF Renderer
+# BUILD-ID: pdf-0.3 table-delegation+pagebreak-hook 2026-06-30
 # Converts a DocIR sequence into a PDF document. Uses
-# pdf4tcl (>=0.9) as the low-level backend and pdf4tcllib (>=0.2)
+# pdf4tcl (>=0.9) as the low-level backend and pdf4tcllib (>=0.3)
 # for font embedding (TTF), Unicode sanitization and
 # Page-Helpers (Header/Footer).
 #
@@ -49,7 +49,7 @@
 #   - with -generateIndex 1: the index block is rendered AFTER the main body
 #       index entries have page numbers (which are known by then)
 
-package provide docir::pdf 0.2
+package provide docir::pdf 0.3
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -76,10 +76,31 @@ proc docir::pdf::_ensurePdf4tcl {} {
     if {[catch {package require pdf4tcl} err]} {
         return -code error "docir-pdf requires pdf4tcl: $err"
     }
-    if {[catch {package require pdf4tcllib} err]} {
+    if {[catch {package require pdf4tcllib 0.3} err]} {
         return -code error "docir-pdf requires pdf4tcllib: $err"
     }
     set _pdf4tclLoaded 1
+}
+
+proc docir::pdf::_pdfNewArgs {opts} {
+    # Extra pdf4tcl::new options threaded from docir options. PDF/A conformance
+    # and AES encryption are pdf4tcl-level features; docir does not implement
+    # them, it only passes them through to the backend. Empty values are
+    # omitted so the backend keeps its defaults. pdf4tcl itself enforces the
+    # PDF/A <-> encryption mutual exclusion.
+    set a {}
+    set pdfa  [dict get $opts pdfa]
+    set upw   [dict get $opts userpassword]
+    set opw   [dict get $opts ownerpassword]
+    if {$pdfa ne "" && ($upw ne "" || $opw ne "")} {
+        return -code error -errorcode {DOCIR PDF PDFA_ENCRYPTION_EXCLUSIVE} \
+            "docir-pdf: PDF/A conformance and encryption are mutually exclusive\
+             (PDF/A forbids encryption). Set either pdfa or a password, not both."
+    }
+    if {$pdfa ne ""} { lappend a -pdfa $pdfa }
+    if {$upw  ne ""} { lappend a -userpassword  $upw }
+    if {$opw  ne ""} { lappend a -ownerpassword $opw }
+    return $a
 }
 
 # ============================================================
@@ -98,7 +119,7 @@ proc docir::pdf::render {ir outputPath {options {}}} {
 
     if {!$genToc} {
         # Single-pass render (unchanged behaviour when no TOC is requested).
-        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true]
+        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
         if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
         if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
         $pdf startPage
@@ -126,7 +147,7 @@ proc docir::pdf::render {ir outputPath {options {}}} {
     set finalPdf ""
     for {set iter 1} {$iter <= $maxIter} {incr iter} {
         dict set opts _tocPageList $tocPageList
-        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true]
+        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
         if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
         if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
         $pdf startPage
@@ -194,6 +215,9 @@ proc docir::pdf::_normalizeOptions {options} {
         indexTitle         "Stichwortverzeichnis" \
         indexLevel         3 \
         bookmarks          1 \
+        pdfa               "" \
+        userpassword       "" \
+        ownerpassword      "" \
         cid                0]
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
@@ -778,6 +802,16 @@ proc docir::pdf::_newPage {} {
 
     # header for the new page
     _writeHeader
+}
+
+proc docir::pdf::_tableHostBreak {} {
+    # Page-break callback handed to pdf4tcllib::table::render so that tables
+    # spanning multiple pages use docir's own pagination (header/footer
+    # template, page counter) instead of the table renderer's internal
+    # "- N -" marker. Returns the new top y.
+    variable st
+    _newPage
+    return [dict get $st y]
 }
 
 # ============================================================
@@ -1436,6 +1470,54 @@ proc docir::pdf::_renderTable {node} {
 
     if {$columns < 1} {
         _renderUnknown $node "table without columns"
+        return
+    }
+
+    # --- Delegation: text-only tables are rendered by the shared pdf4tcllib
+    # table renderer, which does word wrapping (with hard-break for long
+    # space-less tokens), per-column alignment from meta.alignments,
+    # content-aware column widths, zebra striping and variable row height.
+    # Tables that contain image cells keep docir's own image-aware renderer
+    # further down (it preserves vertical centering of icons/widgets). ---
+    set aligns [_dictDef $m alignments {}]
+    set header   {}
+    set bodyRows {}
+    set hasImages 0
+    set ri 0
+    foreach row [dict get $node content] {
+        if {[dict get $row type] ne "tableRow"} { incr ri; continue }
+        set cells {}
+        foreach cell [dict get $row content] {
+            if {[dict get $cell type] ne "tableCell"} { lappend cells ""; continue }
+            foreach inl [dict get $cell content] {
+                if {[dict exists $inl type] && [dict get $inl type] eq "image"} {
+                    set hasImages 1
+                }
+            }
+            lappend cells [_inlinesToText [dict get $cell content]]
+        }
+        if {$hasHeader && $ri == 0} { set header $cells } else { lappend bodyRows $cells }
+        incr ri
+    }
+
+    if {!$hasImages} {
+        if {[llength $aligns] != $columns} { set aligns [lrepeat $columns left] }
+        set tableData [dict create header $header rows $bodyRows aligns $aligns]
+        set lineH  [_lineHeight $fontSize]
+        set y      [dict get $st y]
+        set pageNo [dict get $st pageNo]
+        # pageBreakCmd: keep docir's header/footer template consistent across
+        # table-spanning page breaks. The callback runs _newPage (writes the
+        # current page's footer, starts the next page, advances st(pageNo) and
+        # writes the new header) and returns the new top y. st(pageNo) is
+        # therefore maintained by the callback, not written back from $pageNo.
+        ::pdf4tcllib::table::render $pdf $tableData \
+            [dict get $st margin] y [dict get $st contentW] \
+            [dict get $st topY] [dict get $st bottomY] pageNo \
+            [dict get $st pageW] [dict get $st pageH] [dict get $st margin] \
+            $fontSize $lineH 0 {::docir::pdf::_tableHostBreak}
+        dict set st y $y
+        _advanceY 4
         return
     }
 

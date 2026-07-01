@@ -12,7 +12,7 @@ package ifneeded docir::md                        0.1      [list source -encodin
 package ifneeded docir::mdSource                  0.1      [list source -encoding utf-8 [file join $dir docir mdSource-0.1.tm]]
 package ifneeded docir::odt                       0.4      [list source -encoding utf-8 [file join $dir docir odt-0.4.tm]]
 package ifneeded docir::odtSource                 0.4      [list source -encoding utf-8 [file join $dir docir odtSource-0.4.tm]]
-package ifneeded docir::pdf                       0.2      [list source -encoding utf-8 [file join $dir docir pdf-0.2.tm]]
+package ifneeded docir::pdf                       0.3      [list source -encoding utf-8 [file join $dir docir pdf-0.3.tm]]
 package ifneeded docir::rendererTk                0.2      [list source -encoding utf-8 [file join $dir docir rendererTk-0.2.tm]]
 package ifneeded docir::roff                      0.1      [list source -encoding utf-8 [file join $dir docir roff-0.1.tm]]
 package ifneeded docir::roffSource                0.1      [list source -encoding utf-8 [file join $dir docir roffSource-0.1.tm]]

@@ -53,7 +53,7 @@ foreach mod {
 # Module mit externer Dep (pdf4tcl) — catch, damit Tests ohne pdf4tcl
 # nicht hart abbrechen sondern sich selbst skippen koennen.
 foreach mod {
-    pdf-0.2.tm
+    pdf-0.3.tm
     tilepdf-0.1.tm
 } {
     set p [file join $libDir docir $mod]

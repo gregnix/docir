@@ -1,5 +1,38 @@
 # DocIR — Changelog
 
+## 2026-06-30 — PDF tables: word wrapping, alignment & consistent pagination
+
+Requires **pdf4tcllib 0.3**.
+
+### Changed — `lib/tm/docir/pdf-0.3.tm` (was `pdf-0.2.tm`)
+
+- **Text tables are now rendered by `pdf4tcllib::table::render`.** Previously
+  `_renderTable` drew each cell on a single line, so long columns
+  (description / path / dependency lists) were clipped and overlapped. Text-only
+  tables are now delegated to the shared pdf4tcllib table renderer, which wraps
+  cell content (with hard-break for long space-less tokens such as paths and
+  dotted names), honours per-column `meta.alignments`, computes content-aware
+  column widths, draws zebra striping and uses a variable row height. When a
+  table spans several pages the column header row and the full grid frame are
+  repeated at the top of every continuation page. Tables that contain image
+  cells keep docir's own image-aware renderer.
+- **Consistent header/footer across table-spanning page breaks.** A new
+  page-break callback (`_tableHostBreak`) is handed to `table::render` so that a
+  table crossing a page boundary triggers docir's own `_newPage` (writing the
+  configured header/footer template and advancing the page counter) instead of
+  the table renderer's built-in page marker.
+- **Now requires `pdf4tcllib 0.3`** (for the `table::render` page-break hook and
+  the hard-break wrapping in `text::wrap`).
+
+### Added — `lib/tm/docir/pdf-0.3.tm`
+
+- **PDF/A conformance and AES encryption pass-through.** `render` accepts
+  `pdfa` (`""`|`1b`|`2b`|`3b`), `userpassword` and `ownerpassword` options and
+  threads them straight to `pdf4tcl::new` (these are pdf4tcl-level features;
+  docir does not reimplement them). PDF/A and encryption are mutually exclusive
+  — requesting both raises `{DOCIR PDF PDFA_ENCRYPTION_EXCLUSIVE}` instead of
+  producing an invalid encrypted-yet-PDF/A file.
+
 ## 2026-06-20 — Validator accepts `softbreak`; renderer-tk: math, blockquote, deflist & multi-paragraph list items
 
 Paired with **mdstack 0.6.0**.
