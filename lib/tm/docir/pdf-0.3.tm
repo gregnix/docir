@@ -1529,29 +1529,42 @@ proc docir::pdf::_renderTable {node} {
             continue
         }
 
-        # PASS 1: pre-process cells — classify + determine image height
-        # cellsInfo is a list{dict with type, text-or-images, height}
+        set isHeader [expr {$hasHeader && $rowIndex == 0}]
+        set cellFont [expr {$isHeader \
+            ? [::pdf4tcllib::fonts::fontSansBold] : [::pdf4tcllib::fonts::fontSans]}]
+        set availText [expr {$colW - 2 * $padX}]
+
+        # PASS 1: pre-process cells — classify, wrap text, determine heights.
         set cellsInfo {}
         set maxImgH 0
+        set maxTextLines 1
         foreach cell [dict get $row content] {
             if {[dict get $cell type] ne "tableCell"} {
                 lappend cellsInfo [dict create type empty]
                 continue
             }
             set info [_classifyCell $cell $colW $padX $lh]
-            lappend cellsInfo $info
             if {[dict get $info type] eq "images"} {
                 set h [dict get $info height]
                 if {$h > $maxImgH} { set maxImgH $h }
+            } elseif {[dict exists $info text] && [dict get $info text] ne ""} {
+                # Wrap text cells (hard-break long space-less tokens) so they no
+                # longer clip past the column; feed the line count into rowH.
+                set lines [::pdf4tcllib::text::wrap [dict get $info text] \
+                    $availText $fontSize $cellFont 0 $pdf 1]
+                dict set info lines $lines
+                set n [llength $lines]
+                if {$n > $maxTextLines} { set maxTextLines $n }
             }
+            lappend cellsInfo $info
         }
 
-        # effective row height: max(text line height, image height) + padding
-        set contentH [expr {$maxImgH > $lh ? $maxImgH : $lh}]
+        # effective row height: max(wrapped text block, image height) + padding
+        set textH [expr {$maxTextLines * $lh}]
+        set contentH [expr {$maxImgH > $textH ? $maxImgH : $textH}]
         set rowH [expr {$contentH + 2 * $padY}]
         _ensureSpace $rowH
 
-        set isHeader [expr {$hasHeader && $rowIndex == 0}]
         set yTop [dict get $st y]
 
         if {$isHeader} {
@@ -1578,21 +1591,22 @@ proc docir::pdf::_renderTable {node} {
                     # place images centered vertically+horizontally in the cell
                     _renderCellImages $info $xCell $yTop $colW $rowH
                 }
-                text {
-                    # place text vertically centered in the cell.
-                    # baseline-y = yTop + (rowH + fontSize) / 2
-                    # this way text and possibly images in adjacent cells
-                    # auf gleicher visuellem Mittelpunkt.
-                    set yText [expr {$yTop + ($rowH + $fontSize) / 2}]
-                    $pdf text [::pdf4tcllib::unicode::sanitize [dict get $info text]] \
-                        -x $xText -y $yText
-                }
                 default {
-                    # mixed/empty — Text-Fallback, ebenfalls mittig
-                    set yText [expr {$yTop + ($rowH + $fontSize) / 2}]
-                    if {[dict exists $info text]} {
-                        $pdf text [::pdf4tcllib::unicode::sanitize [dict get $info text]] \
-                            -x $xText -y $yText
+                    # text (and mixed/empty fallback): draw the wrapped lines as
+                    # a block, vertically centered in the cell.
+                    if {[dict exists $info lines]} {
+                        set lines [dict get $info lines]
+                    } elseif {[dict exists $info text] && [dict get $info text] ne ""} {
+                        set lines [list [dict get $info text]]
+                    } else {
+                        set lines {}
+                    }
+                    set blockH [expr {[llength $lines] * $lh}]
+                    set yl [expr {$yTop + ($rowH - $blockH) / 2.0 + $fontSize}]
+                    foreach ln $lines {
+                        $pdf text [::pdf4tcllib::unicode::sanitize $ln] \
+                            -x $xText -y $yl
+                        set yl [expr {$yl + $lh}]
                     }
                 }
             }
