@@ -35,7 +35,10 @@ install-bin:
 	cp bin/md2tilepdf $(BINDIR)/
 	cp bin/md2tilehtml $(BINDIR)/
 	cp bin/md2tilemd $(BINDIR)/
-	chmod +x $(BINDIR)/md2tilepdf $(BINDIR)/md2tilehtml $(BINDIR)/md2tilemd
+	cp bin/md2html $(BINDIR)/
+	cp bin/md2odt $(BINDIR)/
+	cp bin/n2md $(BINDIR)/
+	chmod +x $(BINDIR)/md2tilepdf $(BINDIR)/md2tilehtml $(BINDIR)/md2tilemd $(BINDIR)/md2html $(BINDIR)/md2odt $(BINDIR)/n2md
 	@echo "Installiert: $(BINDIR)/md2tilepdf $(BINDIR)/md2tilehtml"
 
 install-user:

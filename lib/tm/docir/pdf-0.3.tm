@@ -63,11 +63,23 @@ package require docir::diagram
 namespace eval ::docir::pdf {
     namespace export render renderToHandle
     variable _pdf4tclLoaded 0
+    variable _warnedKeys
+    array set _warnedKeys {}
 }
 
 proc docir::pdf::_dictDef {d k {def ""}} {
     if {[dict exists $d $k]} { return [dict get $d $k] }
     return $def
+}
+
+# Emit a one-time warning to stderr (deduplicated by key). Used where a catch
+# would otherwise swallow a failure silently: the warning keeps the problem
+# visible without spamming when a capability is missing for every heading.
+proc docir::pdf::_warnOnce {key msg} {
+    variable _warnedKeys
+    if {[info exists _warnedKeys($key)]} { return }
+    set _warnedKeys($key) 1
+    puts stderr "docir::pdf: $msg"
 }
 
 proc docir::pdf::_ensurePdf4tcl {} {
@@ -1028,9 +1040,11 @@ proc docir::pdf::_renderHeading {node} {
     if {[dict get $opts bookmarks]} {
         set bmLevel [expr {$lv - 1}]
         if {$bmLevel < 0} { set bmLevel 0 }
-        if {[catch {$pdf bookmarkAdd -title $plainText -level $bmLevel}]} {
-            # bookmarkAdd not available or faulty — silently
-            # ignore, so the render still runs.
+        if {[catch {$pdf bookmarkAdd -title $plainText -level $bmLevel} bmErr]} {
+            # bookmarkAdd unavailable or faulty: warn once (so PDF outline
+            # gaps stay visible) and keep rendering.
+            _warnOnce bookmarkAdd "bookmarkAdd failed ($bmErr);\
+ PDF outline bookmarks will be incomplete"
         }
     }
 
@@ -2120,7 +2134,10 @@ proc docir::pdf::_renderIndex {} {
 
     # bookmark for the index itself (top level)
     if {[dict get $opts bookmarks]} {
-        catch {$pdf bookmarkAdd -title $indexTitle -level 0}
+        if {[catch {$pdf bookmarkAdd -title $indexTitle -level 0} bmErr]} {
+            _warnOnce bookmarkAdd "bookmarkAdd failed for the index ($bmErr);\
+ bookmark skipped"
+        }
     }
 
     # Eintraege rendern, gruppiert nach Anfangsbuchstaben
