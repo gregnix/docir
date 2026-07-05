@@ -1,5 +1,21 @@
 # DocIR — Changelog
 
+## 2026-07-04 — Surface silently-swallowed failures; install all CLI tools
+
+### Changed — `lib/tm/docir/pdf-0.3.tm`
+
+- **PDF outline bookmarks no longer fail silently.** Both
+  `catch {$pdf bookmarkAdd ...}` sites (heading outline and the index bookmark)
+  now emit a one-time stderr warning via a new `_warnOnce` helper when
+  `bookmarkAdd` is unavailable or faulty, instead of silently producing a PDF
+  with missing/incomplete bookmarks. Rendering still continues.
+
+### Changed — `Makefile`
+
+- **`install-bin` installs all CLI tools.** `md2html`, `md2odt` and `n2md` were
+  built in `bin/` but omitted from `install-bin` (only the `md2tile*` tools were
+  copied); they are now installed and made executable.
+
 ## 2026-06-30 — PDF tables: word wrapping, alignment & consistent pagination
 
 Requires **pdf4tcllib 0.3**.
