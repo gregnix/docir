@@ -648,7 +648,11 @@ proc docir::html::_renderList {node level} {
     set lmeta [dict get $node meta]
     set loose [expr {[dict exists $lmeta loose] ? [dict get $lmeta loose] : 0}]
 
-    set out "$ind<$tag class=\"$wrapClass\">\n"
+    set startAttr ""
+    if {$kind eq "ol" && [dict exists $m start]} {
+        set startAttr " start=\"[dict get $m start]\""
+    }
+    set out "$ind<$tag class=\"$wrapClass\"$startAttr>\n"
 
     foreach item [dict get $node content] {
         set itemType [dict get $item type]

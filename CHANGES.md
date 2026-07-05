@@ -1,5 +1,15 @@
 # DocIR — Changelog
 
+## 2026-07-05 — Ordered-list start attribute
+
+### Changed — `lib/tm/docir/mdSource-0.1.tm`, `lib/tm/docir/html-0.1.tm`
+
+- **`<ol start="N">` is emitted for ordered lists that do not start at 1.**
+  `_mapList` now propagates a `start` value from the source list node into the
+  DocIR list node's `meta`, and `html::_renderList` renders it on the `<ol>`.
+  Lists starting at 1 are unchanged. (Pairs with mdstack::parser 0.6.2, which
+  captures the start number.)
+
 ## 2026-07-04 — Surface silently-swallowed failures; install all CLI tools
 
 ### Changed — `lib/tm/docir/pdf-0.3.tm`

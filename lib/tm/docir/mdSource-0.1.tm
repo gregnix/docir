@@ -197,10 +197,12 @@ proc docir::md::_mapList {block} {
         }
     }
 
+    set _lmeta [dict create kind $kind indentLevel 0 loose $loose]
+    if {[dict exists $block start]} { dict set _lmeta start [dict get $block start] }
     set listNode [dict create \
         type    list \
         content $items \
-        meta    [dict create kind $kind indentLevel 0 loose $loose]]
+        meta    $_lmeta]
 
     return [concat [list $listNode] $trailing]
 }
