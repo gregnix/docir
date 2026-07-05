@@ -313,7 +313,12 @@ proc docir::odt::write {ir path {options {}}} {
         for {set i 0} {$i < $n} {} {
             set node [lindex $ir $i]
             if {[dict exists $node meta]
-                    && [dict exists [dict get $node meta] _listSibling]} {
+                    && [dict exists [dict get $node meta] _listSibling]
+                    && [dict get $node type] eq "list"} {
+                # a tagged sub-LIST is rendered nested via its parent item's
+                # blocks; skip the flat trailing copy. Tagged non-list blocks
+                # (code / block quote) have no in-item ODF slot, so they render
+                # flat here instead of being lost.
                 incr i; continue
             }
             if {[dict get $node type] eq "list"} {

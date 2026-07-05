@@ -222,17 +222,18 @@ proc ::docir::roff::_renderList {node} {
         # nested blocks (sub-list / code / quote) inside the item, one level deeper
         if {[dict exists $item blocks]} {
             foreach _sb [dict get $item blocks] {
-                if {[dict get $_sb type] eq "paragraph"} continue
-                if {[dict exists $_sb meta]
-                        && [dict exists [dict get $_sb meta] _listSibling]} continue
+                set _sbm [expr {[dict exists $_sb meta] ? [dict get $_sb meta] : {}}]
+                # plain paragraphs are already in the item description
+                if {[dict get $_sb type] eq "paragraph" && ![dict exists $_sbm class]} continue
+                if {[dict exists $_sbm _listSibling]} continue
                 if {[dict get $_sb type] eq "list"} {
                     # roff .RS is relative/cumulative: wrap the nested list in a
-                    # single .RS 4 and render it flat (indentLevel 0) so each
-                    # nesting level shifts by exactly 4.
+                    # single .RS 4 and render it flat (indentLevel 0).
                     dict set _sb meta indentLevel 0
                     append out ".RS 4\n" [_renderList $_sb] ".RE\n"
                 } else {
-                    append out [_renderBlock $_sb]
+                    # code / block quote inside the item, indented one level
+                    append out ".RS 4\n" [_renderBlock $_sb] ".RE\n"
                 }
             }
         }
@@ -257,7 +258,8 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
         # Loose / multi-paragraph item: one paragraph per block, separated by .sp
         set _parts {}
         foreach _b [dict get $item blocks] {
-            if {[dict get $_b type] ne "paragraph"} continue
+            set _bm [expr {[dict exists $_b meta] ? [dict get $_b meta] : {}}]
+            if {[dict get $_b type] ne "paragraph" || [dict exists $_bm class]} continue
             lappend _parts [_protectLeadingDot \
                 [string trimright [_renderInlines [dict get $_b content]] "\n"]]
         }

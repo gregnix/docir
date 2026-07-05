@@ -1328,10 +1328,14 @@ proc docir::pdf::_renderList {node} {
             set _bl [dict get $item blocks]
             set itemDescInlines [dict get [lindex $_bl 0] content]
             foreach _b [lrange $_bl 1 end] {
-                if {[dict get $_b type] eq "paragraph"} {
+                set _bm [expr {[dict exists $_b meta] ? [dict get $_b meta] : {}}]
+                if {[dict get $_b type] eq "paragraph"
+                        && ![dict exists $_bm class]} {
+                    # plain extra paragraph (loose item)
                     lappend itemExtras [dict get $_b content]
                 } else {
-                    # nested list / code / block quote inside the item
+                    # nested list / code / block quote (blockquote is a
+                    # class-tagged paragraph in DocIR) inside the item
                     lappend itemSubBlocks $_b
                 }
             }
@@ -1365,6 +1369,7 @@ proc docir::pdf::_renderList {node} {
 # Render an item's nested blocks: a sub-list one indent level deeper, other
 # blocks (indented code, block quote) via the normal block renderer.
 proc docir::pdf::_renderListSubBlocks {subBlocks indentLevel} {
+    variable st
     foreach b $subBlocks {
         # a deeper sub-list is flattened into this item's blocks as a tagged
         # copy too; skip it here -- it is rendered nested via its parent list.
@@ -1375,7 +1380,11 @@ proc docir::pdf::_renderListSubBlocks {subBlocks indentLevel} {
             dict set b meta indentLevel [expr {$indentLevel + 1}]
             _renderList $b
         } else {
+            # indent code / block quote / paragraph by bumping the left margin
+            set _sm [dict get $st margin]
+            dict set st margin [expr {$_sm + ($indentLevel + 1) * 12}]
             _renderBlock $b
+            dict set st margin $_sm
         }
     }
 }

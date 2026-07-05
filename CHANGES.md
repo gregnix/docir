@@ -1,5 +1,19 @@
 # DocIR — Changelog
 
+## 2026-07-05 — Nested blocks inside list items (all renderers)
+
+### Changed — mdSource, html, pdf, roff, odt
+
+- List-item `blocks` now carry nested content (sub-lists, indented code, block
+  quotes). `_mapList` keeps them in the item and emits a tagged (`_listSibling`)
+  trailing copy for transition. Renderers render the item's blocks nested and
+  skip the tagged trailing:
+  - **html** `_renderListItemInside`, **pdf** `_renderListSubBlocks` (margin
+    indent for code/quote, indentLevel for sub-lists), **roff** `.RS 4`/`.RE`
+    per level.
+  - **odt** nests sub-lists (`addSublist`); code/quotes render flat (no in-item
+    ODF paragraph slot in the current odf::text API) rather than being lost.
+
 ## 2026-07-05 — Ordered-list start attribute
 
 ### Changed — `lib/tm/docir/mdSource-0.1.tm`, `lib/tm/docir/html-0.1.tm`
