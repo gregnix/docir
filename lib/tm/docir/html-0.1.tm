@@ -449,6 +449,9 @@ a:hover { text-decoration: underline; }
 # ============================================================
 
 proc docir::html::_renderBlock {node level} {
+    if {[dict exists $node meta] && [dict exists [dict get $node meta] _listSibling]} {
+        return ""
+    }
     set t [dict get $node type]
     switch $t {
         doc_header   { return [_renderDocHeader $node $level] }
@@ -686,7 +689,15 @@ proc docir::html::_renderListItemInside {item parentTag itemTag level {loose 0}}
     if {[dict exists $item blocks]} {
         set body ""
         foreach b [dict get $item blocks] {
-            append body "$ind  <p>[_renderInlines [dict get $b content]]</p>\n"
+            if {[dict get $b type] eq "paragraph"} {
+                if {$loose} {
+                    append body "$ind  <p>[_renderInlines [dict get $b content]]</p>\n"
+                } else {
+                    append body "$ind  [_renderInlines [dict get $b content]]\n"
+                }
+            } else {
+                append body [docir::html::_renderBlock $b [expr {$level + 1}]]
+            }
         }
         return "$ind<$itemTag>\n$body$ind</$itemTag>\n"
     }

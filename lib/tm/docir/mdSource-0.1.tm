@@ -160,13 +160,21 @@ proc docir::md::_mapList {block} {
         # non-paragraph blocks such as sub-lists (kept as trailing siblings —
         # the existing flat-IR behaviour for nested structures).
         set paras {}
-        set restBlocks {}
+        set mappedBlocks {}
+        set taggedRest {}
         foreach b $blocks {
             if {[dict get $b type] eq "paragraph"} {
-                lappend paras [dict create type paragraph \
+                set _pn [dict create type paragraph \
                     content [docir::md::_mapInlines [dict get $b content]] meta {}]
+                lappend paras $_pn
+                lappend mappedBlocks $_pn
             } else {
-                lappend restBlocks $b
+                foreach _mb [docir::md::_mapBlock $b] {
+                    lappend mappedBlocks $_mb
+                    set _mm [expr {[dict exists $_mb meta] ? [dict get $_mb meta] : {}}]
+                    dict set _mb meta [dict merge $_mm {_listSibling 1}]
+                    lappend taggedRest $_mb
+                }
             }
         }
         # content carries ALL paragraphs (space-separated) so renderers that do
@@ -189,12 +197,11 @@ proc docir::md::_mapList {block} {
         # Loose / multi-paragraph item: carry the paragraph blocks additively so
         # renderers can emit <p>…</p> per paragraph. Tight single-paragraph items
         # keep only `content` (unchanged, fully backward-compatible).
-        if {[llength $paras] > 1} { dict set itemNode blocks $paras }
-        lappend items $itemNode
-
-        foreach sub $restBlocks {
-            lappend trailing {*}[docir::md::_mapBlock $sub]
+        if {[llength $mappedBlocks] > 1 || [llength $taggedRest] > 0} {
+            dict set itemNode blocks $mappedBlocks
         }
+        lappend items $itemNode
+        lappend trailing {*}$taggedRest
     }
 
     set _lmeta [dict create kind $kind indentLevel 0 loose $loose]
