@@ -155,7 +155,24 @@ proc docir::odt::_fillList {txt listEl listsVar iVar L} {
     for {set k 0} {$k < $ni} {incr k} {
         set it   [lindex $items $k]
         set item [$txt addListItem $listEl "" ListItem]
-        _inlines $txt [_firstP $item] [dict get $it content]
+        # item text = first paragraph block (or content)
+        set descIr [dict get $it content]
+        if {[dict exists $it blocks]} {
+            set descIr [dict get [lindex [dict get $it blocks] 0] content]
+        }
+        _inlines $txt [_firstP $item] $descIr
+        # nested sub-lists from item.blocks, hung off this item as sublists
+        if {[dict exists $it blocks]} {
+            foreach _b [lrange [dict get $it blocks] 1 end] {
+                if {[dict exists $_b meta]
+                        && [dict exists [dict get $_b meta] _listSibling]} continue
+                if {[dict get $_b type] eq "list"} {
+                    set _sub [$txt addSublist $item [_listStyle $_b]]
+                    set _sl [list $_b]; set _sj 0
+                    _fillList $txt $_sub _sl _sj [_listLevel $_b]
+                }
+            }
+        }
         set lastItem $item
     }
     if {$ni == 0} { set lastItem [$txt addListItem $listEl "" ListItem] }
@@ -295,6 +312,10 @@ proc docir::odt::write {ir path {options {}}} {
         set n [llength $ir]
         for {set i 0} {$i < $n} {} {
             set node [lindex $ir $i]
+            if {[dict exists $node meta]
+                    && [dict exists [dict get $node meta] _listSibling]} {
+                incr i; continue
+            }
             if {[dict get $node type] eq "list"} {
                 if {[_dictDef [_dictDef $node meta {}] kind ""] eq "dl"} {
                     _fillDeflist $txt ir i

@@ -870,6 +870,11 @@ proc docir::pdf::_renderInto {pdf ir} {
 }
 
 proc docir::pdf::_renderBlock {node} {
+    # nested list-item blocks are rendered inside their item; skip the tagged
+    # trailing copy so it is not drawn a second time at the top level.
+    if {[dict exists $node meta] && [dict exists [dict get $node meta] _listSibling]} {
+        return
+    }
     set t [dict get $node type]
     switch $t {
         doc_header   { _renderDocHeader  $node }
@@ -1318,10 +1323,18 @@ proc docir::pdf::_renderList {node} {
         set itemTerm [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
         set itemExtras {}
+        set itemSubBlocks {}
         if {[dict exists $item blocks]} {
             set _bl [dict get $item blocks]
             set itemDescInlines [dict get [lindex $_bl 0] content]
-            foreach _b [lrange $_bl 1 end] { lappend itemExtras [dict get $_b content] }
+            foreach _b [lrange $_bl 1 end] {
+                if {[dict get $_b type] eq "paragraph"} {
+                    lappend itemExtras [dict get $_b content]
+                } else {
+                    # nested list / code / block quote inside the item
+                    lappend itemSubBlocks $_b
+                }
+            }
         }
 
         switch $itemKind {
@@ -1343,8 +1356,28 @@ proc docir::pdf::_renderList {node} {
                 _renderListItemMarker $marker $itemDescInlines $markerW $indentX $itemExtras
             }
         }
+        # nested blocks (sub-list / code / quote) indented under the item
+        _renderListSubBlocks $itemSubBlocks $indentLevel
     }
     _advanceY 4
+}
+
+# Render an item's nested blocks: a sub-list one indent level deeper, other
+# blocks (indented code, block quote) via the normal block renderer.
+proc docir::pdf::_renderListSubBlocks {subBlocks indentLevel} {
+    foreach b $subBlocks {
+        # a deeper sub-list is flattened into this item's blocks as a tagged
+        # copy too; skip it here -- it is rendered nested via its parent list.
+        if {[dict exists $b meta] && [dict exists [dict get $b meta] _listSibling]} {
+            continue
+        }
+        if {[dict get $b type] eq "list"} {
+            dict set b meta indentLevel [expr {$indentLevel + 1}]
+            _renderList $b
+        } else {
+            _renderBlock $b
+        }
+    }
 }
 
 # Render an item as "MARKER  text..." — marker on first line,

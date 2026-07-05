@@ -75,6 +75,9 @@ proc ::docir::roff::render {ir {options {}}} {
 
 proc ::docir::roff::_renderBlock {node} {
     set t [dict get $node type]
+    if {[dict exists $node meta] && [dict exists [dict get $node meta] _listSibling]} {
+        return ""
+    }
     switch -- $t {
         doc_header { return [_renderDocHeader $node] }
         heading    { return [_renderHeading   $node] }
@@ -216,6 +219,23 @@ proc ::docir::roff::_renderList {node} {
             continue
         }
         append out [_renderListItem $item $kind $itemNum]
+        # nested blocks (sub-list / code / quote) inside the item, one level deeper
+        if {[dict exists $item blocks]} {
+            foreach _sb [dict get $item blocks] {
+                if {[dict get $_sb type] eq "paragraph"} continue
+                if {[dict exists $_sb meta]
+                        && [dict exists [dict get $_sb meta] _listSibling]} continue
+                if {[dict get $_sb type] eq "list"} {
+                    # roff .RS is relative/cumulative: wrap the nested list in a
+                    # single .RS 4 and render it flat (indentLevel 0) so each
+                    # nesting level shifts by exactly 4.
+                    dict set _sb meta indentLevel 0
+                    append out ".RS 4\n" [_renderList $_sb] ".RE\n"
+                } else {
+                    append out [_renderBlock $_sb]
+                }
+            }
+        }
     }
 
     # close all .RS with a matching number of .RE
@@ -237,6 +257,7 @@ proc ::docir::roff::_renderListItem {item kind itemNum} {
         # Loose / multi-paragraph item: one paragraph per block, separated by .sp
         set _parts {}
         foreach _b [dict get $item blocks] {
+            if {[dict get $_b type] ne "paragraph"} continue
             lappend _parts [_protectLeadingDot \
                 [string trimright [_renderInlines [dict get $_b content]] "\n"]]
         }
