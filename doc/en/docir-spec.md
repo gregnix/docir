@@ -148,12 +148,23 @@ Each item in `list.content` is itself a complete DocIR node:
 ```tcl
 dict create \
     type    listItem         ;# Required
-    content <Inline-List>    ;# desc — main text
+    content <Inline-List>    ;# desc — main text (first paragraph)
     meta    {                ;# Required
         kind  tp|ip|op|ap|ul|ol|dl  ;# List type (inherited from parent)
         term  <Inline-List>          ;# Term/Label (for tp/ip/op/dl)
     }
+    blocks  <Block-List>     ;# Optional — the item's full block sequence
 ```
+
+`content` always holds the item's first paragraph as inline text, so a
+content-only renderer shows the item without data loss. When an item is more
+than a single tight paragraph (loose multi-paragraph, or it contains a nested
+sub-list / indented code / block quote), the item additionally carries `blocks`
+— the item's complete ordered block sequence. Renderers that understand `blocks`
+(html, pdf, roff) render them nested inside the item; those that read only
+`content` (odt for non-list blocks) fall back to the desc text plus a tagged
+trailing sibling. A tight single-paragraph item has no `blocks` key and is fully
+backward-compatible.
 
 **Rationale:** Treating `listItem` as a real DocIR node (with the same
 type/content/meta shape as any other block) means the validator, the
