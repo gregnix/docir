@@ -1283,7 +1283,7 @@ proc docir::pdf::_renderPre {node} {
     foreach line $lines {
         # in pre: no wrap — should already be formatted correctly by the author
         set y [expr {[dict get $st y] + $fontSize}]
-        $pdf text [::pdf4tcllib::unicode::sanitize $line] -x [expr {$x + 4}] -y $y
+        $pdf text [::pdf4tcllib::unicode::sanitize $line -mono 1] -x [expr {$x + 4}] -y $y
         _advanceY $lh
     }
     _advanceY $padding
