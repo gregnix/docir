@@ -34,4 +34,4 @@ docir::pdf::render $ir out.pdf {}
 Dieses Handbuch ist selbst ein Beispiel fuer die Buch-Konvention: Markdown-
 Kapitel ohne feste Nummern, Index-Begriffe als `[Begriff]{.index}`, eine
 Reihenfolge in `book.tcl` und ein Build nach PDF und HTML mit
-`book-build.tcl`.
+`book-build.tcl` (aus dem **bookkit**-Toolkit).

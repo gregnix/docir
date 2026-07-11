@@ -8,7 +8,7 @@ from it. This is the entry point to the English documentation.
 
 | Topic | Page |
 |---|---|
-| Write multi-chapter books (PDF + HTML from one source) | [Writing Books](../../book/book.md) |
+| Write multi-chapter books (PDF + HTML from one source) | the **bookkit** toolkit (`bookkit/SPEC.md`, `bookkit/doc/TOOLS.md`) |
 | Recipes for common conversion tasks | [Cookbook](cookbook.md) |
 | Table of contents and subject index in PDF | [PDF: TOC & Index](pdf-toc.md) |
 
@@ -36,7 +36,7 @@ set ir  [docir::md::fromAst $ast]
 docir::pdf::render $ir out.pdf {}
 ```
 
-For whole books, use `book-build.tcl` (see [Writing Books](../../book/book.md)); it
+For whole books, use `bookkit/tools/book-build.tcl` (see the **bookkit** toolkit); it
 assigns chapter numbers, a table of contents and a subject index, and
 builds PDF and HTML in one run.
 
@@ -44,4 +44,4 @@ A complete worked example is the **DocIR Handbook**: the English edition
 lives next to this file in `book/`, the German edition in `../de/buch/`.
 Each is a small book that uses the whole convention and documents docir at
 the same time. The reusable starting point for your own books is the
-template in the repository's `book/book/` directory.
+template in **bookkit** (`bookkit/template/`).

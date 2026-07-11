@@ -1,7 +1,7 @@
 # Buecher bauen
 
 Ein Buch ist ein Verzeichnis aus Markdown-Kapiteln, das `book-build.tcl`
-in einem Durchgang nach PDF und HTML setzt.
+(aus dem **bookkit**-Toolkit) in einem Durchgang nach PDF und HTML setzt.
 
 ## Aufbau
 
@@ -26,7 +26,7 @@ Reihenfolge. Ein Generatorlauf schreibt aus den Praefixen ein Manifest,
 das sich anschliessend frei umsortieren laesst:
 
 ```
-tclsh book-build.tcl manifest mybook/
+tclsh bookkit/tools/book-build.tcl manifest mybook/
 ```
 
 ## Nummerierung und stabile Verweise
@@ -43,8 +43,8 @@ aendert daher die Nummern, aber nicht die Anker — Querverweise auf
 ## Bauen
 
 ```
-tclsh book-build.tcl mybook/ -number
-tclsh book-build.tcl mybook/ -pdf out.pdf -html out.html -number
+tclsh bookkit/tools/book-build.tcl mybook/ -number
+tclsh bookkit/tools/book-build.tcl mybook/ -pdf out.pdf -html out.html -number
 ```
 
 Ohne `-pdf`/`-html` werden beide Formate neben dem Buch-Verzeichnis

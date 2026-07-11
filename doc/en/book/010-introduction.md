@@ -35,4 +35,4 @@ docir::pdf::render $ir out.pdf {}
 This handbook is itself an example of the book convention: Markdown
 chapters without fixed numbers, index terms written as `[term]{.index}`,
 an order defined in `book.tcl`, and a build to PDF and HTML via
-`book-build.tcl`.
+`book-build.tcl` (from the **bookkit** toolkit).

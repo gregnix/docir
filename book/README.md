@@ -1,29 +1,31 @@
-# Book template
+# Book tooling — moved to the bookkit repository
 
-A starting point for a book built with **pdf4tcl + mdstack + docir**.
+The book **tooling** that used to live here is now the standalone **bookkit**
+repository — its own repo, kept next to docir. bookkit is the canonical,
+maintained version: the same `docir + mdstack + pdf4tcl` book format, plus
+multilingual tools, a migration guide and web output.
 
-## Use it
-
-1. Copy this directory to a new location.
-2. Edit `book.tcl` — title, author, subtitle/date, and the chapter list.
-3. Write one Markdown file per chapter. Use no heading numbers; mark index
-   terms as `[term]{.index}`.
-4. Build:
-
-       tclsh /path/to/docir/tools/book-build.tcl . -number
-
-This produces a PDF and an HTML file next to the directory, each with a
-title page, hierarchically numbered chapters, a table of contents (with
-page numbers in PDF), and a subject index.
-
-## Common switches
-
-| Switch | Effect |
+| Was here | Now (in the bookkit repo) |
 |---|---|
-| `-number` | hierarchical chapter numbering |
-| `-pdf out.pdf` / `-html out.html` | explicit output paths |
-| `-no-toc` / `-no-index` | omit the table of contents / index |
-| `-title-page` | force a title page (else from `book.tcl`) |
-| `-depth N` | numbering / TOC depth (default 3) |
+| `book-build.tcl` | `bookkit/tools/book-build.tcl` |
+| `book-template/` | `bookkit/template/` |
+| `manual-build.tcl` | `bookkit/tools/manual-build.tcl` |
+| format / conventions | `bookkit/SPEC.md` |
+| tool reference | `bookkit/doc/TOOLS.md` |
 
-The full convention is documented in `doc/en/book.md`.
+## docir's own manual
+
+The chapters under `doc/en/book/` (and `doc/de/buch/`) are docir's own
+documentation, written in the book format. They stay here as **content** and are
+built with bookkit. With docir and bookkit checked out side by side, from the
+workspace root:
+
+    tclsh bookkit/tools/book-build.tcl docir/doc/en/book/ -number
+
+## Building a manpage manual
+
+    tclsh bookkit/tools/manual-build.tcl <dir> -pdf out.pdf -html out.html
+
+bookkit needs `docir`, `mdstack` and `pdf4tcl` reachable (sibling repos or the
+`*_HOME` environment variables). This is a build-time dependency for the
+documentation only; docir itself has no runtime dependency on bookkit.

@@ -1,7 +1,7 @@
 # Building Books
 
-A book is a directory of Markdown chapters that `book-build.tcl` typesets
-in a single run to PDF and HTML.
+A book is a directory of Markdown chapters that `book-build.tcl` (from the
+**bookkit** toolkit) typesets in a single run to PDF and HTML.
 
 ## Layout
 
@@ -25,7 +25,7 @@ order. A generator run writes a manifest from the prefixes, which can then
 be reordered freely:
 
 ```
-tclsh book-build.tcl manifest mybook/
+tclsh bookkit/tools/book-build.tcl manifest mybook/
 ```
 
 ## Numbering and stable references
@@ -42,8 +42,8 @@ therefore changes the numbers but not the anchors — cross-references to
 ## Building
 
 ```
-tclsh book-build.tcl mybook/ -number
-tclsh book-build.tcl mybook/ -pdf out.pdf -html out.html -number
+tclsh bookkit/tools/book-build.tcl mybook/ -number
+tclsh bookkit/tools/book-build.tcl mybook/ -pdf out.pdf -html out.html -number
 ```
 
 Without `-pdf`/`-html`, both formats are produced next to the book

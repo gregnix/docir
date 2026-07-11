@@ -1,0 +1,11 @@
+# Englisches Handbuch -> PDF + HTML + zusammengeführtes Markdown
+tclsh bookkit/tools/book-build.tcl docir/doc/en/book/ -number \
+    -pdf  docir/doc/en/docir-en.pdf \
+    -html docir/doc/en/docir-en.html \
+    -md   docir/doc/en/docir-en.md
+
+# Deutsches Handbuch
+tclsh bookkit/tools/book-build.tcl docir/doc/de/buch/ -number \
+    -pdf  docir/doc/de/docir-de.pdf \
+    -html docir/doc/de/docir-de.html \
+    -md   docir/doc/de/docir-de.md
