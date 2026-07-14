@@ -990,6 +990,60 @@ test "spec.pdf.math.rendered_not_raw" {
 
 }  ;# end canRender block for math
 
+# ============================================================
+# Code blocks: wrapping (since docir::pdf 0.5)
+# ============================================================
+
+if {$canRender} {
+
+test "spec.pdf.code.long_line_wraps" {
+    # A long command used to be drawn as-is and ran out of the grey box and off
+    # the right edge of the page ("no wrap -- the author formatted it").
+    set tmpFile [file join $::TMPBASE test-pdf-codewrap.pdf]
+    set pdf [::pdf4tcl::new %AUTO% -paper a4 -file $tmpFile]
+    ::docir::pdf::_initState $pdf
+    ::docir::pdf::_setFont 11 mono
+
+    set long "TCLKIT=tclkit-Linux64-arm ./Build-Linux.sh arm 64 Setup/Tcl_Basic.bawt update --rootdir /tmp/build"
+    set wrapped [::docir::pdf::_wrapCodeLines [list $long] 300]
+    assert [expr {[llength $wrapped] > 1}] "lange Zeile wird umgebrochen"
+    foreach l $wrapped {
+        assert [expr {[$pdf getStringWidth $l] <= 300}] "keine Zeile ist breiter als die Box"
+    }
+    assert [expr {[string range [lindex $wrapped 1] 0 3] eq "    "}] \
+        "Folgezeile hat haengenden Einzug"
+
+    $pdf destroy
+    catch {file delete $tmpFile}
+}
+
+test "spec.pdf.code.short_line_untouched" {
+    set tmpFile [file join $::TMPBASE test-pdf-codewrap2.pdf]
+    set pdf [::pdf4tcl::new %AUTO% -paper a4 -file $tmpFile]
+    ::docir::pdf::_initState $pdf
+    ::docir::pdf::_setFont 11 mono
+    set r [::docir::pdf::_wrapCodeLines [list "make install"] 300]
+    $pdf destroy
+    catch {file delete $tmpFile}
+    assertEqual [list "make install"] $r "kurze Zeile bleibt unveraendert"
+}
+
+test "spec.pdf.code.unbreakable_token_hard_break" {
+    # A single token longer than the box must still be broken -- the
+    # alternative is running off the page.
+    set tmpFile [file join $::TMPBASE test-pdf-codewrap3.pdf]
+    set pdf [::pdf4tcl::new %AUTO% -paper a4 -file $tmpFile]
+    ::docir::pdf::_initState $pdf
+    ::docir::pdf::_setFont 11 mono
+    set token [string repeat "x" 200]
+    set wrapped [::docir::pdf::_wrapCodeLines [list $token] 200]
+    $pdf destroy
+    catch {file delete $tmpFile}
+    assert [expr {[llength $wrapped] > 1}] "ein zu langes Token wird hart gebrochen"
+}
+
+}  ;# end canRender block for code wrap
+
 }  ;# end pdf4tcl-availability block
 
 test::runAll

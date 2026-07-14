@@ -943,4 +943,26 @@ test "html.diagram.architecture_beta_falls_back_on_error" {
 }
 
 
+# ============================================================
+# Raw HTML blocks (mdstack::parser 0.8.0 -> pre with meta kind=html)
+# ============================================================
+
+test "spec.html.raw_block_passthrough" {
+    set ir [list [dict create type pre \
+        content [list [dict create type text text "<div class=\"note\">\n  <b>x</b>\n</div>"]] \
+        meta [dict create kind html]]]
+    set html [::docir::html::render $ir]
+    assert {[string first "<div class=\"note\">" $html] >= 0} "HTML kommt roh durch"
+    assert {[string first "&lt;div" $html] < 0} "nicht escaped"
+    assert {[string first "<pre" $html] < 0} "nicht in <pre> verpackt"
+}
+
+test "spec.html.raw_block_not_confused_with_code" {
+    set ir [list [dict create type pre \
+        content [list [dict create type text text "<div>x</div>"]] \
+        meta [dict create kind code language html]]]
+    set html [::docir::html::render $ir]
+    assert {[string first "&lt;div" $html] >= 0} "ein Code-Block MIT Sprache html bleibt escaped"
+}
+
 test::runAll

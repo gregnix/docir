@@ -11,6 +11,9 @@
 #         paper          a4|letter|...      (default a4)
 #         margin         Int (pt)           (default 56 ≈ 20mm)
 #         fontSize       Int                (default 11)
+#         codeWrap       0|1                (default 1; wrap long code lines to
+#                                            the code box instead of letting them
+#                                            run off the page)
 #         title          String             (default: from DocIR)
 #         author         String             (default "")
 #         subtitle       String             (default ""; title page only)
@@ -49,7 +52,7 @@
 #   - with -generateIndex 1: the index block is rendered AFTER the main body
 #       index entries have page numbers (which are known by then)
 
-package provide docir::pdf 0.4
+package provide docir::pdf 0.5
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -601,7 +604,6 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize {allowTallMath 0}} 
 
     # 2. Akkumulieren
     $pdf setFont $fontSize [::pdf4tcllib::fonts::fontSans]
-    set spaceW [$pdf getStringWidth " "]
     set lines {}
     set curLine {}
     set curWidth 0.0
@@ -616,13 +618,24 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize {allowTallMath 0}} 
         }
         if {$style eq "math"} {
             set wordW $mathW
+            # the separating space becomes its own normal-font segment
+            $pdf setFont $fontSize [_styleToFont normal]
+            set sepW [$pdf getStringWidth " "]
         } else {
             set fontName [_styleToFont $style]
             $pdf setFont $fontSize $fontName
             set wordW [$pdf getStringWidth $w]
+            # Space width IN THIS WORD'S FONT. The separating space is drawn as
+            # a prefix of this word, hence in its font -- and a monospace space
+            # is wider than a proportional one. Measuring it once, in the body
+            # font, undercounted every space inside an inline code span: a line
+            # with `tclkit Bawt.tcl <opts> <action>` in it drifted ~16pt past
+            # the right margin, because six mono spaces are wider than six sans
+            # spaces.
+            set sepW [$pdf getStringWidth " "]
         }
         set needSpace [expr {[llength $curLine] > 0 && $spaced}]
-        set extraW [expr {$needSpace ? $spaceW : 0.0}]
+        set extraW [expr {$needSpace ? $sepW : 0.0}]
 
         if {$curWidth + $extraW + $wordW > $maxW && [llength $curLine] > 0} {
             lappend lines $curLine
@@ -1289,6 +1302,61 @@ proc docir::pdf::_renderFlowBlock {txt lang} {
     }
 }
 
+# Wrap code lines to the width of the code box.
+#
+# Until now a code line was drawn as it came ("no wrap -- the author formatted
+# it"), so a long command ran straight out of the grey box and off the right
+# edge of the page. Wrapping is soft: the text is never altered, only broken.
+#
+# The code font is MONOSPACE, so the width of a character is a constant -- one
+# measurement is enough and the wrap point can be computed in characters
+# instead of measuring every prefix. The break prefers the last space that
+# still fits (a long command line breaks between arguments); a single token
+# longer than the box is broken hard, because the alternative is running off
+# the page. Continuation lines carry a hanging indent so a wrapped line is
+# visibly a continuation and not a new command.
+proc docir::pdf::_wrapCodeLines {lines maxW {hang "    "}} {
+    variable st
+    set pdf [dict get $st pdf]
+
+    set charW [$pdf getStringWidth "0"]
+    if {$charW <= 0} { return $lines }
+    set maxChars [expr {int($maxW / $charW)}]
+    if {$maxChars < 12} { set maxChars 12 }
+
+    set hangLen [string length $hang]
+    set out {}
+    foreach line $lines {
+        if {[string length $line] <= $maxChars} {
+            lappend out $line
+            continue
+        }
+        set rest  $line
+        set first 1
+        while {1} {
+            set width [expr {$first ? $maxChars : $maxChars - $hangLen}]
+            if {[string length $rest] <= $width} {
+                lappend out [expr {$first ? $rest : "$hang$rest"}]
+                break
+            }
+            # last space that still fits; ignore it when it sits so far left
+            # that the line would be nearly empty (then break hard).
+            set cut [string last " " [string range $rest 0 [expr {$width - 1}]]]
+            if {$cut < [expr {$width / 4}]} {
+                set piece [string range $rest 0 [expr {$width - 1}]]
+                set rest  [string range $rest $width end]
+            } else {
+                set piece [string range $rest 0 [expr {$cut - 1}]]
+                set rest  [string range $rest [expr {$cut + 1}] end]
+            }
+            lappend out [expr {$first ? $piece : "$hang$piece"}]
+            set first 0
+            if {$rest eq ""} { break }
+        }
+    }
+    return $out
+}
+
 proc docir::pdf::_renderPre {node} {
     variable opts
     variable st
@@ -1384,6 +1452,13 @@ proc docir::pdf::_renderPre {node} {
     set x [dict get $st margin]
     set padding 4
 
+    # Wrap to the box: 4pt inner padding on each side. Must happen BEFORE the
+    # box height is computed -- otherwise the grey rectangle is too short for
+    # the lines it has to hold.
+    if {[_dictDef $opts codeWrap 1]} {
+        set lines [_wrapCodeLines $lines [expr {[dict get $st contentW] - 2 * 4 - 2}]]
+    }
+
     set yTop [dict get $st y]
     set rectH [expr {[llength $lines] * $lh + 2 * $padding}]
     _ensureSpace $rectH
@@ -1397,7 +1472,7 @@ proc docir::pdf::_renderPre {node} {
 
     _advanceY $padding
     foreach line $lines {
-        # in pre: no wrap — should already be formatted correctly by the author
+        # already wrapped to the box above (option codeWrap, default on)
         set y [expr {[dict get $st y] + $fontSize}]
         $pdf text [::pdf4tcllib::unicode::sanitize $line -mono 1] -x [expr {$x + 4}] -y $y
         _advanceY $lh

@@ -81,6 +81,19 @@ proc docir::md::_mapBlock {block} {
         image        { return [list [docir::md::_mapImageBlock $block]] }
         footnote_section { return [docir::md::_mapFootnoteSection $block] }
         footnote_def { return {} }
+        html_block   {
+            # Raw block HTML (CommonMark). Same trick as math_block: it rides
+            # in a pre node with a kind in meta, so no new core block type and
+            # no schema bump is needed. The HTML sink passes it through
+            # verbatim, the Markdown sink writes it back out unfenced, and
+            # every other sink shows the source in a code block -- honest, and
+            # far better than the silent drop before mdstack::parser 0.8.0.
+            set txt [dict get $block content]
+            return [list [dict create \
+                type pre \
+                content [list [dict create type text text $txt]] \
+                meta [dict create kind html]]]
+        }
         math_block   {
             # Mark display math as a pre block with kind=math.
             # HTML-Sink kann es als <div class="math display"> rendern,

@@ -1,9 +1,42 @@
 # DocIR — Changelog
 
-## Unreleased — docir::rendererTk 0.4
+## Unreleased — raw HTML blocks (mdSource, html, md)
 
-`lib/tm/docir/rendererTk-0.4.tm` (was `rendererTk-0.2.tm`; 0.3 was an
-intermediate step and is folded in here).
+mdstack::parser 0.8.0 keeps raw block HTML instead of dropping it. docir carries
+it the same way display math already travels: **a `pre` node with a `kind` in
+meta** — no new core block type, no schema bump.
+
+- `mdSource`: `html_block` -> `pre` with `meta {kind html}`, content verbatim.
+- `docir::html`: `kind html` is passed through **verbatim** — not escaped, not
+  wrapped in `<pre>`. This is the one place in the sink where the author's
+  markup reaches the page as-is (exactly what CommonMark prescribes).
+- `docir::md`: written back out unfenced, so a Markdown round trip returns the
+  original block instead of a code listing.
+- Every other sink (pdf, odt, txt, roff, rendererTk) shows the HTML **source**
+  in a code block. They have no HTML engine; showing the source is honest and
+  loses nothing.
+- A code block that merely has `language html` stays escaped — only
+  `kind html` is raw.
+
+### Fixed — a block quote inside a list item was flattened to a paragraph
+
+`_renderListItemInside` rendered **every** paragraph of an item itself and
+ignored its class. DocIR models a block quote as a paragraph with
+`meta class=blockquote`, so inside a list item the `<blockquote>` was dropped
+and a bare `<p>` remained. Only a *plain* paragraph is rendered inline now;
+anything carrying a class goes through `_renderBlock`, which knows how to wrap
+it. (CommonMark list items: 16/48 -> 21/48.)
+
+## Unreleased — docir::rendererTk 0.5
+
+`lib/tm/docir/rendererTk-0.5.tm` (was `rendererTk-0.2.tm`; 0.3 and 0.4 were
+intermediate steps and are folded in here).
+
+**Delete any `rendererTk-0.4.tm` you may already have.** An earlier 0.4 carried
+the canvas path but not the `mathBlock` tag its fallback uses, so the fallback
+died with `tag "mathBlock" isn't defined`. Two different files under one version
+number is a trap — hence the bump: no stale copy can shadow this one, and the
+version alone now tells you which code you have.
 
 ### Added — display math is typeset in the viewer
 

@@ -575,6 +575,19 @@ proc docir::html::_renderPre {node level} {
     # etc. — that is the convention for code blocks). But: if the
     # content consists of real formatted inlines, we keep the
     # Tags. Fuer "kind=code" purer Text.
+    if {$kind eq "html"} {
+        # Raw HTML block: passed through VERBATIM, exactly as CommonMark
+        # prescribes -- not escaped, not wrapped in <pre>. This is the one
+        # place in the sink where the author's markup reaches the page as-is.
+        set content [dict get $node content]
+        if {[string is list $content] && [llength $content] > 0 \
+                && [catch {dict get [lindex $content 0] type}] == 0} {
+            set txt [_inlinesToText $content]
+        } else {
+            set txt $content
+        }
+        return "$txt\n"
+    }
     if {$kind eq "math"} {
         # Display-Math: <div class="math display">$$...$$</div>
         # Browser laedt KaTeX/MathJax separat.
@@ -686,10 +699,17 @@ proc docir::html::_renderListItemInside {item parentTag itemTag level {loose 0}}
     }
 
     # Multi-paragraph (loose) item: render each paragraph as its own <p>.
+    #
+    # Only a PLAIN paragraph is rendered here. A paragraph carrying a class --
+    # a blockquote, which DocIR models as paragraph + meta class=blockquote --
+    # goes through _renderBlock, which knows how to wrap it. Rendering it here
+    # dropped the <blockquote> and left a bare <p> inside the <li>.
     if {[dict exists $item blocks]} {
         set body ""
         foreach b [dict get $item blocks] {
-            if {[dict get $b type] eq "paragraph"} {
+            set bmeta  [expr {[dict exists $b meta] ? [dict get $b meta] : {}}]
+            set bclass [_dictDef $bmeta class ""]
+            if {[dict get $b type] eq "paragraph" && $bclass eq ""} {
                 if {$loose} {
                     append body "$ind  <p>[_renderInlines [dict get $b content]]</p>\n"
                 } else {

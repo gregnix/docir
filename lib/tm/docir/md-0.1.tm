@@ -203,6 +203,12 @@ proc docir::md::_renderPre {node} {
         set txt $content
     }
 
+    # Raw HTML block: goes back out as it came in -- no fence, no escaping.
+    # Fencing it would turn markup into a code listing on the round trip.
+    if {$kind eq "html"} {
+        return "$txt\n\n"
+    }
+
     # Math-Display-Block als $$...$$ ausgeben
     if {$kind eq "math"} {
         return "\$\$\n$txt\n\$\$\n\n"

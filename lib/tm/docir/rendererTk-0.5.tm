@@ -1,10 +1,13 @@
-# docir-renderer-tk-0.2.tm – DocIR → Tk Text Widget Renderer
+# docir-rendererTk-0.5.tm – DocIR → Tk Text Widget Renderer
 #
-# 0.4: math_block is TYPESET on an embedded canvas via the backend-neutral
-#      pdf4tcllib::math engine (canvasBackend, since pdf4tcllib 0.5); falls
-#      back to the centred source when the engine or the construct is missing.
-# 0.3: math_block (display math) is rendered as its centred source instead of
-#      being silently dropped by the default branch.
+# 0.5: math_block TYPESET on an embedded canvas via the backend-neutral
+#      pdf4tcllib::math engine (canvasBackend, since pdf4tcllib 0.5), with the
+#      centred-source fallback AND the mathBlock tag it needs. Supersedes an
+#      earlier 0.4 that carried the canvas path but not the tag: its fallback
+#      died with 'tag "mathBlock" isn't defined'. Same version number, different
+#      file -- hence the bump, so no stale copy can shadow this one.
+# 0.3: math_block (display math) rendered as its centred source instead of being
+#      silently dropped by the default branch.
 # 0.2 (2026-06-20): math inline ($...$ / $$...$$); blockquote styling (indent +
 #   background, inline styles preserved); deflist hanging indent (multi-def);
 #   multi-paragraph list items from `blocks` + ul/ol hanging indent (bulletCont);
@@ -18,7 +21,7 @@
 # Namespace: ::docir::renderer::tk
 # Tcl/Tk 8.6+ / 9.x kompatibel
 
-package provide docir::rendererTk 0.4
+package provide docir::rendererTk 0.5
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
