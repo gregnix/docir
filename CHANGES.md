@@ -1,5 +1,73 @@
 # DocIR — Changelog
 
+## Unreleased — docir::rendererTk 0.4
+
+`lib/tm/docir/rendererTk-0.4.tm` (was `rendererTk-0.2.tm`; 0.3 was an
+intermediate step and is folded in here).
+
+### Added — display math is typeset in the viewer
+
+- `math_block` is drawn on an **embedded Tk canvas** through the
+  backend-neutral formula engine (`pdf4tcllib::math::canvasBackend`,
+  `measureLatexOn` / `renderLatexOn` — pdf4tcllib 0.5). The same measure/draw
+  code that sets display math in the PDF now sets it in the viewer; only the
+  three drawing primitives (`width`, `text`, `line`) differ.
+- Requires **pdf4tcllib 0.5**. Without it (or when the construct is outside the
+  LaTeX subset) the renderer falls back to the centred `$$ ... $$` source in the
+  `mathBlock` tag, and reports the failure through `docir::diag` — it is never
+  silently dropped.
+- Before 0.3, `math_block` fell through the default branch of the block
+  dispatcher ("unknown types: ignore") and vanished from the viewer without a
+  trace.
+- Inline `$...$` still shows as styled source: the Tk text widget aligns an
+  embedded window to the baseline by its *bottom* edge, so a formula with depth
+  (subscripts) cannot be placed on the baseline without clipping. Display math
+  has no such problem — it owns its line.
+
+
+- **`math_block` is rendered instead of dropped.** Display math fell through to
+  the default branch of the block dispatcher ("unknown types: ignore") and
+  vanished from the viewer without a trace. It is now shown as its centred
+  source (`$$ ... $$`) in a new `mathBlock` tag — same colour as inline math,
+  centred, with space above and below.
+- The Tk renderer still has no math engine of its own: `renderLatex` draws on
+  pdf4tcl primitives and is PDF-only. Showing the source is the honest
+  intermediate step; typesetting it needs the canvas port of the measure/draw
+  layer.
+- Accepts both shapes of `math_block` content: an inline list or a plain string.
+  An empty formula produces nothing (no stray blank block).
+
+## Unreleased — docir::pdf 0.4
+
+`lib/tm/docir/pdf-0.4.tm` (was `pdf-0.3.tm`).
+
+### Added — inline math is typeset, not quoted
+
+- Inline `$...$` used to be dumped as a monospace `code` segment, delimiters and
+  all: `$E = mc^2$` on the page. It is now a segment of its own, measured with
+  `pdf4tcllib::math::measureLatex` and drawn with `renderLatex` on the text
+  baseline — the same engine that already did display math.
+- The math segment is **atomic**: `_wrapStyledSegments` never splits it on
+  spaces and never merges it with a neighbour, so a formula cannot be broken
+  across a line or absorbed into a text run. Its width comes from the measurer,
+  so the line budget is exact. A separating space becomes a segment of its own
+  rather than a prefix — a space must not end up inside the LaTeX.
+- **Lines grow to fit a formula** (`_lineMathBox`): a subscript dips below the
+  baseline, a fraction reaches above it. Only the line carrying the formula
+  grows, and only as far as needed; every other line keeps the ordinary box.
+- Fallbacks are honest, never silent: a formula that cannot be measured (no
+  math module, construct outside the LaTeX subset), or one that is too tall for
+  a fixed line box (a heading), falls back to the raw `$...$` in monospace and
+  warns once via `_warnOnce`.
+
+### Notes
+
+- Display math inside an inline run (rare — `$$...$$` normally arrives as a
+  `math_block`) keeps the old monospace form.
+- Headings pass `allowTallMath 0`: a fraction in a heading stays raw text
+  rather than colliding with the line above.
+
+
 ## 2026-07-05 — Nested blocks inside list items (all renderers)
 
 ### Changed — mdSource, html, pdf, roff, odt

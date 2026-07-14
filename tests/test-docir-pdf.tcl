@@ -891,6 +891,105 @@ test "spec.pdf.index.multiple_occurrences" {
     catch {file delete $out}
 }
 
+# ============================================================
+# Inline math ($...$) -- since docir::pdf 0.4
+# ============================================================
+
+test "spec.pdf.math.segment_is_atomic" {
+    # An inline math node becomes a segment of its own: style "math", the raw
+    # LaTeX as text, no $ delimiters -- pdf4tcllib::math draws it.
+    set inlines [list \
+        [dict create type text text "Formel "] \
+        [dict create type math text "E = mc^2" display 0] \
+        [dict create type text text " im Satz."]]
+    set segs [::docir::pdf::_inlinesToSegments $inlines normal]
+    set mathSegs {}
+    foreach seg $segs {
+        if {[lindex $seg 1] eq "math"} { lappend mathSegs $seg }
+    }
+    assertEqual 1 [llength $mathSegs] "genau ein math-Segment"
+    assertEqual "E = mc^2" [lindex [lindex $mathSegs 0] 0] "raw LaTeX, keine \$-Delimiter"
+}
+
+test "spec.pdf.math.display_inline_stays_text" {
+    # Display math inside an inline run keeps the old monospace form.
+    set inlines [list [dict create type math text "a+b" display 1]]
+    set segs [::docir::pdf::_inlinesToSegments $inlines normal]
+    assertEqual "code" [lindex [lindex $segs 0] 1] "display math bleibt code-Segment"
+}
+
+if {$canRender} {
+
+test "spec.pdf.math.metrics_and_fit" {
+    # measureLatex through the docir helper: a formula has a width, and the
+    # fit guard rejects a tall one in a fixed line box but allows it where the
+    # line can grow.
+    set tmpFile [file join $::TMPBASE test-pdf-math-metrics.pdf]
+    set pdf [::pdf4tcl::new %AUTO% -paper a4 -file $tmpFile]
+    ::docir::pdf::_initState $pdf
+
+    set flat [::docir::pdf::_mathMetrics "E = mc^2" 11]
+    assertEqual 3 [llength $flat] "Metrik ist {w h d}"
+    assert [expr {[lindex $flat 0] > 0}] "Formel hat Breite"
+    assert [::docir::pdf::_mathFitsLine $flat 11 0] "flache Formel passt in die feste Zeile"
+
+    set frac [::docir::pdf::_mathMetrics "\\frac{a}{b}" 11]
+    assert [expr {![::docir::pdf::_mathFitsLine $frac 11 0]}] \
+        "Bruch passt NICHT in die feste Zeile (Heading)"
+    assert [::docir::pdf::_mathFitsLine $frac 11 1] \
+        "Bruch passt, wenn die Zeile wachsen darf (Absatz)"
+
+    set bogus [::docir::pdf::_mathMetrics "" 11]
+    assert [expr {![::docir::pdf::_mathFitsLine $bogus 11 1]}] "leere Formel faellt zurueck"
+
+    $pdf destroy
+    catch {file delete $tmpFile}
+}
+
+test "spec.pdf.math.line_box_grows" {
+    # A line carrying a fraction gets more room than an ordinary line.
+    set tmpFile [file join $::TMPBASE test-pdf-math-box.pdf]
+    set pdf [::pdf4tcl::new %AUTO% -paper a4 -file $tmpFile]
+    ::docir::pdf::_initState $pdf
+
+    lassign [::docir::pdf::_lineMathBox [list [list "Text" normal "" ""]] 11] a1 b1
+    lassign [::docir::pdf::_lineMathBox [list [list "\\frac{a}{b}" math "" ""]] 11] a2 b2
+    assert [expr {$a2 >= $a1 && $b2 > $b1}] "Bruch-Zeile ist hoeher als eine Textzeile"
+
+    $pdf destroy
+    catch {file delete $tmpFile}
+}
+
+test "spec.pdf.math.rendered_not_raw" {
+    # End to end: the $ delimiters must not survive into the PDF text.
+    set ir [list [dict create type paragraph meta {} content [list \
+        [dict create type text text "Die Formel "] \
+        [dict create type math text "E = mc^2" display 0] \
+        [dict create type text text " steht im Satz."]]]]
+    set tmpFile [file join $::TMPBASE test-pdf-math.pdf]
+    set rc [catch {::docir::pdf::render $ir $tmpFile} err]
+    if {$rc} { puts stderr "PDF render failed: $err" }
+    assert [expr {$rc == 0}] "PDF mit Inline-Math rendert ohne Crash"
+    assert [file exists $tmpFile] "PDF-Datei wurde erzeugt"
+
+    if {[auto_execok pdftotext] ne ""} {
+        set txtFile [file join $::TMPBASE test-pdf-math.txt]
+        if {![catch {exec pdftotext $tmpFile $txtFile}]} {
+            set fh [open $txtFile r]
+            set txt [read $fh]
+            close $fh
+            assert [expr {[string first "Die Formel" $txt] >= 0}] "Text drumherum steht da"
+            assert [expr {[string first "\$" $txt] < 0}] \
+                "keine \$-Delimiter mehr im PDF-Text (Formel ist gesetzt)"
+            assert [expr {[string first "mc" $txt] >= 0}] "Formelinhalt ist da"
+            catch {file delete $txtFile}
+        }
+    }
+    catch {file delete $tmpFile}
+}
+
+}  ;# end canRender block for math
+
 }  ;# end pdf4tcl-availability block
 
 test::runAll

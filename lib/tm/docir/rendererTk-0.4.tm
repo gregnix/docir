@@ -1,5 +1,10 @@
 # docir-renderer-tk-0.2.tm – DocIR → Tk Text Widget Renderer
 #
+# 0.4: math_block is TYPESET on an embedded canvas via the backend-neutral
+#      pdf4tcllib::math engine (canvasBackend, since pdf4tcllib 0.5); falls
+#      back to the centred source when the engine or the construct is missing.
+# 0.3: math_block (display math) is rendered as its centred source instead of
+#      being silently dropped by the default branch.
 # 0.2 (2026-06-20): math inline ($...$ / $$...$$); blockquote styling (indent +
 #   background, inline styles preserved); deflist hanging indent (multi-def);
 #   multi-paragraph list items from `blocks` + ul/ol hanging indent (bulletCont);
@@ -13,7 +18,7 @@
 # Namespace: ::docir::renderer::tk
 # Tcl/Tk 8.6+ / 9.x kompatibel
 
-package provide docir::rendererTk 0.2
+package provide docir::rendererTk 0.4
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -98,6 +103,45 @@ proc docir::renderer::tk::render {textWidget ir {options {}}} {
 
 # _renderBlocks – iterates over blocks without resetting the textWidget.
 # Called internally by render(), plus recursively for div containers.
+# Typeset a formula onto an embedded canvas. Returns 1 on success, 0 to fall
+# back to the plain source text.
+#
+# The formula engine (pdf4tcllib::math) is backend-neutral since pdf4tcllib
+# 0.5: the same measure/draw code that sets display math in the PDF draws here,
+# through a canvas backend. Before that it spoke pdf4tcl directly and the
+# viewer had no way to typeset anything.
+proc docir::renderer::tk::_insertMathCanvas {textWidget latex fontSize fontFamily fg bg} {
+    variable mathCanvasCounter
+    if {![info exists mathCanvasCounter]} { set mathCanvasCounter 0 }
+    if {[catch {package require pdf4tcllib 0.5}]} { return 0 }
+    if {![llength [info commands ::pdf4tcllib::math::canvasBackend]]} { return 0 }
+
+    set size [expr {$fontSize + 2}]
+    set c $textWidget.mathcv[incr mathCanvasCounter]
+    catch {destroy $c}
+    canvas $c -highlightthickness 0 -borderwidth 0 -background $bg
+    try {
+        set be [::pdf4tcllib::math::canvasBackend $c \
+            -family $fontFamily -fill $fg -tags docirMath]
+        lassign [::pdf4tcllib::math::measureLatexOn $be $latex -size $size] w h d
+        if {$w <= 0} { error "empty formula" }
+        set pad 8
+        $c configure \
+            -width  [expr {int(ceil($w)) + 2 * $pad}] \
+            -height [expr {int(ceil($h + $d)) + 2 * $pad}]
+        ::pdf4tcllib::math::renderLatexOn $be $pad [expr {$pad + $h}] \
+            $latex -size $size
+    } on error {m o} {
+        destroy $c
+        catch {docir::diag::report [dict get $o -errorcode] "math: $m"}
+        return 0
+    }
+    $textWidget insert end "\n" normal
+    $textWidget window create end -window $c -align center
+    $textWidget insert end "\n\n" normal
+    return 1
+}
+
 proc docir::renderer::tk::_insertFlowImage {textWidget txt lang fontfile} {
     # Render a tuflow flow-diagram to a Tk photo and embed it. Returns 1 on
     # success, 0 to fall back to plain pre text. A failure is reported through
@@ -530,6 +574,42 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                 }
             }
 
+            math_block {
+                # Display math. This renderer has no math engine of its own --
+                # pdf4tcllib::math::renderLatex draws on pdf4tcl primitives, so
+                # it is PDF-only. The formula is therefore shown as its source,
+                # centred, in the math style. Until 0.3 math_block fell through
+                # to the default branch and was dropped without a trace: the
+                # formula simply vanished from the viewer.
+                set txt ""
+                if {[string is list $content] && [llength $content] > 0 \
+                        && [catch {dict get [lindex $content 0] type}] == 0} {
+                    foreach inline $content {
+                        if {[dict exists $inline text]} {
+                            append txt [dict get $inline text]
+                        }
+                    }
+                } else {
+                    set txt $content
+                }
+                set txt [string trim [regsub -all {\s+} $txt " "]]
+                if {$txt ne ""} {
+                    set _fs [expr {[dict exists $options fontSize] \
+                        ? [dict get $options fontSize] : 12}]
+                    set _ff [_dictDef $options fontFamily "TkDefaultFont"]
+                    catch {set _ff [font actual $_ff -family]}
+                    set _fg [$textWidget tag cget mathBlock -foreground]
+                    set _bg [$textWidget cget -background]
+                    if {![_insertMathCanvas $textWidget $txt $_fs $_ff $_fg $_bg]} {
+                        # No math engine, or a construct it does not know:
+                        # show the source rather than nothing.
+                        $textWidget insert end "\n" normal
+                        $textWidget insert end "\$\$ $txt \$\$\n" mathBlock
+                        $textWidget insert end "\n" normal
+                    }
+                }
+            }
+
             default {
                 # Schema-only Marker (z.B. doc_meta) silent skippen.
                 if {[::docir::isSchemaOnly $type]} {
@@ -769,6 +849,11 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
     # LaTeX), in the mono family + italic so it reads as a formula.
     $w tag configure math      -font [list $monoFamily $fontSize italic] \
         -foreground [_dictDef $colors mathFg [expr {$darkMode ? "#c586c0" : "#6f42c1"}]]
+    # Display math: same colour, but set apart -- centred, with air above and
+    # below, so it reads as a block rather than as a stray line of text.
+    $w tag configure mathBlock -font [list $monoFamily $fontSize italic] \
+        -foreground [_dictDef $colors mathFg [expr {$darkMode ? "#c586c0" : "#6f42c1"}]] \
+        -justify center -spacing1 6 -spacing3 6
 
     # Footnote-Reference: hochgestellt + kleiner
     set fnSize [expr {max(8, $fontSize - 3)}]

@@ -49,7 +49,7 @@
 #   - with -generateIndex 1: the index block is rendered AFTER the main body
 #       index entries have page numbers (which are known by then)
 
-package provide docir::pdf 0.3
+package provide docir::pdf 0.4
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -452,14 +452,21 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                 lappend segs [list "\[$marker\]" $parentStyle ""]
             }
             math {
-                # Inline-Math: $...$ als monospace, raw LaTeX
-                # (no PDF-LaTeX rendering without an external engine).
-                set txt [_dictDef $inline text ""]
+                # Inline math becomes a segment of its own, carrying the raw
+                # LaTeX. pdf4tcllib::math measures and draws it; the segment is
+                # atomic -- _wrapStyledSegments never splits it on spaces, and
+                # it never merges with a neighbouring segment.
+                #
+                # Display math inside an inline run (rare -- $$...$$ normally
+                # arrives as a math_block) keeps the old monospace form.
+                set txt [string trim [regsub -all {\s+} [_dictDef $inline text ""] " "]]
                 set disp [_dictDef $inline display 0]
-                if {$disp} {
+                if {$txt eq ""} {
+                    # nothing to draw
+                } elseif {$disp} {
                     lappend segs [list "\$\$${txt}\$\$" code ""]
                 } else {
-                    lappend segs [list "\$${txt}\$" code ""]
+                    lappend segs [list $txt math "" ""]
                 }
             }
             default {
@@ -473,7 +480,66 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
 }
 
 # Wraps styled segments into lines with real font width via getStringWidth.
-proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
+# Font used for math. Falls back to Helvetica when no TTF is registered.
+proc docir::pdf::_mathFont {} {
+    if {[llength [info commands ::pdf4tcllib::fonts::fontSans]]} {
+        return [::pdf4tcllib::fonts::fontSans]
+    }
+    return Helvetica
+}
+
+# {width heightAbove depthBelow} of a formula, or {} when it cannot be
+# measured -- no math module, or a construct the LaTeX subset does not know.
+proc docir::pdf::_mathMetrics {latex fontSize} {
+    variable st
+    if {![llength [info commands ::pdf4tcllib::math::measureLatex]]} { return {} }
+    set pdf [dict get $st pdf]
+    if {[catch {
+        ::pdf4tcllib::math::measureLatex $pdf $latex -size $fontSize \
+            -font [_mathFont]
+    } m]} {
+        _warnOnce "math-inline" "inline math not measurable, using raw text: $m"
+        return {}
+    }
+    if {[llength $m] != 3} { return {} }
+    return $m
+}
+
+# May this formula be set inline?
+#
+# Callers that can grow a single line to fit the formula (the paragraph
+# renderer does: see _lineMathBox) pass allowTall 1 and only reject the truly
+# absurd. Callers with a fixed line box (headings) pass 0: a formula taller
+# than the line would collide with the line above, so it falls back to the
+# monospace $...$ text -- the content stays visible, the page stays readable.
+proc docir::pdf::_mathFitsLine {metrics fontSize {allowTall 0}} {
+    if {[llength $metrics] != 3} { return 0 }
+    lassign $metrics w h d
+    if {$w <= 0} { return 0 }
+    set limit [_lineHeight $fontSize]
+    if {$allowTall} { set limit [expr {3.0 * $limit}] }
+    return [expr {($h + $d) <= $limit}]
+}
+
+# Height a wrapped line needs: {above below}, measured from the text baseline.
+# Without math this is the ordinary box (fontSize above, the rest of the line
+# height below). A math segment that reaches higher or dips deeper grows the
+# line -- only that one line, and only as far as the formula needs.
+proc docir::pdf::_lineMathBox {lineSegs fontSize} {
+    set above [expr {double($fontSize)}]
+    set below [expr {[_lineHeight $fontSize] - double($fontSize)}]
+    foreach seg $lineSegs {
+        if {[lindex $seg 1] ne "math"} { continue }
+        set metrics [_mathMetrics [lindex $seg 0] $fontSize]
+        if {[llength $metrics] != 3} { continue }
+        lassign $metrics w h d
+        if {$h > $above} { set above $h }
+        if {$d > $below} { set below $d }
+    }
+    return [list $above $below]
+}
+
+proc docir::pdf::_wrapStyledSegments {segments maxW fontSize {allowTallMath 0}} {
     variable st
     set pdf [dict get $st pdf]
 
@@ -491,6 +557,19 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
             continue
         }
         if {$text eq ""} continue
+        if {$style eq "math"} {
+            # Atomic: one word, width from the math measurer (6th field).
+            set metrics [_mathMetrics $text $fontSize]
+            if {[_mathFitsLine $metrics $fontSize $allowTallMath]} {
+                lappend words [list $text math $prevTrailing "" "" \
+                    [lindex $metrics 0]]
+                set prevTrailing 0
+                continue
+            }
+            # Not renderable or too tall -> raw $...$ in monospace.
+            set style code
+            set text "\$${text}\$"
+        }
         set hasLeading  [expr {[string index $text 0] eq " "}]
         set hasTrailing [expr {[string index $text end] eq " "}]
         set text [string trim $text]
@@ -528,16 +607,20 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
     set curWidth 0.0
 
     foreach word $words {
-        lassign $word w style spaced url wIdx
+        lassign $word w style spaced url wIdx mathW
         if {$style eq "break"} {
             lappend lines $curLine
             set curLine {}
             set curWidth 0.0
             continue
         }
-        set fontName [_styleToFont $style]
-        $pdf setFont $fontSize $fontName
-        set wordW [$pdf getStringWidth $w]
+        if {$style eq "math"} {
+            set wordW $mathW
+        } else {
+            set fontName [_styleToFont $style]
+            $pdf setFont $fontSize $fontName
+            set wordW [$pdf getStringWidth $w]
+        }
         set needSpace [expr {[llength $curLine] > 0 && $spaced}]
         set extraW [expr {$needSpace ? $spaceW : 0.0}]
 
@@ -545,6 +628,13 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize} {
             lappend lines $curLine
             set curLine [list [list $w $style $url $wIdx]]
             set curWidth $wordW
+        } elseif {$style eq "math"} {
+            # A math segment carries LaTeX, not display text: the separating
+            # space must not end up inside the formula. It becomes a segment of
+            # its own instead of a prefix, and math never merges with anything.
+            if {$needSpace} { lappend curLine [list " " normal "" ""] }
+            lappend curLine [list $w math $url $wIdx]
+            set curWidth [expr {$curWidth + $extraW + $wordW}]
         } else {
             set prefix [expr {$needSpace ? " " : ""}]
             if {[llength $curLine] > 0} {
@@ -589,6 +679,26 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
         set url   [lindex $seg 2]
         set idxTerm [lindex $seg 3]
         if {$text eq ""} continue
+
+        if {$style eq "math"} {
+            # Baseline math: renderLatex draws with its baseline at $y, the
+            # same baseline the surrounding text sits on. Width comes from the
+            # measurer, so it matches what _wrapStyledSegments budgeted.
+            set metrics [_mathMetrics $text $fontSize]
+            if {[llength $metrics] == 3 \
+                    && [llength [info commands ::pdf4tcllib::math::renderLatex]] \
+                    && ![catch {
+                        ::pdf4tcllib::math::renderLatex $pdf $x $y $text \
+                            -size $fontSize -font [_mathFont]
+                    } err]} {
+                set x [expr {$x + [lindex $metrics 0]}]
+                continue
+            }
+            # Last resort (measured fine, drawing failed): raw $...$ in mono.
+            _warnOnce "math-inline-draw" "inline math not drawable, using raw text"
+            set text "\$${text}\$"
+            set style code
+        }
 
         set fontName [_styleToFont $style]
         $pdf setFont $fontSize $fontName
@@ -1103,14 +1213,20 @@ proc docir::pdf::_renderParagraph {node} {
     # Per-Inline-Pipeline: Segments → Wrapped Lines → Render
     set inlines [dict get $node content]
     set segs    [_inlinesToSegments $inlines $baseStyle]
-    set lines   [_wrapStyledSegments $segs $wText $fontSize]
+    set lines   [_wrapStyledSegments $segs $wText $fontSize 1]
 
     set blockTopY [dict get $st y]
     foreach lineSegs $lines {
-        _ensureSpace $lh
-        set y [expr {[dict get $st y] + $fontSize}]
+        # A line carrying inline math gets exactly the room that formula needs
+        # (subscripts dip below the baseline, fractions reach above it); every
+        # other line keeps the ordinary box.
+        lassign [_lineMathBox $lineSegs $fontSize] above below
+        set lineH [expr {$above + $below}]
+        if {$lineH < $lh} { set lineH $lh }
+        _ensureSpace $lineH
+        set y [expr {[dict get $st y] + $above}]
         _renderStyledLine $lineSegs $y $x $fontSize
-        _advanceY $lh
+        _advanceY $lineH
     }
 
     if {$class eq "blockquote"} {
@@ -1838,10 +1954,22 @@ proc docir::pdf::_renderImageBlock {node} {
         if {[catch {
             lassign [$pdf getImageSize $imgId] imgW imgH
 
-            # Skalieren auf max contentW
+            # Scale down to fit the content width AND the usable page
+            # height. Width alone is not enough: a tall image scaled to the
+            # text width can still be higher than a whole page, and
+            # _ensureSpace can only move it to a fresh page -- not shrink
+            # it. Without the height cap such an image runs off the bottom.
+            # Images are never scaled up.
             set maxW [dict get $st contentW]
+            set maxH [expr {[dict get $st bottomY] - [dict get $st topY] - $lh}]
+            set scale 1.0
             if {$imgW > $maxW} {
                 set scale [expr {double($maxW) / $imgW}]
+            }
+            if {$maxH > 0 && $imgH * $scale > $maxH} {
+                set scale [expr {double($maxH) / $imgH}]
+            }
+            if {$scale < 1.0} {
                 set imgW [expr {int($imgW * $scale)}]
                 set imgH [expr {int($imgH * $scale)}]
             }

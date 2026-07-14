@@ -518,7 +518,7 @@ sink takes a DocIR stream and produces an output format:
 |--------------------|------------------------|-------------------------------------------------|
 | `docir::html`      | html-0.1.tm            | HTML5 with semantic classes                     |
 | `docir::md`        | md-0.1.tm              | Markdown (CommonMark + GFM)                     |
-| `docir::pdf`       | pdf-0.2.tm             | PDF via pdf4tcl, standard layout                |
+| `docir::pdf`       | pdf-0.3.tm             | PDF via pdf4tcl, standard layout                |
 | `docir::roff`      | roff-0.1.tm            | nroff/groff (man pages)                         |
 | `docir::odt`       | odt-0.4.tm             | OpenDocument Text (.odt)                         |
 | `docir::txt`       | txt-0.1.tm             | plain text (pagers, e-mail, logs)               |
@@ -557,9 +557,12 @@ The three `tile*` sinks share the same section classification
 
 | Tool | Sink | Pipeline |
 |------|------|----------|
+| `md2html` | html | mdparser → DocIR → html → HTML |
+| `md2odt` | odt | mdparser → DocIR → odt → ODT |
 | `md2tilepdf` | tilepdf | mdparser → DocIR → tilepdf → PDF |
 | `md2tilehtml` | tilehtml | mdparser → DocIR → tilehtml → HTML |
 | `md2tilemd` | tilemd | mdparser → DocIR → tilemd → Markdown |
+| `n2md` | md | nroffparser → DocIR → md → Markdown |
 
 Install: `make install-bin` (copies to `$PREFIX/bin/`).
 
