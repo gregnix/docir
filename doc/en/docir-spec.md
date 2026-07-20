@@ -466,7 +466,7 @@ canvas \- create and manipulate 'canvas' widgets
 
 ---
 
-## Renderer Support (docir/rendererTk-0.2.tm)
+## Renderer Support (docir/rendererTk-0.5.tm)
 
 | DocIR Type   | Rendering                                              |
 |--------------|--------------------------------------------------------|
@@ -518,7 +518,7 @@ sink takes a DocIR stream and produces an output format:
 |--------------------|------------------------|-------------------------------------------------|
 | `docir::html`      | html-0.1.tm            | HTML5 with semantic classes                     |
 | `docir::md`        | md-0.1.tm              | Markdown (CommonMark + GFM)                     |
-| `docir::pdf`       | pdf-0.3.tm             | PDF via pdf4tcl, standard layout                |
+| `docir::pdf`       | pdf-0.5.tm             | PDF via pdf4tcl, standard layout (display math typeset) |
 | `docir::roff`      | roff-0.1.tm            | nroff/groff (man pages)                         |
 | `docir::odt`       | odt-0.4.tm             | OpenDocument Text (.odt)                         |
 | `docir::txt`       | txt-0.1.tm             | plain text (pagers, e-mail, logs)               |
@@ -527,7 +527,7 @@ sink takes a DocIR stream and produces an output format:
 | `docir::tilepdf`   | tilepdf-0.1.tm         | 2-column tile PDF (cheatsheet style)            |
 | `docir::tilehtml`  | tilehtml-0.1.tm        | 2-column tile HTML with CSS Grid                |
 | `docir::tilemd`    | tilemd-0.1.tm          | Tile-structured Markdown (linear)               |
-| `docir::rendererTk`| rendererTk-0.2.tm      | Tk text widget (interactive viewer)             |
+| `docir::rendererTk`| rendererTk-0.5.tm      | Tk text widget (interactive viewer; display math typeset on canvas) |
 
 Plus shared helper:
 

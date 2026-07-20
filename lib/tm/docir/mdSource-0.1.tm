@@ -406,18 +406,10 @@ proc docir::md::_mapInlines {inlines} {
                 lappend result [dict create type text text $v]
             }
             strong {
-                set inner [docir::md::_mapInlines \
-                    [_dictDef $inline content {}]]
-                foreach i $inner {
-                    lappend result [dict create type strong text [_inlineText $i]]
-                }
+                lappend result {*}[docir::md::_mapWrapped strong $inline]
             }
             emphasis {
-                set inner [docir::md::_mapInlines \
-                    [_dictDef $inline content {}]]
-                foreach i $inner {
-                    lappend result [dict create type emphasis text [_inlineText $i]]
-                }
+                lappend result {*}[docir::md::_mapWrapped emphasis $inline]
             }
             code -
             inline_code {
@@ -465,11 +457,7 @@ proc docir::md::_mapInlines {inlines} {
             strike {
                 # mdparser: {type strike content {nested-inlines}}
                 # DocIR: one strike inline per text piece (analogous to strong)
-                set inner [docir::md::_mapInlines \
-                    [_dictDef $inline content {}]]
-                foreach i $inner {
-                    lappend result [dict create type strike text [_inlineText $i]]
-                }
+                lappend result {*}[docir::md::_mapWrapped strike $inline]
             }
             span {
                 # TIP-700: {type span content {nested} class? id?}
@@ -534,6 +522,28 @@ proc docir::md::_mapInlines {inlines} {
 }
 
 # Helper: Extract text from a single DocIR-Inline
+# Helper: map a wrapping inline (strong/emphasis/strike) to DocIR.
+#
+# DocIR carries the text on the node itself, so a wrapper spanning several
+# inner inlines becomes one node per piece. A softbreak inside the wrapper
+# (source text wrapped across a line) must not vanish -- it is the space
+# between the two words and is emitted as such. Without this the two pieces
+# are glued together: "one word</em><em></em><em>next word".
+#
+# Compare the `span` branch, which flattens softbreaks the same way.
+proc docir::md::_mapWrapped {type inline} {
+    set out {}
+    set inner [docir::md::_mapInlines [_dictDef $inline content {}]]
+    foreach i $inner {
+        if {[dict get $i type] eq "softbreak"} {
+            lappend out [dict create type $type text " "]
+        } else {
+            lappend out [dict create type $type text [_inlineText $i]]
+        }
+    }
+    return $out
+}
+
 proc docir::md::_inlineText {inline} {
     if {[dict exists $inline text]} { return [dict get $inline text] }
     return ""
