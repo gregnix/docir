@@ -6,7 +6,7 @@
 # nested ordered sublist. Exercises odf 0.20 defineListStyle/listStyleKind.
 
 fconfigure stdout -encoding utf-8
-package require Tcl 8.6
+package require Tcl 8.6-
 source [file join [file dirname [file normalize [info script]]] .. lib repos-path.tcl]
 package require docir::odt
 package require docir::odtSource

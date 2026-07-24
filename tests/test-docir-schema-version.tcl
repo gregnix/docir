@@ -163,4 +163,4 @@ test "checkSchemaVersion.strict.error_message_contains_supported" {
 # ============================================================
 # Test-Run Summary
 # ============================================================
-test::runAll
+exit [test::runAll]

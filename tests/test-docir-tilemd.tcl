@@ -255,5 +255,5 @@ test "tilemd.hr.false_no_separator" {
     assertEqual 0 $hrCount
 }
 
-test::runAll
+exit [test::runAll]
 file delete -force $tmpDir

@@ -965,4 +965,4 @@ test "spec.html.raw_block_not_confused_with_code" {
     assert {[string first "&lt;div" $html] >= 0} "ein Code-Block MIT Sprache html bleibt escaped"
 }
 
-test::runAll
+exit [test::runAll]

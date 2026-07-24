@@ -94,4 +94,4 @@ if {[catch {package require docir::html}] == 0} {
     }
 }
 
-test::runAll
+exit [test::runAll]

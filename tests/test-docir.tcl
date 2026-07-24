@@ -699,4 +699,4 @@ test "spec.dump.footnote_section" {
     assert [expr {[string first "fn1" $txt] >= 0}]
 }
 
-test::runAll
+exit [test::runAll]

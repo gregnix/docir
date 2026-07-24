@@ -682,4 +682,4 @@ if {![catch {package require mdstack::parser} eatErr] || \
 
 }
 
-test::runAll
+exit [test::runAll]

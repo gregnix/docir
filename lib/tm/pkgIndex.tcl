@@ -2,6 +2,7 @@
 # Bei aenderungen oder neuen Modulen einfach neu generieren.
 
 package ifneeded docir                            0.1.1    [list source -encoding utf-8 [file join $dir docir-0.1.1.tm]]
+package ifneeded docir::block                     0.1      [list source -encoding utf-8 [file join $dir docir block-0.1.tm]]
 package ifneeded docir::canvas                    0.1      [list source -encoding utf-8 [file join $dir docir canvas-0.1.tm]]
 package ifneeded docir::csdSource                 0.1      [list source -encoding utf-8 [file join $dir docir csdSource-0.1.tm]]
 package ifneeded docir::diag                      0.1      [list source -encoding utf-8 [file join $dir docir diag-0.1.tm]]

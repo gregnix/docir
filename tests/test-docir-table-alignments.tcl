@@ -119,4 +119,4 @@ test "md.alignments.unknown_value_falls_back" {
     # bogus → " --- |" (plain default)
 }
 
-test::runAll
+exit [test::runAll]

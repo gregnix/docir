@@ -188,4 +188,4 @@ array(n), dict(n)
     assert [nroffparser::validate $ast] "voller Manpage-Mix durchläuft"
 }
 
-test::runAll
+exit [exit [test::runAll]]

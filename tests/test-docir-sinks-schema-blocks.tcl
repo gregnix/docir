@@ -132,4 +132,4 @@ foreach schemaBlock $::docir::SCHEMA_ONLY_BLOCKS {
 # Run
 # ============================================================
 
-test::runAll
+exit [test::runAll]

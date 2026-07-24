@@ -84,4 +84,4 @@ test "validator.softbreak.mixed_paragraph_ok" {
         "softbreak zwischen text/strong sollte sauber validieren"
 }
 
-test::runAll
+exit [test::runAll]

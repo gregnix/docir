@@ -12,7 +12,7 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 # pdf4tcl muss verfuegbar sein
 if {[catch {package require pdf4tcl}]} {
     puts "Skipping tilepdf tests: pdf4tcl not available"
-    test::runAll
+    exit [test::runAll]
     return
 }
 package require docir::tilepdf
@@ -345,7 +345,7 @@ test "tilepdf.fontFor.maps_types_to_pdf_fonts" {
     assertEqual Courier           [::docir::tilepdf::_fontFor code]
 }
 
-test::runAll
+exit [test::runAll]
 
 # Cleanup nach allen Tests
 file delete -force $tmpDir

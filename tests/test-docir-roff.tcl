@@ -458,4 +458,4 @@ test "spec.cross.all_sinks_rendered_without_crash" {
     ::test::assertContains $svgN {strike} "svg native: text bleibt (degraded)"
 }
 
-test::runAll
+exit [test::runAll]

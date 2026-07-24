@@ -13,7 +13,7 @@
 ## not as table/list. Link targets (href) and image URLs are not reliably
 ## stored in the widget and are filled best-effort.
 
-package require Tcl 8.6
+package require Tcl 8.6-
 
 namespace eval docir::tkSource {
     namespace export fromWidget media

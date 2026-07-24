@@ -21,6 +21,7 @@ from it. This is the entry point to the English documentation.
 | HTML sink CSS classes | [HTML CSS Schema](html-css-schema.md) |
 | HTML source (`docir::htmlSource`) | [HTML Source](html-source.md) |
 | ODT support | [ODT](odt.md) |
+| Fragments into fixed rectangles (labels, forms) | [docir::block](docir-block.md) |
 
 ## Quick orientation
 

@@ -1046,4 +1046,4 @@ test "spec.pdf.code.unbreakable_token_hard_break" {
 
 }  ;# end pdf4tcl-availability block
 
-test::runAll
+exit [test::runAll]

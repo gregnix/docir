@@ -17,6 +17,11 @@ package require Tk
 
 set here [file dirname [file normalize [info script]]]
 ::tcl::tm::path add $here
+# Wie der Rest der Suite: die Pfade kommen aus lib/repos-path.tcl. Ohne das
+# fand der Test docir nur, wenn DOCIR_TM gesetzt war -- im Sammellauf war es
+# das nie, und der einzige GUI-Test hat deshalb nichts geprueft, sondern sich
+# mit rc=2 beendet. DOCIR_TM bleibt als ausdruecklicher Vorrang bestehen.
+source -encoding utf-8 [file join $here .. lib repos-path.tcl]
 if {[info exists ::env(DOCIR_TM)]} { ::tcl::tm::path add $::env(DOCIR_TM) }
 
 proc need {pkg {glob {}}} {

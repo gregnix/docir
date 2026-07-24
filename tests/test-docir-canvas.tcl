@@ -23,7 +23,7 @@ lappend auto_path $projectRoot
 set hasTk [expr {![catch {package require Tk}]}]
 if {!$hasTk} {
     puts "Note: Tk not available (no display) — canvas tests will be skipped"
-    test::runAll
+    exit [test::runAll]
     exit 0
 }
 
@@ -389,4 +389,4 @@ test "spec.canvas.block.div_transparent" {
     assert [expr {[llength $items] >= 2}] "Children werden transparent gerendert"
 }
 
-test::runAll
+exit [test::runAll]

@@ -44,7 +44,7 @@ foreach arg $argv {
   }
 }
 
-package require Tcl 8.6
+package require Tcl 8.6-
 source [file join [file dirname [file normalize [info script]]] .. lib repos-path.tcl]
 puts "pkg docir::odt: [package require docir::odt]"
 

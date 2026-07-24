@@ -147,7 +147,48 @@ set html [docir::html::render $ir [dict create \
 Ueberschriften erhalten ihre `id` als Anker, sodass das Inhaltsverzeichnis
 und Querverweise als klickbare Sprungziele funktionieren.
 
-## 4.3  Weitere Senken
+## 4.3  Bloecke: Fragmente in feste Rechtecke
+
+Die bisher genannten Senken setzen ein **fliessendes** Dokument: Ueberschrift,
+Absatz, Liste untereinander, ueber Seiten hinweg. Fuer Etiketten, Formulare
+und Karten braucht man das Gegenteil -- ein Fragment bekommt ein festes
+Rechteck zugewiesen, angegeben in Millimetern.
+
+Das leistet `docir::block`:
+
+```tcl
+package require docir::block
+
+set pdf [pdf4tcl::new %AUTO% -paper {54m 56m}]
+$pdf startPage
+docir::block::pdf $pdf $ir -x 3 -y 39 -w 30 -h 14 -size 8
+;# -> used 8.043  lines 2  overflow 0  truncated 0
+```
+
+Der Rueckgabewert traegt die beiden Angaben, die ein [Layout]{.index}-Editor
+braucht: `used` ist die tatsaechlich verbrauchte Hoehe in Millimetern, mit der
+sich ein Block automatisch bemessen laesst, und `overflow` meldet, dass der
+Inhalt nicht in das Rechteck passt -- lieber vor dem Druck als danach.
+
+`docir::block::measure` nimmt dieselben Argumente, zeichnet aber nichts. Damit
+laesst sich die Seitenlaenge vor dem Anlegen des Dokuments bestimmen, was bei
+Endlosmaterial der uebliche Weg ist: erst messen, dann die Seite in der
+passenden Laenge erzeugen.
+
+**Millimeter aussen, Punkt innen.** Die Geometrie wird in Millimetern
+angegeben, Schriftgroessen in Punkt. Das ist keine Kosmetik: pdf4tcl liest die
+Schriftgroesse in der Einheit, die am Objekt eingestellt ist. Bei `-unit mm`
+bedeutet `setFont 9` neun *Millimeter*, also rund 26 Punkt. `docir::block`
+verlangt deshalb ein Objekt in der Standardeinheit und weist andere ab, statt
+still dreifach zu grossen Satz zu erzeugen.
+
+Neben Text setzt die Senke auch **Bilder**: ein `image`-Block bettet PNG und
+JPEG ueber pdf4tcl ein, maszstabsgerecht auf die Rechteckbreite. SVG bleibt
+bewusst aussen vor -- das Rastern braucht Tk, und die Senke soll Tk-frei
+bleiben, damit ihre Tests ohne Bildschirm laufen. Wer SVG braucht, rastert es
+vorher und uebergibt die PNG-Datei.
+
+## 4.4  Weitere Senken
 
 Neben PDF und HTML gibt es weitere [Senke]{.index}n im docir-Hub, darunter
 eine Markdown-Senke (Round-Trip), eine nroff-Senke, eine SVG- und eine

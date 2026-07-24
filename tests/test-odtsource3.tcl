@@ -59,7 +59,7 @@ set scriptDir [file dirname [file normalize [info script]]]
 lappend auto_path $scriptDir
 lappend auto_path [pwd]
 
-package require Tcl 8.6
+package require Tcl 8.6-
 package require docir::odtSource 0.4
 
 proc dictGetDef {d key {default ""}} {

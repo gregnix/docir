@@ -21,7 +21,7 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 if {![haveParser mdstack::parser]} {
     puts "Skipping test-mdstack-bridge.tcl: mdparser not found."
     puts "  (mdstack als Sibling-Repo plazieren)"
-    test::runAll
+    exit [test::runAll]
     return
 }
 
@@ -218,4 +218,4 @@ test "bridge.nested_list_no_schema_violation" {
     }
 }
 
-test::runAll
+exit [test::runAll]

@@ -12,7 +12,7 @@
 ##   alignments, <th> -> header. Works with foreign HTML too
 ##   (then best-effort: anything non-document is dropped).
 
-package require Tcl 8.6
+package require Tcl 8.6-
 package require tdom
 
 namespace eval docir::htmlSource {

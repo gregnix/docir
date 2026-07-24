@@ -370,4 +370,4 @@ test "svg.foreignObject_inherits_html" {
     assert [expr {[string first {<s>deleted</s>} $svg] >= 0}]
 }
 
-test::runAll
+exit [test::runAll]

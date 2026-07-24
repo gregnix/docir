@@ -161,4 +161,5 @@ if {!$hasTk} {
     }
 }
 
-test::runAll
+#test::runAll
+exit [test::runAll]
