@@ -12,6 +12,10 @@ set testDir [file dirname [file normalize [info script]]]
 source -encoding utf-8 [file join $testDir test-framework.tcl]
 source -encoding utf-8 [file join $testDir test-setup.tcl]
 
+# Soll-Zahl, gemessen am 27.09.2026 mit docir::md, docir::pdf + pdf4tcl,
+# docir::roff und docir::html auf dem Pfad. Siehe test-framework.tcl.
+::test::expect 9
+
 # Helper: minimale list-IR mit gegebenem indentLevel
 proc listIr {indentLevel kind} {
     return [list \
@@ -56,6 +60,14 @@ if {[catch {package require docir::md}] == 0} {
 if {[catch {package require docir::pdf}] == 0 && \
     [catch {package require pdf4tcl}] == 0} {
     test "pdf.list.indent_renders_no_error" {
+        # docir::pdf laedt sich ohne pdf4tcllib, braucht es aber beim Rendern
+        # (_ensurePdf4tcl). Der Waechter oben fragt nur docir::pdf und pdf4tcl
+        # ab -- mit pdf4tcl, aber ohne pdf4tcllib, lief dieser Test darum in
+        # einen ERROR statt in ein SKIP. Gemessen am 27.09.2026: "docir-pdf
+        # requires pdf4tcllib: can't find package pdf4tcllib 0.3", Failed: 1.
+        if {[catch {package require pdf4tcllib}]} {
+            skip "pdf4tcllib nicht installiert -- docir::pdf braucht es zum Rendern"
+        }
         set tmpDir [file join [pwd] tmp-pdf-indent]
         file mkdir $tmpDir
         set out [file join $tmpDir indent.pdf]

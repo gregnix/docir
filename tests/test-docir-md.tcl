@@ -14,6 +14,13 @@ set testDir [file dirname [file normalize [info script]]]
 source -encoding utf-8 [file join $testDir test-framework.tcl]
 source -encoding utf-8 [file join $testDir test-setup.tcl]
 
+# Soll-Zahl: so viele Tests meldet diese Datei an, wenn mdstack::parser da ist.
+# Gemessen am 27.09.2026 mit dem Geschwisterbaum: 59 angemeldet, ohne den
+# Parser nur 50. Die 9 fehlenden standen hinter einem if und der Lauf sagte
+# trotzdem "All tests passed". Jetzt sagt er es -- und mit DOCIR_STRICT=1
+# bricht er ab.
+::test::expect 59
+
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
 package require docir::md
@@ -398,8 +405,13 @@ foo \- a test
 #
 # Voraussetzung: mdparser muss verfügbar sein. Wenn nicht: skip.
 
-if {[catch {package require mdstack::parser}] && \
-    [catch {source -encoding utf-8 /home/claude/mdstack-work/mdstack_0.3.4/lib/mdparser-0.2.tm}]} {
+# Kein absoluter Ausweichpfad. lib/repos-path.tcl legt mdstack schon auf den
+# Pfad -- Geschwisterbaum, dann ~/lib/tcltk, dann /usr/local/lib/tcltk. Bis
+# heute stand hier ein zweiter Versuch mit einem festen Pfad, der nur im
+# Container existierte, in dem diese Zeile entstand. Auf jeder anderen
+# Maschine schlug er fehl, die 8 Tests unten fielen weg, und der Lauf sagte
+# trotzdem "All tests passed". Gemessen: 67 statt 92 Tests.
+if {[catch {package require mdstack::parser}]} {
     puts stderr "skipping spec.mdsource tests — mdparser not available"
 } else {
 
@@ -667,8 +679,8 @@ test "md.sink.block.div_with_class" {
 # gleich bleiben (Whitespace darf abweichen)
 # ============================================================
 
-if {![catch {package require mdstack::parser} eatErr] || \
-    ![catch {source -encoding utf-8 /home/claude/mdstack-work/mdstack_0.3.4/lib/mdparser-0.2.tm} eatErr2]} {
+# Siehe oben: kein fester Ausweichpfad.
+if {![catch {package require mdstack::parser}]} {
 
     test "md.sink.roundtrip.complex" {
         set md "Strike: ~~deleted~~ text.\n\nFootnote: \[^1\] reference.\n\n\[^1\]: Note."

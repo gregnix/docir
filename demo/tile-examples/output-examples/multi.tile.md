@@ -407,7 +407,7 @@ grid columnconfigure . 1 -weight 1
 > • widget-hierarchie.md - Widget-Struktur
 > • leere-frames.md - Leere Container
 > • widget-creation-helper.md - Helper-Funktionen
-> Quelle: CLAUDE-TCL-TK-WISSEN.md - Widget-Hierarchie
+> Quelle: TCL-TK-WISSEN.md - Widget-Hierarchie
 
 ---
 

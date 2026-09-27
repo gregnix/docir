@@ -1,5 +1,27 @@
 # DocIR — Changelog
 
+## 2026-09-26 — docs vs live packages
+
+### Changed
+
+- **`lib/tm/docir/pdf-0.5.tm`** — file comment said `pdf-0.3.tm`. Package remains **0.5**.
+- **`doc/en/docir-spec.md`**, **`docir-spec-en.md`**, **`nogit/de/docir-spec*.md`**
+  — `mdstack::parser` in mapping/sources; `html_block`/`math_block`; live
+  pdf 0.5 / rendererTk 0.5. Hub schema stays 1.
+
+## 2026-09-25 — tilepdf table wrap
+
+### Fixed
+
+- **`lib/tm/docir/tilepdf-0.1.tm`** — table cells used `drawTextBox`, which
+  splits an over-wide word by character (`Computerverwaltung` →
+  `Computerverwalt` / `ung`). `_row` now wraps at spaces, then hyphen or
+  slash. The label column grows per table to the longest unbreakable token
+  (still capped so the value side keeps 100pt). Values may still character-
+  wrap as a last resort. `_code` and `_listItem` use the same wrap.
+  Column bottom is `y_max` 822 (was 650), so a leftover page is no longer
+  forced by a 190pt empty band.
+
 ## Unreleased — raw HTML blocks (mdSource, html, md)
 
 mdstack::parser 0.8.0 keeps raw block HTML instead of dropping it. docir carries

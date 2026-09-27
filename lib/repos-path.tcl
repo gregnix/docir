@@ -24,7 +24,8 @@ namespace eval ::docir::reposPath {
         odf         {. odf}
         mdstack     {lib lib/tm}
         man-viewer  {lib lib/tm}
-        manviewer   {lib lib/tm}
+        pdf4tcllib  {lib}
+        pdf4tcl     {pkg}
     }
 
     proc add {} {

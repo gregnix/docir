@@ -14,6 +14,12 @@ set testDir [file dirname [file normalize [info script]]]
 source -encoding utf-8 [file join $testDir test-framework.tcl]
 source -encoding utf-8 [file join $testDir test-setup.tcl]
 
+# Soll-Zahl, gemessen am 27.09.2026 mit pdf4tcl UND pdf4tcllib im
+# Geschwisterbaum: 45 angemeldete Tests. Ohne pdf4tcllib sind es 3 -- der
+# Block ab "if {[catch {package require pdf4tcl}]}" faellt dann weg und
+# nimmt 42 Tests mit, ohne dass der Zaehler etwas davon sieht.
+::test::expect 45
+
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
 package require docir::pdf
@@ -233,8 +239,8 @@ This is a test of the nroff to PDF pipeline.
 # Sie prüfen nicht die Pixel-Genauigkeit, sondern dass der
 # Render-Pfad ohne Crash durchläuft und sinnvolle Bytes erzeugt.
 
-if {[catch {package require pdf4tcl}] && \
-    [catch {source /home/claude/md-uploads/vendors/pkg/pdf4tcl0.9.4.25/pdf4tcl.tcl}]} {
+# Siehe test-docir-md.tcl: kein fester Ausweichpfad, repos-path.tcl macht das.
+if {[catch {package require pdf4tcl}]} {
     puts stderr "skipping spec.pdf.* tests — pdf4tcl not available"
 } elseif {[catch {package require pdf4tcllib}]} {
     puts stderr "skipping spec.pdf.* tests — pdf4tcllib not available"

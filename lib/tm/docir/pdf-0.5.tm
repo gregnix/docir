@@ -1,5 +1,5 @@
-# docir-pdf-0.3.tm -- DocIR → PDF Renderer
-# BUILD-ID: pdf-0.3 table-delegation+pagebreak-hook 2026-06-30
+# docir-pdf-0.5.tm -- DocIR → PDF Renderer
+# BUILD-ID: pdf-0.5 inline-math + table-delegation+pagebreak-hook 2026-09-26
 # Converts a DocIR sequence into a PDF document. Uses
 # pdf4tcl (>=0.9) as the low-level backend and pdf4tcllib (>=0.3)
 # for font embedding (TTF), Unicode sanitization and

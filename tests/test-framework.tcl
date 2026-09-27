@@ -7,10 +7,32 @@ namespace eval test {
     variable failed 0
     variable skipped 0
     variable currentTest ""
-    
+    variable erwartet ""     ;# Soll-Zahl aus ::test::expect, leer = nicht gesetzt
+
     # Register a test
     proc test {name body} {
         lappend ::test::tests [list $name $body]
+    }
+
+    # Wie viele Tests diese Datei hat, wenn alles da ist.
+    #
+    # Der Grund, gemessen am 27.09.2026: test-docir-md.tcl meldete 67 Tests
+    # ohne mdstack::parser und 92 mit ihm -- und beide Male "All tests
+    # passed!". Ein Waechter der Form
+    #
+    #     if {[catch {package require X}]} { puts stderr "skipping" } else { ... }
+    #
+    # meldet die Tests im else-Zweig gar nicht erst an. Sie sind dann nicht
+    # uebersprungen, sondern unsichtbar: der Skipped-Zaehler sieht sie nicht,
+    # weil skip nur INNERHALB eines angemeldeten Tests wirkt. 51 Tests standen
+    # in drei Dateien hinter solchen ifs.
+    #
+    # Diese Zeile ist das Soll. Weicht die angemeldete Zahl ab, sagt der Lauf
+    # es -- und mit DOCIR_STRICT=1 (Freigabelauf) bricht er ab. Der
+    # Entwicklerlauf bleibt gruen, aber nicht mehr stumm.
+    proc expect {n} {
+        variable erwartet
+        set erwartet $n
     }
 
     # Skip the current test (e.g. an optional dependency is absent). Counted
@@ -109,19 +131,42 @@ namespace eval test {
             puts ""
         }
         
+        variable erwartet
+        set fehlen 0
+        if {$erwartet ne "" && [llength $tests] < $erwartet} {
+            set fehlen [expr {$erwartet - [llength $tests]}]
+        }
+
         puts "=== Test Results ==="
         puts "Passed: $passed"
         puts "Failed: $failed"
         if {$skipped > 0} { puts "Skipped: $skipped" }
         puts "Total:  [expr {$passed + $failed}]"
-        
-        if {$failed == 0} {
-            puts "\n✓ All tests passed!"
-            return 0
-        } else {
+        if {$fehlen} {
+            puts "Nicht angemeldet: $fehlen von $erwartet -- ein Block fiel hinter\
+                    einem if weg (fehlendes Modul?). Diese Tests sind NICHT gelaufen."
+        }
+
+        set streng [expr {[info exists ::env(DOCIR_STRICT)]
+                && $::env(DOCIR_STRICT) ni {0 ""}}]
+
+        if {$failed != 0} {
             puts "\n✗ Some tests failed!"
             return 1
         }
+        # Bewusst nicht "$passed Tests": passed zaehlt Zusicherungen, nicht
+        # Tests. Die Zahl, die hier zaehlt, ist die der nicht gelaufenen Tests.
+        if {$fehlen && $streng} {
+            puts "\n✗ keine Fehler, aber $fehlen Test(s) nicht gelaufen\
+                    (DOCIR_STRICT)."
+            return 1
+        }
+        if {$fehlen} {
+            puts "\n✓ keine Fehler -- aber $fehlen Test(s) nicht gelaufen."
+            return 0
+        }
+        puts "\n✓ All tests passed!"
+        return 0
     }
     
     # Run a specific test suite

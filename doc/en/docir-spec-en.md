@@ -11,9 +11,9 @@ Status: Stable
 DocIR is a **flat, type-bound block sequence** as a common intermediate
 format for:
 
-- `nroffparser` → `docir/roffSource-0.1.tm` (DocIR-Quelle)
-- `mdparser` → `docir/mdSource-0.1.tm` (DocIR-Quelle)
-- future HTML importers
+- `nroffparser` → `docir/roffSource-0.1.tm` (DocIR source)
+- `mdstack::parser` → `docir/mdSource-0.1.tm` (DocIR source)
+- `htmlSource` / `odtSource` / `roffSource` / `csdSource` / `tkSource`
 
 Renderers (Tk, HTML, PDF) work exclusively on DocIR. Parsers do not need
 to be restructured — mapping functions translate between parser-specific
@@ -54,7 +54,7 @@ than benefit.
 | `heading`    | nroff `.TH` — the manpage header (1× per doc, `meta.level=0`) | Generic heading `.SH`/`.SS`/`# Markdown` (any number, `meta.level=1..6`) |
 | `section`    | nroff `.SH` — a section heading                      | does not exist — mapped to `heading level=1`        |
 | `subsection` | nroff `.SS` — a sub-section                          | does not exist — mapped to `heading level=2`        |
-| `doc_header` | does not exist                                       | Generic doc header — target of AST `heading` (nroff `.TH`) and mdparser YAML frontmatter |
+| `doc_header` | does not exist                                       | Generic doc header — target of AST `heading` (nroff `.TH`) and mdstack YAML frontmatter |
 
 The full AST → DocIR mapping is given further down in the section
 *"Mapping from nroff AST"*. The canonical AST spec lives alongside in
@@ -97,7 +97,7 @@ The current set of block types accepted by `docir::validate`:
 | `doc_header` | `{}`                 | `name`, `section`, `version`, `part`|
 | `heading`    | Inline list          | `level` (1..6), `id` (optional)     |
 | `paragraph`  | Inline list          | `{}` or `class`                     |
-| `pre`        | Inline list          | `kind` (code/example/...)           |
+| `pre`        | Inline list          | `kind` (code/example/html/math/…)   |
 | `list`       | listItem list        | `kind` (tp/ip/op/ap/ul/ol/dl), `indentLevel` (best-effort: structural sinks (md, pdf, roff, html, rendererTk) honor; visual sinks (svg, canvas, tilepdf) may ignore depending on layout) |
 | `listItem`   | Inline list (desc)   | `kind`, `term` (inline list)        |
 | `blank`      | `{}`                 | `lines` (int, default 1)            |
@@ -130,6 +130,16 @@ Content is the footnote body as inline list.
 **`div`** — TIP-700 block-level container. `meta.class` and `meta.id`
 are HTML/CSS attributes preserved by HTML/Markdown sinks. Other sinks
 treat it as a transparent container (render content without wrapper).
+
+**Raw HTML (`pre` + `kind html`)** — `mdstack::parser` 0.8.0 emits
+`html_block`. `docir::mdSource` maps it to a `pre` node with
+`meta.kind html` (no new Hub block type, no schema bump). `docir::html`
+passes the content through unescaped; `docir::md` writes it unfenced;
+pdf, odt, txt, roff, rendererTk show the HTML source as a code block.
+
+**Display math in mdSource** — parser `math_block` also rides in `pre`
+with `kind math` (same pattern). Hub type `math_block` remains valid
+for sinks that consume it directly (`docir::pdf`, `rendererTk`).
 
 ### Markdown-specific Extensions (via docir::md)
 
@@ -197,7 +207,7 @@ Tables are represented as a three-level structure:
 
 **`alignments` (since 0.5):** list of per-column alignments, one
 element per column from the set `{left center right}`. Derived by
-mdparser sources from the `:` markers in the GFM separator row
+mdstack sources from the `:` markers in the GFM separator row
 (`:---` = left, `:---:` = center, `---:` = right). Renderers may
 honour or ignore the alignment — in monospaced Tk text it is
 typically applied; nroff sources without alignment information set
@@ -411,21 +421,25 @@ benefit from properly formatted tables.
 
 ---
 
-## Mapping from mdparser AST (docir/md-0.1.tm)
+## Mapping from mdstack::parser AST (`docir::mdSource`)
 
-| mdparser Type | DocIR Type    | Note                                 |
-|---------------|---------------|--------------------------------------|
+| mdstack::parser Type | DocIR Type    | Note                                 |
+|----------------------|---------------|--------------------------------------|
 | `document`    | `doc_header`  | meta from YAML frontmatter           |
 | `heading`     | `heading`     | meta level=1..6, id=anchor           |
 | `paragraph`   | `paragraph`   | unchanged                            |
 | `code_block`  | `pre`         | meta kind=code, language             |
+| `html_block`  | `pre`         | meta kind=html, content verbatim (0.8.0) |
+| `math_block`  | `pre`         | meta kind=math (pdf/Tk also accept Hub `math_block`) |
 | `list`        | `list`        | content = listItem nodes             |
 | `list_item`   | `listItem`    | content=desc, meta.term={}           |
 | `blockquote`  | `paragraph`   | meta class=blockquote                |
 | `deflist`     | `list`        | kind=dl, listItem with term          |
 | `table`       | `table`       | structurally identical (since 0.4)   |
 | `hr`          | `hr`          | unchanged                            |
+| `image`       | `image`       | standalone                           |
 | `div`         | –             | inner blocks recursively mapped      |
+| `footnote_section` | `footnote_section` | defs mapped |
 
 ---
 
@@ -466,7 +480,7 @@ canvas \- create and manipulate 'canvas' widgets
 
 ---
 
-## Renderer Support (docir/rendererTk-0.4.tm)
+## Renderer Support (docir/rendererTk-0.5.tm)
 
 | DocIR Type   | Rendering                                              |
 |--------------|--------------------------------------------------------|
@@ -491,7 +505,7 @@ tree); the others read a format or a Tcl declaration directly:
 | Source              | Module             | Input                                            |
 |---------------------|--------------------|--------------------------------------------------|
 | `docir::roffSource` | roffSource-0.1.tm  | nroff AST (from `nroffparser`) — mapper          |
-| `docir::mdSource`   | mdSource-0.1.tm    | Markdown AST (from `mdparser`) — mapper          |
+| `docir::mdSource`   | mdSource-0.1.tm    | Markdown AST (from `mdstack::parser`) — mapper |
 | `docir::htmlSource` | htmlSource-0.1.tm  | HTML, read via `tdom` (semantic, not CSS/layout) |
 | `docir::odtSource`  | odtSource-0.4.tm   | OpenDocument Text (.odt), via `odf`              |
 | `docir::csdSource`  | csdSource-0.1.tm   | CSD — Tcl-declarative cheat-sheet definitions    |
@@ -518,7 +532,7 @@ sink takes a DocIR stream and produces an output format:
 |--------------------|------------------------|-------------------------------------------------|
 | `docir::html`      | html-0.1.tm            | HTML5 with semantic classes                     |
 | `docir::md`        | md-0.1.tm              | Markdown (CommonMark + GFM)                     |
-| `docir::pdf`       | pdf-0.4.tm             | PDF via pdf4tcl, standard layout (inline math typeset) |
+| `docir::pdf`       | pdf-0.5.tm             | PDF via pdf4tcl, standard layout (display math typeset) |
 | `docir::roff`      | roff-0.1.tm            | nroff/groff (man pages)                         |
 | `docir::odt`       | odt-0.4.tm             | OpenDocument Text (.odt)                         |
 | `docir::txt`       | txt-0.1.tm             | plain text (pagers, e-mail, logs)               |
@@ -527,7 +541,7 @@ sink takes a DocIR stream and produces an output format:
 | `docir::tilepdf`   | tilepdf-0.1.tm         | 2-column tile PDF (cheatsheet style)            |
 | `docir::tilehtml`  | tilehtml-0.1.tm        | 2-column tile HTML with CSS Grid                |
 | `docir::tilemd`    | tilemd-0.1.tm          | Tile-structured Markdown (linear)               |
-| `docir::rendererTk`| rendererTk-0.4.tm      | Tk text widget (interactive viewer; display math typeset on canvas) |
+| `docir::rendererTk`| rendererTk-0.5.tm      | Tk text widget (interactive viewer; display math typeset on canvas) |
 
 Plus shared helper:
 
@@ -557,11 +571,11 @@ The three `tile*` sinks share the same section classification
 
 | Tool | Sink | Pipeline |
 |------|------|----------|
-| `md2html` | html | mdparser → DocIR → html → HTML |
-| `md2odt` | odt | mdparser → DocIR → odt → ODT |
-| `md2tilepdf` | tilepdf | mdparser → DocIR → tilepdf → PDF |
-| `md2tilehtml` | tilehtml | mdparser → DocIR → tilehtml → HTML |
-| `md2tilemd` | tilemd | mdparser → DocIR → tilemd → Markdown |
+| `md2html` | html | mdstack::parser → DocIR → html → HTML |
+| `md2odt` | odt | mdstack::parser → DocIR → odt → ODT |
+| `md2tilepdf` | tilepdf | mdstack::parser → DocIR → tilepdf → PDF |
+| `md2tilehtml` | tilehtml | mdstack::parser → DocIR → tilehtml → HTML |
+| `md2tilemd` | tilemd | mdstack::parser → DocIR → tilemd → Markdown |
 | `n2md` | md | nroffparser → DocIR → md → Markdown |
 
 Install: `make install-bin` (copies to `$PREFIX/bin/`).
@@ -619,3 +633,4 @@ ignores it.
 | 0.4     | 2026-05-05 | `table`/`tableRow`/`tableCell` block types; `.SO`/`.SE` mapping; documented `blank` content optionality; `link` inline canonicalised |
 | 0.5     | 2026-05-07 | `doc_meta` block type with `irSchemaVersion` field; helper procs `docir::schemaVersion` / `docir::checkSchemaVersion`; sources emit `doc_meta` as first block; validator lenient towards IRs without `doc_meta` (transition phase) |
 | 0.6     | 2026-06-22 | `math` inline + `math_block` block types; `docir::diagram` seam for fenced diagram code (flow/tuflow/pie native, mermaid browser/best-effort) via the tuflow facade, with `docir::diag` diagnostics and a `flowFont` render option; `docir::odt` (odt-0.4) and `docir::txt` (txt-0.1) sinks documented; "Available Sources" section (roff/md/html/odt/csd/tk); pdf → 0.2, rendererTk → 0.2 |
+| (docs)  | 2026-09-26 | `pre` `kind html` / `kind math` mapping from mdstack::parser 0.8.0 documented; Hub schema stays 1. Live packages: `docir::pdf` 0.5, `rendererTk` 0.5. |

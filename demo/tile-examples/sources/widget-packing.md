@@ -212,6 +212,3 @@ pack .buttons.cancel .buttons.ok -side right -padx 5
 - [leere-frames.md](leere-frames.md) - Leere Container
 - [widget-creation-helper.md](widget-creation-helper.md) - Helper-Funktionen
 
----
-
-Quelle: CLAUDE-TCL-TK-WISSEN.md - Widget-Hierarchie

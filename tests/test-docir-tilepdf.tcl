@@ -290,6 +290,142 @@ test "tilepdf.render.unknown_theme_option_rejected" {
     assert $caught "render mit unknown theme sollte fail"
 }
 
+test "tilepdf.render.unicode_metadata_tagged" {
+    set ir [list \
+        [dict create type doc_meta content {} meta [dict create irSchemaVersion 1]] \
+        [dict create type heading content [list \
+            [dict create type text value "Büro" meta {}]] \
+            meta [dict create level 1]] \
+        [dict create type heading content [list \
+            [dict create type text value "Größe" meta {}]] \
+            meta [dict create level 2]] \
+        [dict create type paragraph content [list \
+            [dict create type text value "ÄÖÜ ß" meta {}]] meta {}]]
+    set out [file join $tmpDir unicode.pdf]
+    file delete -force $out
+    ::docir::tilepdf::render $ir $out
+    assert [file exists $out] "unicode PDF fehlt"
+    assert [expr {[file size $out] > 1000}] "unicode PDF zu klein"
+    set fh [open $out rb]
+    set bytes [read $fh]
+    close $fh
+    assert [expr {[string first "StructTreeRoot" $bytes] >= 0}] \
+        "Tagged PDF: StructTreeRoot fehlt"
+    assert [expr {[string first "/Title" $bytes] >= 0}] \
+        "Metadaten: /Title fehlt"
+    if {![catch {exec pdftotext -enc UTF-8 $out -} txt]} {
+        assert [expr {[string first "Büro" $txt] >= 0 \
+            || [string first "Buero" $txt] >= 0 \
+            || [string first "Größe" $txt] >= 0}] \
+            "pdftotext sollte Umlaut-Titel enthalten, war: $txt"
+    }
+}
+
+# ============================================================
+# F. Tabellenumbruch — keine Buchstaben-Brüche in Labels
+# ============================================================
+
+proc _wrapPdf {} {
+    set pdf [::pdf4tcl::new %AUTO% -paper a4]
+    ::docir::tilepdf::_setupFonts $pdf
+    $pdf startPage
+    return $pdf
+}
+
+test "tilepdf.wrap.unbreakable_word_not_split" {
+    set pdf [_wrapPdf]
+    $pdf setFont 8 $::docir::tilepdf::F(propBold)
+    set word "Computerverwaltung"
+    set half [expr {[$pdf getStringWidth $word] / 2.0}]
+    set lines [::docir::tilepdf::_wrapToWidth $pdf $word $half]
+    $pdf destroy
+    assertEqual 1 [llength $lines]
+    assertEqual $word [lindex $lines 0]
+}
+
+test "tilepdf.wrap.breaks_on_space" {
+    set pdf [_wrapPdf]
+    $pdf setFont 8 $::docir::tilepdf::F(propBold)
+    set w [$pdf getStringWidth "Desktop"]
+    set lines [::docir::tilepdf::_wrapToWidth $pdf "Desktop anzeigen" \
+        [expr {$w + 2}]]
+    $pdf destroy
+    assertEqual 2 [llength $lines]
+    assertEqual "Desktop" [lindex $lines 0]
+    assertEqual "anzeigen" [lindex $lines 1]
+}
+
+test "tilepdf.wrap.breaks_on_hyphen" {
+    set pdf [_wrapPdf]
+    $pdf setFont 8 $::docir::tilepdf::F(propBold)
+    set w [$pdf getStringWidth "System-"]
+    set lines [::docir::tilepdf::_wrapToWidth $pdf "System-Eigenschaften" \
+        [expr {$w + 2}]]
+    $pdf destroy
+    assertEqual 2 [llength $lines]
+    assertEqual "System-" [lindex $lines 0]
+    assertEqual "Eigenschaften" [lindex $lines 1]
+}
+
+test "tilepdf.tableValOff.grows_for_long_label" {
+    set pdf [_wrapPdf]
+    set off [::docir::tilepdf::_tableValOff $pdf \
+        [list Win Computerverwaltung]]
+    $pdf setFont 8 $::docir::tilepdf::F(propBold)
+    set need [$pdf getStringWidth "Computerverwaltung"]
+    $pdf destroy
+    assert [expr {$off >= $need}] \
+        "valOff $off muss Label-Breite $need aufnehmen"
+}
+
+test "tilepdf.layout.y_max_uses_page" {
+    assert [expr {$::docir::tilepdf::C(y_max) >= 800}] \
+        "y_max sollte den A4-Unterrand nutzen, war $::docir::tilepdf::C(y_max)"
+}
+
+test "tilepdf.render.table_keeps_german_compounds" {
+    set sheets [list [dict create title "T" subtitle "" sections [list \
+        [dict create title "S" type table content {
+            {Computerverwaltung compmgmt.msc}
+            {Datenträgerverwaltung diskmgmt.msc}
+            {Eingabeaufforderung cmd}
+        }]]]]
+    set out [file join $tmpDir wrap-table.pdf]
+    file delete -force $out
+    ::docir::tilepdf::renderSheets $sheets $out
+    assert [file exists $out] "wrap-table.pdf fehlt"
+    if {![catch {exec pdftotext -layout -enc UTF-8 $out -} txt]} {
+        foreach word {Computerverwaltung Datenträgerverwaltung Eingabeaufforderung} {
+            assert [expr {[string first $word $txt] >= 0}] \
+                "$word fehlt im PDF-Text: $txt"
+        }
+        assert [expr {![regexp {Computerverwalt\s*\n} $txt]}] \
+            "Computerverwaltung wurde mitten im Wort umgebrochen: $txt"
+        assert [expr {![regexp {Eingabeaufforder\s*\n} $txt]}] \
+            "Eingabeaufforderung wurde mitten im Wort umgebrochen: $txt"
+    }
+}
+
+test "tilepdf.render.code_keeps_comment_words" {
+    set sheets [list [dict create title "T" subtitle "" sections [list \
+        [dict create title "S" type code content [list \
+            {        ::incr n         ;# n ist hier automatisch sichtbar} \
+            {        set n 0          ;# kein zweites 'variable n' noetig} \
+        ]]]]]
+    set out [file join $tmpDir wrap-code.pdf]
+    file delete -force $out
+    ::docir::tilepdf::renderSheets $sheets $out
+    assert [file exists $out] "wrap-code.pdf fehlt"
+    if {![catch {exec pdftotext -layout -enc UTF-8 $out -} txt]} {
+        assert [expr {[string first "sichtbar" $txt] >= 0}] \
+            "sichtbar fehlt: $txt"
+        assert [expr {![regexp {sichtba\s*\n} $txt]}] \
+            "sichtbar wurde mitten im Wort umgebrochen: $txt"
+        assert [expr {![regexp {noeti\s*\n} $txt]}] \
+            "noetig wurde mitten im Wort umgebrochen: $txt"
+    }
+}
+
 # ============================================================
 # E. Tokenizer (_tokenize) — Inline-Markup Erkennung
 # ============================================================
