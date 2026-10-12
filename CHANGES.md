@@ -1,5 +1,30 @@
 # DocIR — Changelog
 
+## 2026-10-05 — dump, validate, tools
+
+- `docir::dump` failed on `paragraph`, `pre`, `doc_header`, `blank`, `hr`,
+  `list` and orphan table nodes: the labels were unescaped `[...]`, i.e.
+  command substitution. All block types are printed now (incl. `math_block`
+  and top-level `listItem`); `list` items as `listItem` nodes or legacy
+  `{term desc}`, item `blocks` nested; table rows with their cells; a missing
+  `content`/`meta` counts as `{}`. `pre` showed the whole meta dict as kind.
+- `docir::validate`: `blank` without `content` is valid. A missing required
+  field in one node no longer suppresses the checks of all following nodes.
+- `bin/md2tilehtml`, `md2tilemd`, `md2tilepdf` load `lib/repos-path.tcl`, so
+  a sibling `../mdstack` (and pdf4tcl) is found. `repos-path.tcl` checks an
+  explicit `<REPO>_HOME` env variable first (`MDSTACK_HOME`, `ODF_HOME`, ...).
+- Spec: the CSD entry points are `docir::csd::toSheet` / `docir::csd::toSheets`
+  (package `docir::csdSource`), not `docir::csdSource::toSheets`.
+
+## 2026-10-04 — test runner
+
+- `tests/run-all-tests.tcl` runs the files with the running interpreter
+  (was `tclsh` from PATH) and with `-encoding utf-8`; missing `odf`
+  packages count as skipped, not crashed. stdout uses `-profile replace`
+  (runner and test-framework), so the check marks do not abort under Tcl 9.
+- `test-docir-tilepdf.tcl`: pdftotext output read as UTF-8 from a file;
+  through a pipe the umlauts were decoded with the system encoding.
+
 ## 2026-09-26 — docs vs live packages
 
 ### Changed

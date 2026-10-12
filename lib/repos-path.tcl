@@ -11,6 +11,10 @@
 # or, relative to a script in tests/ or bin/:
 #     source [file join [file dirname [info script]] .. lib repos-path.tcl]
 #
+# Lookup order per repo: the env variable <REPO>_HOME (e.g. MDSTACK_HOME,
+# ODF_HOME, MAN_VIEWER_HOME) if set, otherwise the dev-tree sibling next to
+# the docir repo root (e.g. ../mdstack), then the installed trees below.
+#
 # It is idempotent and adds only paths that actually exist (missing repos simply
 # stay missing -- "no magic": a package that is not installed will fail to load
 # loudly at `package require`, not be silently faked).
@@ -41,10 +45,19 @@ namespace eval ::docir::reposPath {
         lappend homes /usr/local/lib/tcltk /usr/lib/tcltk
 
         foreach {repo subdirs} $layout {
-            set roots [list [file join $parent $repo]]
-            foreach h $homes { lappend roots [file join $h $repo] }
-            # docir itself: also the repo we live in
-            if {$repo eq "docir"} { lappend roots $docirRoot }
+            # An explicit <REPO>_HOME env variable (MDSTACK_HOME, ODF_HOME,
+            # MAN_VIEWER_HOME, ...) wins: when it names an existing directory,
+            # only that root is used for the repo.
+            set envVar [string toupper [string map {- _} $repo]]_HOME
+            if {[info exists ::env($envVar)] && $::env($envVar) ne ""
+                    && [file isdirectory $::env($envVar)]} {
+                set roots [list $::env($envVar)]
+            } else {
+                set roots [list [file join $parent $repo]]
+                foreach h $homes { lappend roots [file join $h $repo] }
+                # docir itself: also the repo we live in
+                if {$repo eq "docir"} { lappend roots $docirRoot }
+            }
 
             foreach root $roots {
                 if {![file isdirectory $root]} { continue }

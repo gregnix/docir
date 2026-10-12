@@ -20,9 +20,23 @@
 #
 # Verwendung:
 #   cd tests
-#   tclsh run-all-tests.tcl
+#   tclsh run-all-tests.tcl      (the files run under this same interpreter)
 
 set testDir [file dirname [file normalize [info script]]]
+
+# Tcl 9 writes strictly: a "\u2713" on a stdout whose encoding cannot hold it
+# (cp1252 into a pipe on Windows) is an error, not a "?".
+catch {fconfigure stdout -profile replace}
+
+# The child interpreter is the running one, not "tclsh" from PATH:
+# started with tclsh9.0, the files ran under whatever "tclsh" was.
+set tclInterp [info nameofexecutable]
+proc wishInterp {} {
+    set cand [file join [file dirname $::tclInterp] \
+        [string map {tclsh wish} [file tail $::tclInterp]]]
+    if {[file executable $cand]} { return $cand }
+    return [auto_execok wish]
+}
 
 puts "=== Running All Tests ===\n"
 
@@ -60,11 +74,14 @@ set guiTestFiles {
 set totalPassed 0
 set totalFailed 0
 set failedFiles {}
+set skippedFiles {}
 
 # Eine Testdatei ausfuehren und (passed failed verdict) zurueckgeben.
 # verdict: ok | fail | crash
 proc runOne {interp testPath} {
-    set rc [catch {exec $interp $testPath 2>@1} output]
+    # -encoding utf-8: the test files are UTF-8; without it Tcl 8.6 on
+    # Windows reads them as cp1252 and every umlaut literal is wrong.
+    set rc [catch {exec {*}$interp -encoding utf-8 $testPath 2>@1} output]
     set p 0; set f 0; set have 0
     if {[regexp {Passed:\s+(\d+)} $output -> p]} {
         regexp {Failed:\s+(\d+)} $output -> f; set have 1
@@ -77,6 +94,11 @@ proc runOne {interp testPath} {
     }
     set verdict [expr {($rc != 0 || $f > 0) ? "fail" : "ok"}]
     if {$rc != 0 && !$have} { set verdict "crash" }
+    # the optional odf packages are missing: not a failure of docir
+    if {$verdict eq "crash" && [regexp {can't find package odf::|FEHLT: docir::odt} $output]} {
+        set verdict "skip"
+        set p 0 ; set f 0
+    }
     return [list $p $f $verdict $output]
 }
 
@@ -87,12 +109,13 @@ foreach testFile $testFiles {
         continue
     }
     puts "Running $testFile..."
-    lassign [runOne tclsh $testPath] p f verdict output
+    lassign [runOne $tclInterp $testPath] p f verdict output
     incr totalPassed $p
     incr totalFailed $f
     switch -- $verdict {
         crash { lappend failedFiles "${testFile} (crashed)"; puts "  ✗ CRASHED:"; puts $output }
         fail  { lappend failedFiles $testFile; puts $output }
+        skip  { lappend skippedFiles $testFile; puts "  SKIP: odf packages not found (optional)" }
         ok    { puts "  ✓ $p/[expr {$p + $f}] tests passed" }
     }
     puts ""
@@ -100,18 +123,19 @@ foreach testFile $testFiles {
 
 # --- Optionale GUI-Tests ---
 if {[info exists ::env(DISPLAY)] && $::env(DISPLAY) ne ""} {
-    set wish [auto_execok wish]
+    set wish [wishInterp]
     if {$wish ne ""} {
         foreach testFile $guiTestFiles {
             set testPath [file join $testDir $testFile]
             if {![file exists $testPath]} { continue }
             puts "Running $testFile (GUI/wish)..."
-            lassign [runOne wish $testPath] p f verdict output
+            lassign [runOne $wish $testPath] p f verdict output
             incr totalPassed $p
             incr totalFailed $f
             switch -- $verdict {
                 crash { lappend failedFiles "${testFile} (crashed)"; puts "  ✗ CRASHED:"; puts $output }
                 fail  { lappend failedFiles $testFile; puts $output }
+                skip  { lappend skippedFiles $testFile; puts "  SKIP: odf packages not found (optional)" }
                 ok    { puts "  ✓ $p/[expr {$p + $f}] tests passed" }
             }
             puts ""
@@ -127,6 +151,9 @@ puts "Gesamtergebnis:"
 puts "  Passed: $totalPassed"
 puts "  Failed: $totalFailed"
 puts "  Total:  [expr {$totalPassed + $totalFailed}]"
+if {[llength $skippedFiles]} {
+    puts "  Skipped files (odf missing): [join $skippedFiles {, }]"
+}
 puts ""
 
 if {[llength $failedFiles] == 0} {

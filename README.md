@@ -144,6 +144,10 @@ source [file join <docir-repo>/lib repos-path.tcl]
 package require docir::odt      ;# now resolves odf transitively
 ```
 
+An explicit `<REPO>_HOME` env variable (`MDSTACK_HOME`, `ODF_HOME`,
+`MAN_VIEWER_HOME`, ...) takes precedence over all of these. The `md2odt` and
+`md2tile*` tools in `bin/` use the same script.
+
 The test runner (`tests/test-setup.tcl`) already sources it, so `make test`
 works against sibling checkouts without per-repo `TCLLIBPATH` juggling. A
 sibling that is absent simply stays absent — the dependent `package require`

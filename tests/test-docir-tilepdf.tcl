@@ -313,12 +313,26 @@ test "tilepdf.render.unicode_metadata_tagged" {
         "Tagged PDF: StructTreeRoot fehlt"
     assert [expr {[string first "/Title" $bytes] >= 0}] \
         "Metadaten: /Title fehlt"
-    if {![catch {exec pdftotext -enc UTF-8 $out -} txt]} {
+    if {![catch {_pdftext $out} txt]} {
         assert [expr {[string first "Büro" $txt] >= 0 \
             || [string first "Buero" $txt] >= 0 \
             || [string first "Größe" $txt] >= 0}] \
             "pdftotext sollte Umlaut-Titel enthalten, war: $txt"
     }
+}
+
+# pdftotext writes UTF-8 into a file, read back as UTF-8. Through a pipe
+# [exec] decodes with the system encoding -- on Windows cp1252 -- and every
+# umlaut came back as two wrong characters.
+proc _pdftext {pdf args} {
+    set txtFile [file rootname $pdf].txt
+    exec pdftotext {*}$args -enc UTF-8 $pdf $txtFile
+    set fh [open $txtFile r]
+    fconfigure $fh -encoding utf-8
+    set txt [read $fh]
+    close $fh
+    file delete $txtFile
+    return $txt
 }
 
 # ============================================================
@@ -394,7 +408,7 @@ test "tilepdf.render.table_keeps_german_compounds" {
     file delete -force $out
     ::docir::tilepdf::renderSheets $sheets $out
     assert [file exists $out] "wrap-table.pdf fehlt"
-    if {![catch {exec pdftotext -layout -enc UTF-8 $out -} txt]} {
+    if {![catch {_pdftext $out -layout} txt]} {
         foreach word {Computerverwaltung Datenträgerverwaltung Eingabeaufforderung} {
             assert [expr {[string first $word $txt] >= 0}] \
                 "$word fehlt im PDF-Text: $txt"
@@ -416,7 +430,7 @@ test "tilepdf.render.code_keeps_comment_words" {
     file delete -force $out
     ::docir::tilepdf::renderSheets $sheets $out
     assert [file exists $out] "wrap-code.pdf fehlt"
-    if {![catch {exec pdftotext -layout -enc UTF-8 $out -} txt]} {
+    if {![catch {_pdftext $out -layout} txt]} {
         assert [expr {[string first "sichtbar" $txt] >= 0}] \
             "sichtbar fehlt: $txt"
         assert [expr {![regexp {sichtba\s*\n} $txt]}] \

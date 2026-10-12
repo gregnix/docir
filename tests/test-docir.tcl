@@ -699,4 +699,67 @@ test "spec.dump.footnote_section" {
     assert [expr {[string first "fn1" $txt] >= 0}]
 }
 
+# ============================================================
+# Regression: dump covers every block type of the IR
+# (labels used to be unescaped "[paragraph]" -> command substitution;
+#  listItem nodes, blank without content and math_block broke it)
+# ============================================================
+
+test "spec.dump.all_block_types" {
+    set t {{type text text Hi}}
+    set ir [list \
+        [dict create type doc_meta content {} meta {irSchemaVersion 1}] \
+        [dict create type doc_header content {} meta {name foo section 1 part P}] \
+        [dict create type heading content $t meta {level 2}] \
+        [dict create type paragraph content {{type text text para} {type code text c}} meta {}] \
+        [dict create type pre content {{type text text code}} meta {kind code}] \
+        [dict create type math_block content {{type text text x^2}} meta {kind math}] \
+        [dict create type list meta {kind ul} content [list \
+            [dict create type listItem content {{type text text desc1}} \
+                meta {kind ul term {}}] \
+            [dict create term {{type text text t2}} desc {{type text text d2}}]]] \
+        [dict create type blank meta {}] \
+        [dict create type hr content {} meta {}] \
+        [dict create type table meta {columns 2} content [list \
+            [dict create type tableRow meta {kind header} content [list \
+                [dict create type tableCell content {{type text text A}} meta {}] \
+                [dict create type tableCell content {{type text text B}} meta {}]]]]] \
+        [dict create type image content {} meta {url i.png alt Alt}] \
+        [dict create type footnote_section meta {} content [list \
+            [dict create type footnote_def content {{type text text fn}} \
+                meta {id f1 num 1}]]] \
+        [dict create type div meta {class note} content [list \
+            [dict create type paragraph content {{type text text inner}} meta {}]]]]
+    set txt [docir::dump $ir]
+    assert [string match {\[doc_meta\] irSchemaVersion=1*} $txt] "first line is doc_meta"
+    foreach needle {
+        {[doc_header] foo(1) P} {## Hi} {[paragraph] «parac»} {<code> «c»}
+        {[pre (code)] «code»} {[math_block] «x^2»} {[list kind=ul indent=0 items=2]}
+        {• «» → «desc1»} {• «t2» → «d2»} {[blank lines=1]} {[hr]}
+        {[table cols=2 rows=1]} {[row header] A | B} {[image] i.png alt=«Alt»}
+        {[footnote_section] 1 defs} {[1] id=f1 «fn»}
+        {[div class=note] 1 children} {  [paragraph] «inner»}
+    } {
+        assert [expr {[string first $needle $txt] >= 0}] "dump contains '$needle'"
+    }
+}
+
+test "docir.validate.blank_without_content" {
+    set errs [docir::validate [list [dict create type blank meta {}]]]
+    assert [expr {[llength $errs] == 0}] "blank ohne content ist gültig: $errs"
+    set errs [docir::validate [list [dict create type blank meta {lines 2}]]]
+    assert [expr {[llength $errs] == 0}] "blank ohne content mit lines ist gültig: $errs"
+    # andere Typen brauchen content weiterhin
+    set errs [docir::validate [list [dict create type paragraph meta {}]]]
+    assert [expr {[llength $errs] == 1}] "paragraph ohne content bleibt Fehler"
+}
+
+test "docir.validate.later_nodes_checked_after_error" {
+    # Ein fehlendes Pflichtfeld in Node 1 darf Node 2 nicht verdecken
+    set errs [docir::validate [list \
+        [dict create type paragraph meta {}] \
+        [dict create type heading content {} meta {level 9}]]]
+    assert [expr {[llength $errs] == 2}] "beide Nodes gemeldet: $errs"
+}
+
 exit [test::runAll]

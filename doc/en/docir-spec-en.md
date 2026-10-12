@@ -514,7 +514,8 @@ tree); the others read a format or a Tcl declaration directly:
 Entry points: `docir::roff::fromAst` / `docir::md::fromAst` (the mappers, whose
 namespaces are `::docir::roff` / `::docir::md`), `docir::htmlSource::fromHtml`,
 `docir::odtSource::fromOdt`, `docir::tkSource::fromWidget` (plus `::media` for
-image bytes), and `docir::csdSource::toSheet` / `::toSheets`.
+image bytes), and `docir::csd::toSheet` / `docir::csd::toSheets` (package
+`docir::csdSource`, namespace `::docir::csd`).
 
 Two sources are round-trip inverses of a sink: `htmlSource` ↔ `docir::html` and
 `tkSource` ↔ `docir::rendererTk`. They are semantic, not pixel-exact — e.g. the

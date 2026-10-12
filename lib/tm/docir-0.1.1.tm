@@ -1,4 +1,6 @@
 # docir-0.1.1.tm – DocIR Intermediate Representation
+# dump: prints every block type (escaped labels, listItem/legacy list items,
+#   table rows, math_block); validate: blank without content is valid.
 # 0.1.1 (2026-06-20): validator accepts `softbreak` (inlineTypes whitelist +
 #   field-less like `linebreak`) — completes the 2026-06-14 softbreak work.
 # Validator, Pretty-Dump, Diff
@@ -64,16 +66,23 @@ proc docir::validate {ir} {
     set i 0
     foreach node $ir {
         incr i
-        # Pflichtfelder
-        foreach field {type content meta} {
+        # Pflichtfelder. blank traegt keinen Inhalt: content darf dort
+        # fehlen und gilt dann als {}.
+        set required {type content meta}
+        if {[dict exists $node type] && [dict get $node type] eq "blank"} {
+            set required {type meta}
+        }
+        set missing 0
+        foreach field $required {
             if {![dict exists $node $field]} {
                 lappend errors "Node $i: Pflichtfeld '$field' fehlt"
+                set missing 1
             }
         }
-        if {[llength $errors] > 0} continue
+        if {$missing} continue
 
         set type    [dict get $node type]
-        set content [dict get $node content]
+        set content [expr {[dict exists $node content] ? [dict get $node content] : {}}]
         set meta    [dict get $node meta]
 
         # Block-Typ bekannt?
@@ -381,104 +390,117 @@ proc docir::checkSchemaVersion {ir {supported {}} {strict 0}} {
 
 # ============================================================
 # docir::dump -- Pretty-Print eines DocIR-Streams
+#
+# Gibt jeden Block-Typ des IR als eine Zeile aus (Kinder von list,
+# table, footnote_section und div eingerückt darunter). Fehlende
+# content/meta-Felder (z.B. blank ohne content) gelten als {}.
+# Alle Labels stehen in escapten Klammern -- "[paragraph]" im
+# String wäre sonst eine Command-Substitution.
 # ============================================================
 
 proc docir::dump {ir {indent 0}} {
     set pad [string repeat "  " $indent]
     set out ""
-    set i 0
     foreach node $ir {
-        incr i
-        set type    [dict get $node type]
-        set content [dict get $node content]
-        set meta    [dict get $node meta]
+        set type    [docir::_field $node type "?"]
+        set content [docir::_field $node content]
+        set meta    [docir::_field $node meta]
 
-        switch $type {
+        switch -- $type {
             doc_meta {
-                set v [expr {[dict exists $meta irSchemaVersion] ? [dict get $meta irSchemaVersion] : "?"}]
+                set v [docir::_field $meta irSchemaVersion "?"]
                 append out "${pad}\[doc_meta\] irSchemaVersion=$v\n"
             }
             doc_header {
-                set name    [expr {[dict exists $meta name]    ? [dict get $meta name]    : "?"}]
-                set section [expr {[dict exists $meta section] ? [dict get $meta section] : ""}]
-                set part    [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]
-                append out "${pad}[doc_header] $name($section) $part\n"
+                set name    [docir::_field $meta name "?"]
+                set section [docir::_field $meta section]
+                set part    [docir::_field $meta part]
+                append out "${pad}\[doc_header\] $name\($section\) $part\n"
             }
             heading {
-                set lvl  [expr {[dict exists $meta level] ? [dict get $meta level] : "?"}]
-                set txt  [docir::_inlinesToText $content]
-                set hdr  [string repeat "#" $lvl]
+                set lvl [docir::_field $meta level "?"]
+                set txt [docir::_inlinesToText $content]
+                set hdr [expr {[string is integer -strict $lvl]
+                    ? [string repeat "#" $lvl] : "#?"}]
                 append out "${pad}${hdr} $txt\n"
             }
             paragraph {
                 set txt [docir::_inlinesToText $content]
-                set preview [string range $txt 0 60]
-                if {[string length $txt] > 60} { append preview "…" }
-                append out "${pad}[paragraph] «$preview»\n"
+                append out "${pad}\[paragraph\] «[docir::_preview $txt 60]»\n"
                 append out [docir::_dumpInlines $content "${pad}  "]
             }
             pre {
-                set kind [expr {[dict exists $meta kind] ? " ($meta)" : ""}]
+                set kind [docir::_field $meta kind]
+                set kind [expr {$kind ne "" ? " ($kind)" : ""}]
                 set txt  [docir::_inlinesToText $content]
-                set preview [string range $txt 0 50]
-                append out "${pad}[pre$kind] «$preview»\n"
+                append out "${pad}\[pre$kind\] «[docir::_preview $txt 50]»\n"
+            }
+            math_block {
+                set txt [docir::_inlinesToText $content]
+                append out "${pad}\[math_block\] «[docir::_preview $txt 50]»\n"
             }
             list {
-                set kind [expr {[dict exists $meta kind]        ? [dict get $meta kind]        : "?"}]
-                set il   [expr {[dict exists $meta indentLevel] ? [dict get $meta indentLevel] : 0}]
-                append out "${pad}[list kind=$kind indent=$il items=[llength $content]]\n"
+                set kind [docir::_field $meta kind "?"]
+                set il   [docir::_field $meta indentLevel 0]
+                append out "${pad}\[list kind=$kind indent=$il items=[llength $content]\]\n"
                 foreach item $content {
-                    set term [docir::_inlinesToText [dict get $item term]]
-                    set desc [docir::_inlinesToText [dict get $item desc]]
-                    set tprev [string range $term 0 30]
-                    set dprev [string range $desc 0 40]
-                    append out "${pad}  • «$tprev» → «$dprev»\n"
+                    append out [docir::_dumpListItem $item "${pad}  " [expr {$indent + 2}]]
                 }
             }
+            listItem {
+                # Normalerweise innerhalb list.content -- auf Top-Level
+                # (z.B. in Tests) genauso ausgeben
+                set kind [docir::_field $meta kind "?"]
+                append out "${pad}\[listItem kind=$kind\]\n"
+                append out [docir::_dumpListItem $node "${pad}  " [expr {$indent + 2}]]
+            }
             blank {
-                set l [expr {[dict exists $meta lines] ? [dict get $meta lines] : 1}]
-                append out "${pad}[blank lines=$l]\n"
+                set l [docir::_field $meta lines 1]
+                append out "${pad}\[blank lines=$l\]\n"
             }
             hr {
-                append out "${pad}[hr]\n"
+                append out "${pad}\[hr\]\n"
             }
             table {
-                set cols [expr {[dict exists $meta columns] ? [dict get $meta columns] : "?"}]
-                set rows [llength $content]
-                append out "${pad}\[table cols=$cols rows=$rows\]\n"
+                set cols [docir::_field $meta columns "?"]
+                append out "${pad}\[table cols=$cols rows=[llength $content]\]\n"
+                foreach row $content {
+                    append out [docir::_dumpRow $row "${pad}  "]
+                }
             }
-            tableRow -
+            tableRow {
+                # Sollte nur in einer Tabelle vorkommen
+                append out "${pad}\[tableRow\] (orphan, normalerweise innerhalb table)\n"
+                append out [docir::_dumpRow $node "${pad}  "]
+            }
             tableCell {
-                # Sollten nur in einer Tabelle vorkommen — auf Top-Level
-                # nur als Debugging-Hinweis ausgeben
-                append out "${pad}[$type] (orphan, normalerweise innerhalb table)\n"
+                set txt [docir::_inlinesToText $content]
+                append out "${pad}\[tableCell\] (orphan, normalerweise innerhalb table) «[docir::_preview $txt 40]»\n"
             }
             image {
-                set url [expr {[dict exists $meta url] ? [dict get $meta url] : "?"}]
-                set alt [expr {[dict exists $meta alt] ? [dict get $meta alt] : ""}]
+                set url [docir::_field $meta url "?"]
+                set alt [docir::_field $meta alt]
                 append out "${pad}\[image\] $url alt=«$alt»\n"
             }
             footnote_section {
                 append out "${pad}\[footnote_section\] [llength $content] defs\n"
                 foreach fnDef $content {
-                    set fnMeta [dict get $fnDef meta]
-                    set id  [expr {[dict exists $fnMeta id]  ? [dict get $fnMeta id]  : "?"}]
-                    set num [expr {[dict exists $fnMeta num] ? [dict get $fnMeta num] : ""}]
-                    set txt [docir::_inlinesToText [dict get $fnDef content]]
-                    set preview [string range $txt 0 40]
-                    append out "${pad}  \[$num\] id=$id «$preview»\n"
+                    set fnMeta [docir::_field $fnDef meta]
+                    set id  [docir::_field $fnMeta id "?"]
+                    set num [docir::_field $fnMeta num]
+                    set txt [docir::_inlinesToText [docir::_field $fnDef content]]
+                    append out "${pad}  \[$num\] id=$id «[docir::_preview $txt 40]»\n"
                 }
             }
             footnote_def {
                 # Sollte normalerweise innerhalb footnote_section sein
-                set id [expr {[dict exists $meta id] ? [dict get $meta id] : "?"}]
+                set id  [docir::_field $meta id "?"]
                 set txt [docir::_inlinesToText $content]
-                set preview [string range $txt 0 40]
-                append out "${pad}\[footnote_def id=$id\] «$preview»\n"
+                append out "${pad}\[footnote_def id=$id\] «[docir::_preview $txt 40]»\n"
             }
             div {
-                set cls [expr {[dict exists $meta class] ? [dict get $meta class] : ""}]
-                set id  [expr {[dict exists $meta id]    ? [dict get $meta id]    : ""}]
+                set cls [docir::_field $meta class]
+                set id  [docir::_field $meta id]
                 set attrs ""
                 if {$cls ne ""} { append attrs " class=$cls" }
                 if {$id  ne ""} { append attrs " id=$id" }
@@ -487,17 +509,60 @@ proc docir::dump {ir {indent 0}} {
                 append out [docir::dump $content [expr {$indent + 1}]]
             }
             default {
-                append out "${pad}[$type] (unbekannt)\n"
+                append out "${pad}\[$type\] (unbekannt)\n"
             }
         }
     }
     return $out
 }
 
+# Dict-Feld mit Default (für optionale content/meta/Meta-Keys)
+proc docir::_field {d key {default ""}} {
+    if {[catch {dict exists $d $key} ok] || !$ok} { return $default }
+    return [dict get $d $key]
+}
+
+proc docir::_preview {txt n} {
+    set p [string range $txt 0 $n]
+    if {[string length $txt] > $n + 1} { append p "…" }
+    return $p
+}
+
+# Ein Listen-Item: neue Form (listItem-Node, meta.term + content=desc,
+# optional blocks) oder Legacy-Form {term .. desc ..}.
+proc docir::_dumpListItem {item pad blockIndent} {
+    if {[docir::_field $item type] eq "listItem"} {
+        set term [docir::_field [docir::_field $item meta] term]
+        set desc [docir::_field $item content]
+    } else {
+        set term [docir::_field $item term]
+        set desc [docir::_field $item desc]
+    }
+    set tprev [string range [docir::_inlinesToText $term] 0 30]
+    set dprev [string range [docir::_inlinesToText $desc] 0 40]
+    set out "${pad}• «$tprev» → «$dprev»\n"
+    set blocks [docir::_field $item blocks]
+    if {[llength $blocks]} {
+        append out [docir::dump $blocks $blockIndent]
+    }
+    return $out
+}
+
+proc docir::_dumpRow {row pad} {
+    set kind  [docir::_field [docir::_field $row meta] kind]
+    set kind  [expr {$kind ne "" ? " $kind" : ""}]
+    set cells {}
+    foreach cell [docir::_field $row content] {
+        lappend cells [string range \
+            [docir::_inlinesToText [docir::_field $cell content]] 0 20]
+    }
+    return "${pad}\[row$kind\] [join $cells { | }]\n"
+}
+
 proc docir::_inlinesToText {inlines} {
     set t ""
     foreach i $inlines {
-        if {[dict exists $i text]} { append t [dict get $i text] }
+        if {![catch {dict exists $i text} ok] && $ok} { append t [dict get $i text] }
     }
     return $t
 }
@@ -505,7 +570,7 @@ proc docir::_inlinesToText {inlines} {
 proc docir::_dumpInlines {inlines pad} {
     set out ""
     foreach i $inlines {
-        set type [dict get $i type]
+        set type [docir::_field $i type "?"]
         if {$type eq "text"} continue  ;# text-Inlines nicht einzeln zeigen
         set text [expr {[dict exists $i text] ? [dict get $i text] : ""}]
         append out "${pad}<$type> «$text»\n"

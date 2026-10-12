@@ -1,6 +1,10 @@
 #!/usr/bin/env tclsh
 # Minimal Test Framework for nroffparser/renderer tests
 
+# Tcl 9 writes strictly: the check marks below are an error on a stdout
+# that cannot hold them (a cp1252 pipe on Windows). Replace instead.
+catch {fconfigure stdout -profile replace}
+
 namespace eval test {
     variable tests {}
     variable passed 0

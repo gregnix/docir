@@ -41,8 +41,9 @@ if {$argc < 1 || [lsearch -exact $argv "--help"] >= 0 \
     usage
 }
 
-# Eigene Module (Entwicklungs-Modus aus Repo)
-::tcl::tm::path add [file join $scriptDir .. lib tm]
+# Own modules plus sibling repos (mdstack, pdf4tcl, ...): $MDSTACK_HOME
+# etc. first, then ../mdstack next to the repo root, then installed trees.
+source [file join $scriptDir .. lib repos-path.tcl]
 
 package require mdstack::parser
 package require docir
