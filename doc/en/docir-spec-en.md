@@ -322,15 +322,24 @@ Inlines are dicts `{type <t> text <s>}` plus optional fields:
 | `underline`    | `text`                    | –                    |
 | `strike`       | `text`                    | –                    |
 | `code`         | `text`                    | –                    |
-| `link`         | `text`, `name`, `section` | `href`               |
+| `link`         | `text`, `name`, `section` | `href`, `style`      |
 | `image`        | `text` (= alt), `url`     | `title`              |
 | `linebreak`    | (none)                    | –                    |
 | `softbreak`    | (none)                    | –                    |
-| `span`         | `text`                    | `class`, `id`        |
+| `span`         | `text`                    | `class`, `id`, `style` |
 | `footnote_ref` | `text` (= display num)    | `id` (target)        |
 | `math`         | `text` (= source)         | –                    |
 
 ### Notes on the new types
+
+**`style` on `span` and `link`** — a span or link written inside `**`, `*`
+or `~~` keeps its own node; the wrapper goes into `style`, a list of
+`strong`, `emphasis`, `strike`, innermost first (`***[x]{.index}***` ->
+`style {strong emphasis}`). HTML wraps the element in `<strong>`/`<em>`/`<s>`,
+PDF sets bold/italic, Markdown writes the markers back, the block runs set the
+style flags; other sinks show the plain text. Before 2026-10-21 such a span
+was flattened to `{type strong text ...}`: an index marker in bold had no
+index entry and no anchor, a link in bold lost its target.
 
 **`strike`** — Markdown `~~text~~`. Renders as `<s>` in HTML, `~~..~~` in
 Markdown, `[OVERSTRIKE]` text via `\s-1[\s+1` hack in nroff (or

@@ -17,6 +17,10 @@ Die Senke unterstuetzt unter anderem ein Inhaltsverzeichnis mit
 Seitenzahlen und einen Sachindex (siehe das naechste Kapitel). Sie nutzt
 die Unicode-sichere Text- und Schrift-Behandlung von pdf4tcllib.
 
+Ein Codeblock, der nicht mehr auf die Seite passt, beginnt auf der
+naechsten, in fester Schrift. Bis 2026-10-19 kam er dort proportional
+heraus, weil der Seitenumbruch die Fusszeile in der Grundschrift schreibt.
+
 ## HTML
 
 `docir::html` rendert nach eigenstaendigem HTML mit eingebettetem CSS.

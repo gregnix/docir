@@ -17,6 +17,10 @@ The sink supports, among other things, a table of contents with page
 numbers and a subject index (see the next chapter). It relies on the
 Unicode-safe text and font handling of pdf4tcllib.
 
+A code block that no longer fits on the page starts on the next one, in the
+fixed-width font. Up to 2026-10-19 it came out proportional there, because
+the page break writes the footer in the body font.
+
 ## HTML
 
 `docir::html` renders to self-contained HTML with embedded CSS.

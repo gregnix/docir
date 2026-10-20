@@ -73,6 +73,13 @@ Inside `content` there are inline nodes: `text`, `strong`, `emphasis`,
 and an optional `id` and is the basis for index markers (see the chapter
 on tables of contents and indexes).
 
+Since 2026-10-21 span and `link` have the optional field `style`: a list of
+`strong`, `emphasis` and `strike`, innermost first. It is set when the span
+or link sat inside emphasis in the source: `**[adduser]{.index}**` becomes
+`{type span text adduser class index style strong}`. HTML wraps it in
+`<strong>`/`<em>`/`<s>`, PDF draws it bold or italic, Markdown writes the
+markers back; the other sinks show the text.
+
 ## 2.4  Validation
 
 `docir::validate $ir` checks an IR and returns an empty list for valid
@@ -99,6 +106,12 @@ set ir  [docir::md::fromAst $ast]
 Markdown headings become `heading` with `meta.level` taken from the number
 of `#`. Each heading receives an anchor via `meta.id` (a slug derived from
 the title) that is later used for cross-references and tables.
+
+Emphasis (`**`, `*`, `~~`) is flattened: each piece of text inside becomes
+its own `strong`, `emphasis` or `strike` inline. A span or link inside keeps
+its node and carries the emphasis in `style`. Up to 2026-10-20 it was
+flattened too; a term in bold was then missing from the index, a link in
+bold lost its target.
 
 ## 3.2  nroff
 
@@ -133,6 +146,10 @@ docir::pdf::render $ir out.pdf [dict create \
 The sink supports, among other things, a table of contents with page
 numbers and a subject index (see the next chapter). It relies on the
 Unicode-safe text and font handling of pdf4tcllib.
+
+A code block that no longer fits on the page starts on the next one, in the
+fixed-width font. Up to 2026-10-19 it came out proportional there, because
+the page break writes the footer in the body font.
 
 ## 4.2  HTML
 
@@ -181,7 +198,10 @@ A [coroutine]{.index} suspends a script.
 
 The term stays visible in the running text and is collected at the same
 time. Such a [span]{.index} may appear in any paragraph at any level,
-including in sub-chapters.
+including in sub-chapters, and also in bold or italic
+(`**[coroutine]{.index}**`, since 2026-10-21; before, it was then missing
+from the index). Inside a code span (`` `[x]{.index}` ``) it is an example
+and does not count.
 
 In PDF, `generateIndex 1` enables the index: alphabetical, grouped by
 initial letter, each term with all pages where it occurs. The page is

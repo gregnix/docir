@@ -218,4 +218,59 @@ test "bridge.nested_list_no_schema_violation" {
     }
 }
 
+# ============================================================
+# Index marker and link inside emphasis (2026-10-21)
+# ============================================================
+# **[x]{.index}** was flattened to {type strong text x}: no index entry, no
+# anchor (three places in "Debian unter Linux"). The span now keeps its node
+# and carries the emphasis in the optional field `style`.
+
+proc bridgePara {md} {
+    lassign [bridgeRender $md] ir errs
+    foreach n $ir {
+        if {[dict get $n type] eq "paragraph"} { return [list [dict get $n content] $errs] }
+    }
+    return [list {} $errs]
+}
+
+test "bridge.index_in_strong_keeps_span" {
+    lassign [bridgePara "a **\[adduser\]{.index}** b\n"] c errs
+    assertEqual {} $errs "valid"
+    set sp [lindex $c 1]
+    assertEqual span [dict get $sp type] "span bleibt"
+    assertEqual index [dict get $sp class] "class index"
+    assertEqual adduser [dict get $sp text] "text"
+    assertEqual strong [dict get $sp style] "style strong"
+}
+
+test "bridge.index_in_strong_emphasis_style_order" {
+    lassign [bridgePara "a ***\[z\]{.index}*** b\n"] c errs
+    assertEqual {} $errs "valid"
+    assertEqual {strong emphasis} [dict get [lindex $c 1] style] "innen zuerst"
+}
+
+test "bridge.link_in_strong_keeps_href" {
+    lassign [bridgePara "a **\[Tcl\](https://tcl-lang.org)** b\n"] c errs
+    assertEqual {} $errs "valid"
+    set l [lindex $c 1]
+    assertEqual link [dict get $l type] "link bleibt"
+    assertEqual https://tcl-lang.org [dict get $l href] "href"
+    assertEqual Tcl [dict get $l text] "text"
+    assertEqual strong [dict get $l style] "style"
+}
+
+test "bridge.index_in_strong_html_entry_and_anchor" {
+    package require docir::html
+    lassign [bridgeRender "a **\[adduser\]{.index}** b\n"] ir errs
+    set h [docir::html::render $ir]
+    ::test::assertContains $h {<strong><span class="index" id="idx-1">adduser</span></strong>} \
+        "fett, mit Anker"
+}
+
+test "bridge.index_in_strong_md_roundtrip" {
+    package require docir::md
+    lassign [bridgeRender "a **\[adduser\]{.index}** b\n"] ir errs
+    ::test::assertContains [docir::md::render $ir] {**[adduser]{.index}**} "Markdown zurück"
+}
+
 exit [test::runAll]

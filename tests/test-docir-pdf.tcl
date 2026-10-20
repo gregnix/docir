@@ -14,11 +14,12 @@ set testDir [file dirname [file normalize [info script]]]
 source -encoding utf-8 [file join $testDir test-framework.tcl]
 source -encoding utf-8 [file join $testDir test-setup.tcl]
 
+# Seit 19.10.2026: 49 (vier Tests fuer interne Links).
 # Soll-Zahl, gemessen am 27.09.2026 mit pdf4tcl UND pdf4tcllib im
 # Geschwisterbaum: 45 angemeldete Tests. Ohne pdf4tcllib sind es 3 -- der
 # Block ab "if {[catch {package require pdf4tcl}]}" faellt dann weg und
 # nimmt 42 Tests mit, ohne dass der Zaehler etwas davon sieht.
-::test::expect 45
+::test::expect 49
 
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
@@ -1049,6 +1050,83 @@ test "spec.pdf.code.unbreakable_token_hard_break" {
 }
 
 }  ;# end canRender block for code wrap
+
+
+# ============================================================
+# Interne Links: TOC-Eintraege und "#id"-Verweise (19.10.2026)
+# ============================================================
+#
+# Vorher: TOC ohne Links, "#id" als URI-Link (/S /URI /URI (#id)) -- ein
+# Klick fuehrte ins Leere. Jetzt: jede Ueberschrift ein benanntes Ziel
+# (h-N und ihre id), Links per pdf4tcl linkAdd.
+
+if {$canRender && [llength [info commands ::pdf4tcl::pdf4tcl]] && \
+        "linkAdd" in [info class methods ::pdf4tcl::pdf4tcl -all]} {
+
+proc ::_linkIr {} {
+    return [list \
+        [dict create type heading content [list [dict create type text text "Erstes Kapitel"]] \
+            meta [dict create level 1 id erstes-kapitel]] \
+        [dict create type paragraph content [list \
+            [dict create type text text "Siehe "] \
+            [dict create type link text "zweites" href "#zweites-kapitel"] \
+            [dict create type text text " und "] \
+            [dict create type link text "Web" href "https://example.com"]] meta {}] \
+        [dict create type heading content [list [dict create type text text "Zweites Kapitel"]] \
+            meta [dict create level 1 id zweites-kapitel]] \
+        [dict create type paragraph content [list [dict create type text text "Text."]] meta {}]]
+}
+
+proc ::_pdfRaw {file} {
+    set fh [open $file rb]; set d [read $fh]; close $fh; return $d
+}
+
+test "pdf.links.toc_entries_link_to_headings" {
+    set f [file join $::TMPBASE test-pdf-toclinks.pdf]
+    docir::pdf::render [::_linkIr] $f [dict create generateToc 1 compress 0]
+    set d [::_pdfRaw $f]
+    assert [regexp {/Dest /h-0\M} $d] "TOC-Eintrag 1 verlinkt"
+    assert [regexp {/Dest /h-1\M} $d] "TOC-Eintrag 2 verlinkt"
+    assert [regexp {/Dests <<} $d] "Katalog hat /Dests"
+    catch {file delete $f}
+}
+
+test "pdf.links.hash_href_is_internal" {
+    set f [file join $::TMPBASE test-pdf-hashlink.pdf]
+    docir::pdf::render [::_linkIr] $f [dict create compress 0]
+    set d [::_pdfRaw $f]
+    assert [regexp {/Dest /zweites-kapitel} $d] "#id wird interner Sprung"
+    assert [expr {![regexp {/URI \(#} $d]}] "kein URI-Link auf #id"
+    assert [regexp {/URI \(https://example.com\)} $d] "Web-Link bleibt URI"
+}
+
+test "pdf.links.off_with_internalLinks_0" {
+    set f [file join $::TMPBASE test-pdf-nolinks.pdf]
+    docir::pdf::render [::_linkIr] $f [dict create generateToc 1 internalLinks 0 compress 0]
+    set d [::_pdfRaw $f]
+    assert [expr {![regexp {/Dests} $d]}] "keine Ziele"
+    assert [expr {![regexp {/Dest /} $d]}] "keine internen Links"
+    catch {file delete $f}
+}
+
+test "pdf.links.index_pages_link_to_marker" {
+    # Jede Seitenzahl im Stichwortverzeichnis springt an die Fundstelle.
+    set ir [list \
+        [dict create type heading content [list [dict create type text text "Kapitel"]] \
+            meta [dict create level 1 id kapitel]] \
+        [dict create type paragraph content [list \
+            [dict create type text text "Ein "] \
+            [dict create type span class index text "Begriff"] \
+            [dict create type text text " im Text."]] meta {}]]
+    set f [file join $::TMPBASE test-pdf-indexlinks.pdf]
+    docir::pdf::render $ir $f [dict create generateIndex 1]
+    set d [::_pdfRaw $f]
+    assert [regexp {/Dest /ix-0\M} $d] "Seitenzahl im Index verlinkt"
+    assert [regexp {/ix-0 \[\d+ 0 R /XYZ} $d] "Ziel an der Fundstelle definiert"
+    catch {file delete $f}
+}
+
+}  ;# end linkAdd block
 
 }  ;# end pdf4tcl-availability block
 

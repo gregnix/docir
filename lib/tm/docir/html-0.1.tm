@@ -941,6 +941,19 @@ proc docir::html::_renderInlines {inlines} {
     return $out
 }
 
+# Optional field `style` of a span or link (set when it sat inside **, *
+# or ~~): wrap the rendered element, innermost first.
+proc docir::html::_wrapStyle {inline html} {
+    foreach s [_dictDef $inline style {}] {
+        switch -- $s {
+            strong   { set html "<strong>$html</strong>" }
+            emphasis { set html "<em>$html</em>" }
+            strike   { set html "<s>$html</s>" }
+        }
+    }
+    return $html
+}
+
 proc docir::html::_renderInline {inline} {
     set t [dict get $inline type]
     set txt [_dictDef $inline text ""]
@@ -953,7 +966,7 @@ proc docir::html::_renderInline {inline} {
         underline  { return "<u>$escTxt</u>" }
         strike     { return "<s>$escTxt</s>" }
         code       { return "<code>$escTxt</code>" }
-        link       { return [_renderLinkInline $inline $escTxt] }
+        link       { return [_wrapStyle $inline [_renderLinkInline $inline $escTxt]] }
         image {
             # Inline-Image: <img src="url" alt="text" title="title"?>
             set url [_dictDef $inline url ""]
@@ -990,7 +1003,7 @@ proc docir::html::_renderInline {inline} {
             if {$spanId ne ""} {
                 append attrs " id=\"[_escapeAttr $spanId]\""
             }
-            return "<span$attrs>$escTxt</span>"
+            return [_wrapStyle $inline "<span$attrs>$escTxt</span>"]
         }
         footnote_ref {
             # <sup><a href="#fn-ID">TEXT</a></sup> with ID = the id field

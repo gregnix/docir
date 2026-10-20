@@ -419,7 +419,7 @@ proc docir::md::_mapInlines {inlines} {
             link {
                 set url   [expr {[dict exists $inline url]   ? [dict get $inline url]   : ""}]
                 set label [_dictDef $inline label {}]
-                set txt   [docir::md::_inlinesToText $label]
+                set txt   [docir::md::_astInlinesText $label]
                 set title [_dictDef $inline title ""]
                 # url-quirk: a title may be packed into the url as: url "title"
                 if {$title eq "" && [regexp {^(\S+)\s+"([^"]*)"} $url full u t]} {
@@ -531,12 +531,21 @@ proc docir::md::_mapInlines {inlines} {
 # are glued together: "one word</em><em></em><em>next word".
 #
 # Compare the `span` branch, which flattens softbreaks the same way.
+#
+# A span or link inside the wrapper keeps its own node: flattening it to
+# {type strong text ...} lost the class (an index marker **[x]{.index}** had
+# no index entry and no anchor) and the href of a link. The wrapper goes into
+# the optional field `style` (a list, innermost first: ***[x]{.index}*** ->
+# style {strong emphasis}); renderers that know the field apply it.
 proc docir::md::_mapWrapped {type inline} {
     set out {}
     set inner [docir::md::_mapInlines [_dictDef $inline content {}]]
     foreach i $inner {
         if {[dict get $i type] eq "softbreak"} {
             lappend out [dict create type $type text " "]
+        } elseif {[dict get $i type] in {span link}} {
+            dict lappend i style $type
+            lappend out $i
         } else {
             lappend out [dict create type $type text [_inlineText $i]]
         }
@@ -549,13 +558,17 @@ proc docir::md::_inlineText {inline} {
     return ""
 }
 
-# Helper: All Inlines → plain text (for link-labels etc.)
-proc docir::md::_inlinesToText {inlines} {
+# Helper: parser inlines (AST, field `value`) -> plain text, for link labels.
+# Own name: the Markdown renderer (md-0.1.tm, same namespace) has a
+# _inlinesToText for IR inlines (field `text`). Whichever file was sourced
+# last won; with the renderer loaded after this file every link label came
+# out empty (seen 2026-10-21 in test-mdstack-bridge).
+proc docir::md::_astInlinesText {inlines} {
     set out ""
     foreach i $inlines {
         if {[dict exists $i value]} { append out [dict get $i value] }
         if {[dict exists $i content]} {
-            append out [docir::md::_inlinesToText [dict get $i content]]
+            append out [docir::md::_astInlinesText [dict get $i content]]
         }
     }
     return $out

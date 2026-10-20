@@ -28,6 +28,8 @@
 #         # NEU in 0.2:
 #         generateToc    Bool   (default 0) Inhaltsverzeichnis am Anfang
 #         tocTitle       String (default "Inhaltsverzeichnis")
+#         internalLinks  Bool   (default 1) TOC entries and "#id" links jump
+#                                inside the PDF (needs pdf4tcl with linkAdd)
 #         tocDepth       Int    (default 2) Heading-Level bis zu welchem TOC-Eintraege
 #         generateIndex  Bool   (default 0) Stichwortverzeichnis am Ende
 #         indexTitle     String (default "Stichwortverzeichnis")
@@ -230,6 +232,7 @@ proc docir::pdf::_normalizeOptions {options} {
         indexTitle         "Stichwortverzeichnis" \
         indexLevel         3 \
         bookmarks          1 \
+        internalLinks      1 \
         pdfa               "" \
         userpassword       "" \
         ownerpassword      "" \
@@ -353,6 +356,7 @@ proc docir::pdf::_styleToFont {style} {
 proc docir::pdf::_coalesceIndexSpans {inlines} {
     set out {}
     set runParts {}
+    set runStyle {}
     set inRun 0
     foreach inline $inlines {
         set isIdx 0
@@ -364,11 +368,12 @@ proc docir::pdf::_coalesceIndexSpans {inlines} {
         if {$isIdx} {
             set t [string trim [_dictDef $inline text ""]]
             if {$t ne ""} { lappend runParts $t }
+            if {!$inRun} { set runStyle [_dictDef $inline style {}] }
             set inRun 1
         } else {
             if {$inRun} {
                 lappend out [dict create type span class index \
-                    text [join $runParts " "]]
+                    text [join $runParts " "] style $runStyle]
                 set runParts {}
                 set inRun 0
             }
@@ -376,7 +381,8 @@ proc docir::pdf::_coalesceIndexSpans {inlines} {
         }
     }
     if {$inRun} {
-        lappend out [dict create type span class index text [join $runParts " "]]
+        lappend out [dict create type span class index \
+            text [join $runParts " "] style $runStyle]
     }
     return $out
 }
@@ -448,7 +454,20 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                 if {[lsearch -exact [split $cls] index] >= 0} {
                     set idxTerm [string trim $text]
                 }
-                lappend segs [list $text $parentStyle "" $idxTerm]
+                # optional `style` (span inside ** or *): bold/italic on top
+                # of the parent style
+                set st $parentStyle
+                foreach w [_dictDef $inline style {}] {
+                    switch -- $w {
+                        strong {
+                            set st [expr {$st in {italic bolditalic} ? "bolditalic" : "bold"}]
+                        }
+                        emphasis {
+                            set st [expr {$st in {bold bolditalic} ? "bolditalic" : "italic"}]
+                        }
+                    }
+                }
+                lappend segs [list $text $st "" $idxTerm]
             }
             footnote_ref {
                 set marker [_dictDef $inline text "?"]
@@ -729,7 +748,11 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
         # pageNo is final here because _ensureSpace/_newPage runs before the
         # line is rendered.
         if {$idxTerm ne ""} {
-            dict lappend st indexEntries [list $idxTerm [dict get $st pageNo]]
+            # A jump target at the marker, so the index can link to the
+            # exact spot, not only to the page.
+            set ixDest "ix-[llength [dict get $st indexEntries]]"
+            _addDest $ixDest [expr {max(0, $y - $fontSize - 4)}]
+            dict lappend st indexEntries [list $idxTerm [dict get $st pageNo] $ixDest]
         }
 
         set w [$pdf getStringWidth $sanitized]
@@ -743,8 +766,13 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
         if {$url ne "" && ![string match "mailto:*" $url]} {
             set linkH [expr {int($fontSize * 1.1)}]
             set linkY [expr {$y - int($fontSize * 0.8)}]
-            catch {
-                $pdf hyperlinkAdd $x $linkY $w $linkH $url
+            if {[string match "#*" $url]} {
+                # Inside the document. As a URI link it would point nowhere.
+                _addLink $x $linkY $w $linkH [_destName [string range $url 1 end]]
+            } else {
+                catch {
+                    $pdf hyperlinkAdd $x $linkY $w $linkH $url
+                }
             }
         }
         set x [expr {$x + $w}]
@@ -806,7 +834,9 @@ proc docir::pdf::_initState {pdf} {
         headerTemplate $headerTemplate \
         footerTemplate $footerTemplate \
         headingsSeen   {} \
-        indexEntries   {}]
+        indexEntries   {} \
+        canLink        [_canLink $pdf] \
+        destsUsed      {}]
     # headingsSeen: list of dicts {level, text, page, anchor, isIndexEntry}
     # Wird von _renderHeading bei jedem Heading befuellt. Spaeter
     # evaluated by _renderToc (beforehand) and _renderIndex (after the main body).
@@ -828,6 +858,64 @@ proc docir::pdf::_ensureSpace {needed} {
 # and date, centred horizontally in the upper-middle of the page. No header
 # or footer is placed on the title page. Afterwards a fresh page is started
 # (counts as a page) so the body begins on its own page.
+# ============================================================
+# Internal links (TOC entries, "#id" cross-references)
+# ============================================================
+#
+# Every heading gets two named destinations: "h-N" (N = position in
+# headingsSeen, unique, used by the TOC) and its meta id (used by "#id"
+# links; the first heading with an id wins, as in HTML). Every index marker
+# gets "ix-N"; the index links each page number to it. Links refer to the
+# name only; pdf4tcl resolves it through the catalog's /Dests when the
+# document is written, so a TOC can point forward. Needs pdf4tcl with
+# destinationAdd/linkAdd (0.9.4.72); without it, nothing is linked and
+# "#id" links are not turned into broken URI links either.
+
+proc docir::pdf::_canLink {pdf} {
+    variable opts
+    if {[info exists opts] && [dict exists $opts internalLinks] \
+            && ![dict get $opts internalLinks]} {
+        return 0
+    }
+    if {[catch {info object methods $pdf -all} methods]} { return 0 }
+    return [expr {"linkAdd" in $methods && "destinationAdd" in $methods}]
+}
+
+# A destination name pdf4tcl accepts: [A-Za-z0-9._-]+. Other characters
+# become _XX (hex of the UTF-8 bytes), so distinct ids stay distinct.
+proc docir::pdf::_destName {id} {
+    set out ""
+    foreach c [split $id ""] {
+        if {[regexp {[A-Za-z0-9.-]} $c]} {
+            append out $c
+        } else {
+            binary scan [encoding convertto utf-8 $c] H* hex
+            append out "_$hex"
+        }
+    }
+    if {$out eq ""} { set out "_" }
+    return $out
+}
+
+# Define a destination once; later headings with the same id are skipped.
+proc docir::pdf::_addDest {name y} {
+    variable st
+    if {![dict get $st canLink]} return
+    if {[dict exists $st destsUsed $name]} return
+    dict set st destsUsed $name 1
+    if {[catch {[dict get $st pdf] destinationAdd $name -y $y} err]} {
+        _warnOnce destinationAdd "destinationAdd failed ($err); internal links incomplete"
+    }
+}
+
+proc docir::pdf::_addLink {x y w h name} {
+    variable st
+    if {![dict get $st canLink]} return
+    if {[catch {[dict get $st pdf] linkAdd $x $y $w $h $name} err]} {
+        _warnOnce linkAdd "linkAdd failed ($err); internal links incomplete"
+    }
+}
+
 proc docir::pdf::_renderTitlePage {} {
     variable opts
     variable st
@@ -1187,6 +1275,13 @@ proc docir::pdf::_renderHeading {node} {
         isIndexEntry  [expr {$lv == $indexLv}]]
     dict lappend st headingsSeen $entry
 
+    # Jump targets: a little above the heading, so it is not cut off.
+    set destY [expr {max(0, [dict get $st y] - 6)}]
+    _addDest "h-$anchorIdx" $destY
+    if {[dict exists $m id] && [dict get $m id] ne ""} {
+        _addDest [_destName [dict get $m id]] $destY
+    }
+
     set x [dict get $st margin]
     foreach lineSegs $lines {
         set y [expr {[dict get $st y] + $fontSize}]
@@ -1420,6 +1515,8 @@ proc docir::pdf::_renderPre {node} {
         set padding 4
         set rectH [expr {[llength $lines] * $lh + 2 * $padding}]
         _ensureSpace $rectH
+        # a page break in _ensureSpace leaves the footer's sans font set
+        _setFont $fontSize mono
         set yTop [dict get $st y]
         # Math-Block-Hintergrund: leicht andere Farbe als Code
         $pdf setFillColor 0.95 0.94 0.88
@@ -1462,6 +1559,10 @@ proc docir::pdf::_renderPre {node} {
     set yTop [dict get $st y]
     set rectH [expr {[llength $lines] * $lh + 2 * $padding}]
     _ensureSpace $rectH
+    # A page break in _ensureSpace writes the footer in the sans font; set
+    # mono again, otherwise a code block at the top of a page came out in
+    # the proportional font (seen 2026-10-20, Linux-TclTk-de p. 35).
+    _setFont $fontSize mono
     set yTop [dict get $st y]
 
     # code block background: theme color or default
@@ -2309,6 +2410,8 @@ proc docir::pdf::_renderToc {tocHeadings} {
             _ensureSpace $lh
             set wy [expr {[dict get $st y] + $entryFontSize}]
             $pdf text [::pdf4tcllib::unicode::sanitize $wline] -x $entryX -y $wy
+            # The whole row, title to page number, jumps to the heading.
+            _addLink $entryX [dict get $st y] [expr {$rightEdge - $entryX}] $lh "h-$idx"
             if {$firstLine && $pageStr ne ""} {
                 set px [expr {$rightEdge - [$pdf getStringWidth $pageStr]}]
                 $pdf text $pageStr -x $px -y $wy
@@ -2334,15 +2437,18 @@ proc docir::pdf::_renderIndex {} {
     # subject index from [term]{.index} markers (st indexEntries):
     # term -> list of pages. Fallback (no markers present): the
     # fruehere Heading-Index (Ueberschriften auf indexLevel), kompatibel.
+    # byTerm: term -> list of {page dest}. dest is the jump target of the
+    # occurrence (ix-N at the marker, h-N for the heading fallback).
     set byTerm [dict create]
     foreach e [dict get $st indexEntries] {
-        lassign $e term page
-        dict lappend byTerm $term $page
+        lassign $e term page dest
+        dict lappend byTerm $term [list $page $dest]
     }
     if {[dict size $byTerm] == 0} {
         foreach h [dict get $st headingsSeen] {
             if {[dict get $h isIndexEntry]} {
-                dict lappend byTerm [dict get $h text] [dict get $h page]
+                dict lappend byTerm [dict get $h text] \
+                    [list [dict get $h page] [dict get $h anchor]]
             }
         }
     }
@@ -2350,10 +2456,18 @@ proc docir::pdf::_renderIndex {} {
         return
     }
 
-    # terms alphabetically; pages per term deduplicated + numerically sorted.
+    # terms alphabetically; pages per term deduplicated + numerically sorted;
+    # per page the first occurrence is the link target.
     set entries {}
     foreach term [lsort -dictionary [dict keys $byTerm]] {
-        lappend entries [list $term [lsort -integer -unique [dict get $byTerm $term]]]
+        set firstDest [dict create]
+        foreach pd [dict get $byTerm $term] {
+            lassign $pd pg dest
+            if {![dict exists $firstDest $pg]} { dict set firstDest $pg $dest }
+        }
+        set pages [lsort -integer [dict keys $firstDest]]
+        set dests [lmap pg $pages { dict get $firstDest $pg }]
+        lappend entries [list $term $pages $dests]
     }
 
     # new page for the index
@@ -2391,7 +2505,7 @@ proc docir::pdf::_renderIndex {} {
     set rightEdge [expr {$x + [dict get $st contentW]}]
 
     foreach e $entries {
-        lassign $e text pages
+        lassign $e text pages dests
 
         # initial letter (with umlaut normalization)
         set initial [string toupper [string index $text 0]]
@@ -2436,7 +2550,23 @@ proc docir::pdf::_renderIndex {} {
         }
 
         $pdf text $displayText -x $entryX -y $ey
-        $pdf text $pageStr -x $pageX -y $ey
+        # Page numbers one by one, each a link to its occurrence.
+        set px $pageX
+        set last [expr {[llength $pages] - 1}]
+        set k 0
+        foreach pg $pages dest $dests {
+            $pdf text $pg -x $px -y $ey
+            set w [$pdf getStringWidth $pg]
+            if {$dest ne ""} {
+                _addLink $px [dict get $st y] $w $lh $dest
+            }
+            set px [expr {$px + $w}]
+            if {$k < $last} {
+                $pdf text ", " -x $px -y $ey
+                set px [expr {$px + [$pdf getStringWidth ", "]}]
+            }
+            incr k
+        }
 
         _advanceY $lh
     }

@@ -27,8 +27,15 @@ set specFields {
 
 # Liest ein Renderer-Modul komplett.
 proc loadRenderer {repoRoot renderer} {
-    set path [file join $repoRoot lib tm docir ${renderer}-0.1.tm]
+    # newest version of the module (pdf is 0.5, rendererTk 0.5, ...);
+    # up to 2026-10-20 the path was fixed to -0.1.tm and the audit stopped
+    # at pdf
+    set files [glob -nocomplain -directory [file join $repoRoot lib tm docir] \
+        ${renderer}-*.tm]
+    if {[llength $files] == 0} { error "no module file for $renderer" }
+    set path [lindex [lsort -dictionary $files] end]
     set fh [open $path r]
+    fconfigure $fh -encoding utf-8
     set src [read $fh]
     close $fh
     return $src

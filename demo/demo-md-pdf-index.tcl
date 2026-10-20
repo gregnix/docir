@@ -3,7 +3,7 @@
 # (generateIndex) und Inhaltsverzeichnis (generateToc).
 #
 # Index-Begriffe werden im Markdown als bracketed span mit der Klasse
-# "index" markiert:  [Begriff]{.index}
+# "index" markiert:  [Begriff]{.index}  -- auch in Fett: **[Begriff]{.index}**
 # Der Begriff bleibt im Fliesstext sichtbar und erscheint zugleich im
 # Stichwortverzeichnis mit allen Seiten, auf denen er vorkommt. Ein
 # Begriff darf in jedem Absatz auf jeder Ebene stehen; die Seite wird
@@ -47,6 +47,10 @@ if {$inFile ne "" && [file exists $inFile]} {
     append md "# Namespaces\n\nA \[namespace\]{.index} groups commands; see also \[coroutine\]{.index}.\n\n"
     append md [filler 28]
     append md "# Packages\n\nUse \[package require\]{.index} to load a \[namespace\]{.index}.\n\n"
+    # in bold or italic the marker counts as well (docir 2026-10-21);
+    # in a code span it is an example only
+    append md "# Emphasis\n\nA **\[package\]{.index}** in bold, an *\[ensemble\]{.index}* in italics,\n"
+    append md "a **\[link\](https://www.tcl-lang.org)** in bold. `\[example\]{.index}` is no marker.\n\n"
     set root [pwd]
 }
 

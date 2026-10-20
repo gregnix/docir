@@ -108,6 +108,9 @@ package require docir::pdf      ;# requires pdf4tcl + pdf4tcllib
 
 Bold, italic, code-spans, links, and strike-through render with
 distinct fonts. Hyperlinks become clickable PDF link annotations.
+A link or an index span inside bold or italic (`**[x]{.index}**`) keeps
+its node; the emphasis is in its `style` field and the PDF draws it bold
+or italic (since 2026-10-21).
 
 ### Images
 
@@ -262,6 +265,13 @@ A DocIR node ALWAYS has three fields: `type`, `content`, `meta`.
 Validator: `::docir::validate $ir`.
 
 See `lib/tm/docir/roffSource-0.1.tm` and `docir/mdSource-0.1.tm`.
+
+Mind the namespace: a source and a sink for the same format often share it
+(`mdSource-0.1.tm` and `md-0.1.tm` both live in `::docir::md`). Two helpers
+with the same name overwrite each other, and the one sourced last wins. Up
+to 2026-10-20 both files had a `_inlinesToText` (one for AST inlines, one for
+IR inlines); with the sink loaded after the source every link label came out
+empty. Check new helper names with `info procs ::docir::FORMAT::*`.
 
 ---
 

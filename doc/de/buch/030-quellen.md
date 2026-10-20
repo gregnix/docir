@@ -20,6 +20,12 @@ Anzahl der `#`. Jede Ueberschrift erhaelt ueber `meta.id` einen Anker
 (einen Slug aus dem Titel), der spaeter fuer Querverweise und
 Verzeichnisse dient.
 
+Hervorhebungen (`**`, `*`, `~~`) werden flach: Jedes Stueck Text darin
+wird ein eigener `strong`-, `emphasis`- oder `strike`-Inline. Ein Span
+oder Link darin behaelt seinen Knoten und bekommt die Hervorhebung in
+`style`. Bis 2026-10-20 wurde auch er flach; ein Stichwort in Fett fehlte
+dann im Index, ein fetter Link verlor sein Ziel.
+
 ## nroff
 
 `docir::roffSource` stellt `docir::roff::fromAst` bereit und uebersetzt

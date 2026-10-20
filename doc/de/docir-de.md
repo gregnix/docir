@@ -72,6 +72,14 @@ Innerhalb von `content` stehen Inline-Knoten: `text`, `strong`,
 traegt eine `class` und eine optionale `id` und ist die Grundlage fuer
 Index-Markierungen (siehe das Kapitel zu Verzeichnissen).
 
+Span und `link` haben seit 2026-10-21 das optionale Feld `style`: eine
+Liste aus `strong`, `emphasis` und `strike`, das Innerste zuerst. Es steht
+da, wenn der Span oder Link in der Quelle in einer Hervorhebung stand:
+`**[adduser]{.index}**` wird zu
+`{type span text adduser class index style strong}`. HTML setzt
+`<strong>`/`<em>`/`<s>` darum, PDF schreibt fett oder kursiv, Markdown
+schreibt die Zeichen zurueck; die uebrigen Senken zeigen den Text.
+
 ## 2.4  Validierung
 
 `docir::validate $ir` prueft eine IR und liefert eine leere Liste bei
@@ -100,6 +108,12 @@ Markdown-Ueberschriften werden zu `heading` mit `meta.level` aus der
 Anzahl der `#`. Jede Ueberschrift erhaelt ueber `meta.id` einen Anker
 (einen Slug aus dem Titel), der spaeter fuer Querverweise und
 Verzeichnisse dient.
+
+Hervorhebungen (`**`, `*`, `~~`) werden flach: Jedes Stueck Text darin
+wird ein eigener `strong`-, `emphasis`- oder `strike`-Inline. Ein Span
+oder Link darin behaelt seinen Knoten und bekommt die Hervorhebung in
+`style`. Bis 2026-10-20 wurde auch er flach; ein Stichwort in Fett fehlte
+dann im Index, ein fetter Link verlor sein Ziel.
 
 ## 3.2  nroff
 
@@ -134,6 +148,10 @@ docir::pdf::render $ir out.pdf [dict create \
 Die Senke unterstuetzt unter anderem ein Inhaltsverzeichnis mit
 Seitenzahlen und einen Sachindex (siehe das naechste Kapitel). Sie nutzt
 die Unicode-sichere Text- und Schrift-Behandlung von pdf4tcllib.
+
+Ein Codeblock, der nicht mehr auf die Seite passt, beginnt auf der
+naechsten, in fester Schrift. Bis 2026-10-19 kam er dort proportional
+heraus, weil der Seitenumbruch die Fusszeile in der Grundschrift schreibt.
 
 ## 4.2  HTML
 
@@ -223,7 +241,9 @@ Eine [Koroutine]{.index} unterbricht ein Skript.
 
 Der Begriff bleibt im Fliesstext sichtbar und wird zugleich gesammelt. Ein
 solcher [Span]{.index} darf in jedem Absatz auf jeder Ebene stehen, auch
-in Unterkapiteln.
+in Unterkapiteln, und auch in Fett oder Kursiv (`**[Koroutine]{.index}**`,
+seit 2026-10-21; vorher fehlte er dann im Index). In einem Code-Span
+(`` `[x]{.index}` ``) ist er ein Beispiel und zaehlt nicht.
 
 In PDF aktiviert `generateIndex 1` den Index: alphabetisch, nach
 Anfangsbuchstaben gruppiert, je Begriff mit allen Seiten seines

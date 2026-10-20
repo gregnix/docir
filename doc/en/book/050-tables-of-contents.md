@@ -25,7 +25,10 @@ A [coroutine]{.index} suspends a script.
 
 The term stays visible in the running text and is collected at the same
 time. Such a [span]{.index} may appear in any paragraph at any level,
-including in sub-chapters.
+including in sub-chapters, and also in bold or italic
+(`**[coroutine]{.index}**`, since 2026-10-21; before, it was then missing
+from the index). Inside a code span (`` `[x]{.index}` ``) it is an example
+and does not count.
 
 In PDF, `generateIndex 1` enables the index: alphabetical, grouped by
 initial letter, each term with all pages where it occurs. The page is

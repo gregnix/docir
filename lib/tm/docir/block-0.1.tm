@@ -99,6 +99,16 @@ proc ::docir::block::runs {inlines {style {}}} {
             strike    { dict set st strike 1 }
             code      { dict set st mono 1 }
             link      { dict set st underline 1 }
+        }
+        # span/link from inside ** or *: optional field `style`
+        foreach w [expr {[dict exists $in style] ? [dict get $in style] : {}}] {
+            switch -- $w {
+                strong   { dict set st bold 1 }
+                emphasis { dict set st italic 1 }
+                strike   { dict set st strike 1 }
+            }
+        }
+        switch -- $t {
             linebreak { lappend out [list "\n" $style] ; continue }
             softbreak { lappend out [list " "  $style] ; continue }
             image {

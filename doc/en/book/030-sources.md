@@ -19,6 +19,12 @@ Markdown headings become `heading` with `meta.level` taken from the number
 of `#`. Each heading receives an anchor via `meta.id` (a slug derived from
 the title) that is later used for cross-references and tables.
 
+Emphasis (`**`, `*`, `~~`) is flattened: each piece of text inside becomes
+its own `strong`, `emphasis` or `strike` inline. A span or link inside keeps
+its node and carries the emphasis in `style`. Up to 2026-10-20 it was
+flattened too; a term in bold was then missing from the index, a link in
+bold lost its target.
+
 ## nroff
 
 `docir::roffSource` provides `docir::roff::fromAst` and translates the AST

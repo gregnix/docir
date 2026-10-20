@@ -34,6 +34,14 @@ Innerhalb von `content` stehen Inline-Knoten: `text`, `strong`,
 traegt eine `class` und eine optionale `id` und ist die Grundlage fuer
 Index-Markierungen (siehe das Kapitel zu Verzeichnissen).
 
+Span und `link` haben seit 2026-10-21 das optionale Feld `style`: eine
+Liste aus `strong`, `emphasis` und `strike`, das Innerste zuerst. Es steht
+da, wenn der Span oder Link in der Quelle in einer Hervorhebung stand:
+`**[adduser]{.index}**` wird zu
+`{type span text adduser class index style strong}`. HTML setzt
+`<strong>`/`<em>`/`<s>` darum, PDF schreibt fett oder kursiv, Markdown
+schreibt die Zeichen zurueck; die uebrigen Senken zeigen den Text.
+
 ## Validierung
 
 `docir::validate $ir` prueft eine IR und liefert eine leere Liste bei

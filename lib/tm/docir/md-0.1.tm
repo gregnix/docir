@@ -445,6 +445,20 @@ proc docir::md::_renderInlines {inlines} {
     return $out
 }
 
+# Optional field `style` of a span or link: put the Markdown markers back
+# around it (**[x]{.index}**), innermost first.
+proc docir::md::_wrapStyle {inline md} {
+    variable opts
+    foreach s [_dictDef $inline style {}] {
+        switch -- $s {
+            strong   { set m [dict get $opts strongStyle]; set md "$m$md$m" }
+            emphasis { set m [dict get $opts emphStyle];   set md "$m$md$m" }
+            strike   { set md "~~$md~~" }
+        }
+    }
+    return $md
+}
+
 proc docir::md::_renderInline {inline} {
     variable opts
     set t [dict get $inline type]
@@ -471,7 +485,7 @@ proc docir::md::_renderInline {inline} {
             }
             return "`$txt`"
         }
-        link       { return [_renderLinkInline $inline] }
+        link       { return [_wrapStyle $inline [_renderLinkInline $inline]] }
         image {
             # ![alt](url "title"?)
             set url [_dictDef $inline url ""]
@@ -506,7 +520,7 @@ proc docir::md::_renderInline {inline} {
             set attrs ""
             if {$cls ne ""} { append attrs ".$cls " }
             if {$id  ne ""} { append attrs "#$id " }
-            return "\[$escTxt\]\{[string trimright $attrs]\}"
+            return [_wrapStyle $inline "\[$escTxt\]\{[string trimright $attrs]\}"]
         }
         footnote_ref {
             # [^id] in Markdown

@@ -1,5 +1,65 @@
 # DocIR — Changelog
 
+## 2026-10-21 — index marker and link inside bold or italic
+
+- `docir::md::fromAst`: a span or link inside `**`, `*` or `~~` keeps its own
+  node instead of being flattened to `{type strong text ...}`. The wrapper
+  goes into the new optional field `style` (list, innermost first). Before,
+  `**[adduser]{.index}**` gave no index entry and no anchor -- three places
+  in "Debian unter Linux" were missing from its subject index -- and
+  `**[Tcl](url)**` lost the link target. Found by `bookkit/tools/book-search.tcl`,
+  whose anchors are checked against the built HTML.
+- Sinks: HTML wraps the span/link in `<strong>`/`<em>`/`<s>`, PDF draws the
+  span bold/italic (also through `_coalesceIndexSpans`), the Markdown sink
+  writes `**[x]{.index}**` back, `docir::block::runs` sets the style flags.
+  Other sinks show the text as before.
+- `mdSource`: the helper for link labels is now `_astInlinesText`. It shared
+  the name `docir::md::_inlinesToText` with the Markdown sink (IR inlines,
+  field `text`); with the sink sourced after the source every link label
+  came out empty. Seen in the test environment, which loads both.
+- Spec: `style` listed for `span` and `link` (docir-spec-en.md,
+  docir-spec.md).
+- Tests: five in `test-mdstack-bridge.tcl` (IR, style order, link href and
+  text, HTML anchor, Markdown round trip). 885 tests, 0 failed, Tcl 8.6.14
+  and 9.0.4.
+- Docs: handbook (`doc/de/docir-de.md`, `doc/en/docir-en.md`) and the
+  package book (`doc/de/buch`, `doc/en/book`): inline field `style`, emphasis
+  in the Markdown source, index marker in bold and in code spans, code block
+  after a page break. `doc/en/cookbook.md`: inline rendering, shared
+  namespace of source and sink. Handbook PDF and HTML rebuilt (they were
+  from 2026-07-11, older than their Markdown).
+- Demos: `demo-md-html-index.tcl`, `demo-md-pdf-index.tcl` have a section
+  with a marker in bold and in italics, a link in bold and a marker in a
+  code span (no entry).
+- `tools/drift-audit.tcl` takes the newest module file; it opened
+  `pdf-0.1.tm` and stopped since pdf is 0.5.
+
+## 2026-10-20 — code block after a page break
+
+- `docir::pdf`: a code block (and the raw `$$` fallback of a math block)
+  that did not fit and moved to a new page was drawn in the proportional
+  font: the page break writes the footer in the sans font, and the block
+  had set mono before that. The mono font is now set again after the
+  page break. Seen in the Linux book (p. 35, p. 60), checked on the
+  rebuilt PDF. No automatic test (the font of a drawn line is not
+  visible to the tests).
+
+## 2026-10-19 — internal links in the PDF
+
+- `docir::pdf`: table of contents entries are links. Every heading gets
+  two named destinations, `h-N` (position, used by the TOC) and its meta
+  `id` (first heading with an id wins, as in HTML). Measured on the macOS
+  book: 238 TOC links, each to the page printed next to it.
+- `docir::pdf`: links with `href` `#id` jump inside the document. Before they
+  were written as URI links (`/URI (#id)`) that led nowhere.
+- Index page numbers are links too, each to the first occurrence of the
+  term on that page: every `[term]{.index}` marker is a destination `ix-N`.
+- Needs pdf4tcl 0.9.4.72 (`destinationAdd`/`linkAdd`). With an older
+  pdf4tcl the PDF is built without internal links, and `#id` links are not
+  turned into broken URI links either. Option `internalLinks 0` switches it
+  off.
+- Tests: four in `test-docir-pdf.tcl` (expected count 49).
+
 ## 2026-10-05 — dump, validate, tools
 
 - `docir::dump` failed on `paragraph`, `pre`, `doc_header`, `blank`, `hr`,

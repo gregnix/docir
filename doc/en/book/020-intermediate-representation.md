@@ -34,6 +34,13 @@ Inside `content` there are inline nodes: `text`, `strong`, `emphasis`,
 and an optional `id` and is the basis for index markers (see the chapter
 on tables of contents and indexes).
 
+Since 2026-10-21 span and `link` have the optional field `style`: a list of
+`strong`, `emphasis` and `strike`, innermost first. It is set when the span
+or link sat inside emphasis in the source: `**[adduser]{.index}**` becomes
+`{type span text adduser class index style strong}`. HTML wraps it in
+`<strong>`/`<em>`/`<s>`, PDF draws it bold or italic, Markdown writes the
+markers back; the other sinks show the text.
+
 ## Validation
 
 `docir::validate $ir` checks an IR and returns an empty list for valid

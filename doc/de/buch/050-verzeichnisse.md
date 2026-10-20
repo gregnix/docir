@@ -25,7 +25,9 @@ Eine [Koroutine]{.index} unterbricht ein Skript.
 
 Der Begriff bleibt im Fliesstext sichtbar und wird zugleich gesammelt. Ein
 solcher [Span]{.index} darf in jedem Absatz auf jeder Ebene stehen, auch
-in Unterkapiteln.
+in Unterkapiteln, und auch in Fett oder Kursiv (`**[Koroutine]{.index}**`,
+seit 2026-10-21; vorher fehlte er dann im Index). In einem Code-Span
+(`` `[x]{.index}` ``) ist er ein Beispiel und zaehlt nicht.
 
 In PDF aktiviert `generateIndex 1` den Index: alphabetisch, nach
 Anfangsbuchstaben gruppiert, je Begriff mit allen Seiten seines
