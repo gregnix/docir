@@ -222,10 +222,10 @@ proc docir::canvas::_renderDocHeader {node tag} {
     variable st
     set canvas [dict get $st canvas]
     set m [dict get $node meta]
-    set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
+    set name    [if {[dict exists $m name]} {dict get $m name} else {lindex ""}]
     set section [_dictDef $m section ""]
     set version [_dictDef $m version ""]
-    set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
+    set part    [if {[dict exists $m part]} {dict get $m part} else {lindex ""}]
 
     set parts {}
     if {$name ne ""} {

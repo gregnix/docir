@@ -51,7 +51,7 @@ proc docir::md::fromAst {ast} {
             name    $title \
             section "" \
             version [_dictDef $meta version ""] \
-            part    [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]]]
+            part    [if {[dict exists $meta part]} {dict get $meta part} else {lindex ""}]]]
 
     # Process blocks
     set blocks [_dictDef $ast blocks {}]
@@ -247,7 +247,7 @@ proc docir::md::_mapDiv {block} {
     # mdparser: {type div class "..." id "..." blocks {...}}
     # DocIR-Spec: {type div content {block-list} meta {class ... id ...}}
     set cls [_dictDef $block class ""]
-    set id  [expr {[dict exists $block id]    ? [dict get $block id]    : ""}]
+    set id  [if {[dict exists $block id]} {dict get $block id} else {lindex ""}]
     set children {}
     foreach sub [dict get $block blocks] {
         set nodes [docir::md::_mapBlock $sub]
@@ -285,7 +285,7 @@ proc docir::md::_mapDeflist {block} {
             }
             set firstGroup 0
             set first [lindex $group 0]
-            set ft [expr {[dict exists $first type] ? [dict get $first type] : ""}]
+            set ft [if {[dict exists $first type]} {dict get $first type} else {lindex ""}]
             if {$ft in {paragraph heading pre list deflist table blockquote}} {
                 set firstBlock 1
                 foreach b $group {
@@ -353,7 +353,7 @@ proc docir::md::_mapFootnoteSection {block} {
     set defs {}
     set fns [_dictDef $block footnotes {}]
     foreach fn $fns {
-        set id  [expr {[dict exists $fn id]  ? [dict get $fn id]  : ""}]
+        set id  [if {[dict exists $fn id]} {dict get $fn id} else {lindex ""}]
         set num [_dictDef $fn num ""]
         set inlines [docir::md::_mapInlines \
             [_dictDef $fn content {}]]
@@ -372,8 +372,8 @@ proc docir::md::_mapFootnoteSection {block} {
 # mdparser-AST: {type image alt "..." url "..." [title "..."]?}
 # DocIR-Spec: {type image content {} meta {url alt title}}
 proc docir::md::_mapImageBlock {block} {
-    set alt   [expr {[dict exists $block alt]   ? [dict get $block alt]   : ""}]
-    set url   [expr {[dict exists $block url]   ? [dict get $block url]   : ""}]
+    set alt   [if {[dict exists $block alt]} {dict get $block alt} else {lindex ""}]
+    set url   [if {[dict exists $block url]} {dict get $block url} else {lindex ""}]
     set title [_dictDef $block title ""]
     # url-quirk: mdparser packt manchmal Title in url-Feld
     if {$title eq "" && [regexp {^(\S+)\s+"([^"]*)"} $url full u t]} {
@@ -417,7 +417,7 @@ proc docir::md::_mapInlines {inlines} {
                 lappend result [dict create type code text $v]
             }
             link {
-                set url   [expr {[dict exists $inline url]   ? [dict get $inline url]   : ""}]
+                set url   [if {[dict exists $inline url]} {dict get $inline url} else {lindex ""}]
                 set label [_dictDef $inline label {}]
                 set txt   [docir::md::_astInlinesText $label]
                 set title [_dictDef $inline title ""]
@@ -433,8 +433,8 @@ proc docir::md::_mapInlines {inlines} {
             image {
                 # Markdown image inline: {type image alt "..." url "..." title "..."?}
                 # -> DocIR image inline with text=alt, url, optional title
-                set alt   [expr {[dict exists $inline alt]   ? [dict get $inline alt]   : ""}]
-                set url   [expr {[dict exists $inline url]   ? [dict get $inline url]   : ""}]
+                set alt   [if {[dict exists $inline alt]} {dict get $inline alt} else {lindex ""}]
+                set url   [if {[dict exists $inline url]} {dict get $inline url} else {lindex ""}]
                 set title [_dictDef $inline title ""]
                 # url kann manchmal "img.png \"Title\"" sein (mdparser-Quirk):
                 # separate the title if it is embedded
@@ -468,7 +468,7 @@ proc docir::md::_mapInlines {inlines} {
                 # node for every sink (PDF, HTML, ...), instead of emitting
                 # one span per inner inline.
                 set cls [_dictDef $inline class ""]
-                set id  [expr {[dict exists $inline id]    ? [dict get $inline id]    : ""}]
+                set id  [if {[dict exists $inline id]} {dict get $inline id} else {lindex ""}]
                 set inner [docir::md::_mapInlines \
                     [_dictDef $inline content {}]]
                 set buf ""
@@ -487,7 +487,7 @@ proc docir::md::_mapInlines {inlines} {
             footnote_ref {
                 # mdparser: {type footnote_ref id "..." num "..."?}
                 # DocIR spec: footnote_ref needs text (=display marker) and id
-                set id  [expr {[dict exists $inline id]  ? [dict get $inline id]  : ""}]
+                set id  [if {[dict exists $inline id]} {dict get $inline id} else {lindex ""}]
                 set num [_dictDef $inline num $id]
                 lappend result [dict create type footnote_ref text $num id $id]
             }

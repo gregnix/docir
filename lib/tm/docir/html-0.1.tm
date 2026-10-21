@@ -153,7 +153,7 @@ proc docir::html::_extractTitle {ir} {
         set t [dict get $node type]
         if {$t eq "doc_header"} {
             set m [dict get $node meta]
-            set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
+            set name    [if {[dict exists $m name]} {dict get $m name} else {lindex ""}]
             set section [_dictDef $m section ""]
             if {$name ne ""} {
                 if {$section ne ""} { return "${name}(${section})" }
@@ -493,10 +493,10 @@ proc docir::html::_indent {level} {
 
 proc docir::html::_renderDocHeader {node level} {
     set m [dict get $node meta]
-    set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
+    set name    [if {[dict exists $m name]} {dict get $m name} else {lindex ""}]
     set section [_dictDef $m section ""]
     set version [_dictDef $m version ""]
-    set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
+    set part    [if {[dict exists $m part]} {dict get $m part} else {lindex ""}]
 
     if {$name eq "" && $section eq "" && $part eq ""} { return "" }
 
@@ -758,7 +758,7 @@ proc docir::html::_renderTable {node level} {
     set m [dict get $node meta]
     set columns   [expr {[dict exists $m columns]   ? [dict get $m columns]   : 0}]
     set hasHeader [_dictDef $m hasHeader 0]
-    set source    [expr {[dict exists $m source]    ? [dict get $m source]    : ""}]
+    set source    [if {[dict exists $m source]} {dict get $m source} else {lindex ""}]
     set alignments [_dictDef $m alignments {}]
     set ind [_indent $level]
 
@@ -887,7 +887,7 @@ proc docir::html::_renderDiv {node level} {
     set ind [_indent $level]
     set m [dict get $node meta]
     set cls [_dictDef $m class ""]
-    set id  [expr {[dict exists $m id]    ? [dict get $m id]    : ""}]
+    set id  [if {[dict exists $m id]} {dict get $m id} else {lindex ""}]
 
     set attrs ""
     if {$cls ne ""} { append attrs " class=\"[_escapeAttr $cls]\"" }

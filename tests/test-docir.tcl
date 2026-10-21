@@ -136,8 +136,10 @@ test "docir.mapper.list_indentLevel" {
     set lists {}
     foreach n $ir { if {[dict get $n type] eq "list"} { lappend lists $n } }
     assert [expr {[llength $lists] == 2}] "2 Listen (outer + inner)"
-    # Innere Liste hat indentLevel 1
-    set innerMeta [dict get [lindex $lists 0] meta]
+    # Reihenfolge wie in der Quelle: aeussere Liste zuerst (bis 2026-10-21
+    # kam die innere zuerst -- die aeussere blieb bis .RE offen)
+    assertEqual 0 [dict get [dict get [lindex $lists 0] meta] indentLevel] "aeussere Liste zuerst: indentLevel=0"
+    set innerMeta [dict get [lindex $lists 1] meta]
     assertEqual 1 [dict get $innerMeta indentLevel] "innere Liste: indentLevel=1"
 }
 

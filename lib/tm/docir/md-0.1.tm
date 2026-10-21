@@ -58,7 +58,8 @@ proc docir::md::render {ir {options {}}} {
         listMarker  "-" \
         strongStyle "**" \
         emphStyle   "*" \
-        headingShift "auto"]
+        headingShift "auto" \
+        opDbStrong  0]
     foreach k [dict keys $options] {
         dict set opts $k [dict get $options $k]
     }
@@ -134,10 +135,10 @@ proc docir::md::_renderBlock {node} {
 
 proc docir::md::_renderDocHeader {node} {
     set m [dict get $node meta]
-    set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
+    set name    [if {[dict exists $m name]} {dict get $m name} else {lindex ""}]
     set section [_dictDef $m section ""]
     set version [_dictDef $m version ""]
-    set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
+    set part    [if {[dict exists $m part]} {dict get $m part} else {lindex ""}]
     if {$name eq ""} { return "" }
 
     # H1 is the name. Subtitle with additional fields.
@@ -249,22 +250,66 @@ proc docir::md::_renderList {node} {
                 incr ord
             }
             tp - ip - op - ap - dl {
-                # term bold on its own line, desc below with a 4-space indent
-                set termMd [_renderInlines $itemTerm]
+                # Definitionsliste: Begriff fett, darunter ": Beschreibung".
+                #
+                # Bis 2026-10-21: Beschreibung nach einer Leerzeile mit 4
+                # Leerzeichen eingerueckt. Nach einem Absatz und einer
+                # Leerzeile ist das in Markdown ein CODEBLOCK -- jede
+                # Optionsbeschreibung einer Handbuchseite erschien als
+                # Code (gemessen mit n2md an canvas.n). ": " verstehen
+                # mdstack/mdserver, pandoc und PHP Markdown Extra.
+                #
+                # Immer ab Spalte 0, auch verschachtelt (.RS/.TP in .TP):
+                # mdstack erkennt ": " nur am Zeilenanfang, und 4+
+                # Leerzeichen nach einer Leerzeile sind wieder Code
+                # (gemessen an Tcl.n, Backslash-Tabelle). man2markdown
+                # (TIP 700) schreibt verschachtelte Listen ebenso flach.
+                set indent ""
+                if {$itemKind eq "op"} {
+                    # .OP: "cmdName|dbName|dbClass"
+                    # -> **-closeenough** (closeEnough/CloseEnough)
+                    set parts [split [_inlinesToText $itemTerm] "|"]
+                    set st [dict get $opts strongStyle]
+                    set termMd "$st[_escapeMd [string map {\\- -} [lindex $parts 0]]]$st"
+                    if {[llength $parts] >= 3} {
+                        # opDbStrong 1 (TIP 700 wie man2markdown):
+                        # (**closeEnough**/**CloseEnough**)
+                        set dst [expr {[_dictDef $opts opDbStrong 0] ? $st : ""}]
+                        append termMd " ($dst[_escapeMd [lindex $parts 1]]$dst/$dst[_escapeMd [lindex $parts 2]]$dst)"
+                    }
+                } else {
+                    set termMd [_renderInlines $itemTerm]
+                    # Nur reinen Text fett setzen. Hat der Begriff schon
+                    # Auszeichnung ("A \fBnumeric value\fR", expr.n), gaebe
+                    # ein zweites Paar "**A **numeric value****".
+                    set plain 1
+                    foreach n $itemTerm {
+                        if {[dict get $n type] ne "text"} { set plain 0; break }
+                    }
+                    if {$termMd ne "" && $plain} {
+                        set st [dict get $opts strongStyle]
+                        set termMd "$st$termMd$st"
+                    }
+                }
                 if {$termMd ne ""} {
-                    append out "${indent}[dict get $opts strongStyle]${termMd}[dict get $opts strongStyle]\n\n"
+                    append out "${indent}${termMd}\n"
                 }
                 if {$descMd ne ""} {
-                    set lines [split $descMd "\n"]
-                    foreach line $lines {
-                        if {$line eq ""} {
+                    set first 1
+                    foreach line [split $descMd "\n"] {
+                        if {$first} {
+                            append out "${indent}: $line\n"
+                            set first 0
+                        } elseif {$line eq ""} {
                             append out "\n"
                         } else {
-                            append out "${indent}    $line\n"
+                            append out "${indent}  $line\n"
                         }
                     }
-                    append out "\n"
+                } elseif {$termMd ne ""} {
+                    append out "${indent}: \n"
                 }
+                append out "\n"
             }
             default {
                 # ul + unknown
@@ -392,7 +437,7 @@ proc docir::md::_renderDiv {node} {
     # TIP-700 div — Pandoc-Notation: ::: {.class #id} ... :::
     set m [dict get $node meta]
     set cls [_dictDef $m class ""]
-    set id  [expr {[dict exists $m id]    ? [dict get $m id]    : ""}]
+    set id  [if {[dict exists $m id]} {dict get $m id} else {lindex ""}]
 
     set attrs ""
     if {$cls ne ""} { append attrs ".$cls " }
@@ -439,8 +484,25 @@ proc docir::md::_renderUnknown {node reason} {
 
 proc docir::md::_renderInlines {inlines} {
     set out ""
+    set prevMark 0
     foreach i $inlines {
-        append out [_renderInline $i]
+        set md [_renderInline $i]
+        # Fett direkt an kursiv ("\fB$\fIname\fR", Tcl.n) gaebe
+        # "**$***name*"; das paaren Markdown-Parser falsch (mdstack zeigt
+        # "**$**" woertlich). Dann fuer das zweite Stueck "_"/"__".
+        # Nur nach echtem Marker, nicht nach "\*" im Text (mathfunc.n:
+        # "\fIe\fR**\fIarg\fR").
+        if {$prevMark && [string index $out end] eq "*" && [string index $md 0] eq "*"
+                && [dict get $i type] in {strong emphasis}} {
+            variable opts
+            set alt $opts
+            dict set opts strongStyle __
+            dict set opts emphStyle _
+            set md [_renderInline $i]
+            set opts $alt
+        }
+        append out $md
+        set prevMark [expr {[dict get $i type] in {strong emphasis}}]
     }
     return $out
 }
@@ -459,6 +521,16 @@ proc docir::md::_wrapStyle {inline md} {
     return $md
 }
 
+# Fett/kursiv mit Leerraum an den Raendern: der Leerraum kommt vor bzw.
+# hinter die Marker. "** canvas **" ist in Markdown kein Fett; aus nroff
+# wie "\fBcanvas\fI pathName \fR" entstand "**canvas*** pathName *"
+# (gemessen: n2md, 1050 Stellen in 168 Seiten von Tcl 9.0.5 und Tk 9.0).
+proc docir::md::_mark {m txt} {
+    if {[string trim $txt] eq ""} { return $txt }
+    regexp {^(\s*)(.*?)(\s*)$} $txt -> l mid r
+    return "$l$m$mid$m$r"
+}
+
 proc docir::md::_renderInline {inline} {
     variable opts
     set t [dict get $inline type]
@@ -467,14 +539,8 @@ proc docir::md::_renderInline {inline} {
 
     switch $t {
         text       { return $escTxt }
-        strong     {
-            set s [dict get $opts strongStyle]
-            return "${s}${escTxt}${s}"
-        }
-        emphasis   {
-            set e [dict get $opts emphStyle]
-            return "${e}${escTxt}${e}"
-        }
+        strong     { return [_mark [dict get $opts strongStyle] $escTxt] }
+        emphasis   { return [_mark [dict get $opts emphStyle] $escTxt] }
         underline  { return "<u>$escTxt</u>" }
         strike     { return "~~${escTxt}~~" }
         code       {
@@ -512,7 +578,7 @@ proc docir::md::_renderInline {inline} {
             # TIP-700 span — Markdown hat keine Standard-Notation.
             # We use the Pandoc extension [text]{.class #id}
             set cls [_dictDef $inline class ""]
-            set id  [expr {[dict exists $inline id]    ? [dict get $inline id]    : ""}]
+            set id  [if {[dict exists $inline id]} {dict get $inline id} else {lindex ""}]
             if {$cls eq "" && $id eq ""} {
                 # Without attributes, span is a no-op — just return the text
                 return $escTxt
@@ -594,14 +660,41 @@ proc docir::md::_inlinesToText {inlines} {
 # makes the output ugly — Markdown parsers are tolerant of
 # non-escaped characters when the context is clear.
 proc docir::md::_escapeMd {s} {
-    return [string map {
+    set s [string map {
         "\\" "\\\\"
         "*"  "\\*"
-        "_"  "\\_"
         "`"  "\\`"
         "\[" "\\\["
         "\]" "\\\]"
     } $s]
+    # "_" nur, wo es Kursiv oeffnen/schliessen koennte -- nicht zwischen
+    # zwei Wortzeichen ("Tk_GetPixels"; CommonMark und mdstack lassen
+    # snake_case stehen, man2markdown schreibt es ebenso ohne "\").
+    if {[string first _ $s] >= 0} {
+        set out ""
+        set n [string length $s]
+        for {set k 0} {$k < $n} {incr k} {
+            set c [string index $s $k]
+            if {$c eq "_"
+                    && !([string is wordchar [string index $s [expr {$k - 1}]]] && $k > 0
+                         && [string is wordchar [string index $s [expr {$k + 1}]]] && $k < $n - 1)} {
+                append out "\\_"
+            } else {
+                append out $c
+            }
+        }
+        set s $out
+    }
+    # "$" kann Inline-Mathe oeffnen oder schliessen ($...$, pandoc,
+    # mdstack): "**sin($x)** or **atan2($y,$x)**" (mathfunc.n) und
+    # "a **$**, as in **%2$d**" (format.n) wurden in mdstack zu Mathe
+    # zwischen zwei "$". Ein Textknoten sieht seinen Nachbarn nicht,
+    # also jedes "$".
+    set s [string map {$ \\$} $s]
+    # "<newline>", "<Button-1>" (Tcl.n, bind.n) sehen wie HTML aus;
+    # Markdown-Parser verschlucken sie sonst als Tag.
+    regsub -all {<(?=[A-Za-z/!?])} $s {\\<} s
+    return $s
 }
 
 # Appends continuation lines (newlines in the text) at a constant

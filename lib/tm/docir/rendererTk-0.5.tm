@@ -182,10 +182,10 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
         switch $type {
 
             doc_header {
-                set name    [expr {[dict exists $meta name]    ? [dict get $meta name]    : ""}]
+                set name    [if {[dict exists $meta name]} {dict get $meta name} else {lindex ""}]
                 set section [_dictDef $meta section ""]
                 set version [_dictDef $meta version ""]
-                set part    [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]
+                set part    [if {[dict exists $meta part]} {dict get $meta part} else {lindex ""}]
                 if {$name ne ""} {
                     set title $name
                     if {$section ne ""} { append title "($section)" }
@@ -778,9 +778,9 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 $textWidget insert end "\[$num\]" footnoteRef
             }
             link {
-                set name    [expr {[dict exists $inline name]    ? [dict get $inline name]    : $text}]
+                set name    [if {[dict exists $inline name]} {dict get $inline name} else {lindex $text}]
                 set section [_dictDef $inline section "n"]
-                set href    [expr {[dict exists $inline href]    ? [dict get $inline href]    : ""}]
+                set href    [if {[dict exists $inline href]} {dict get $inline href} else {lindex ""}]
                 # Eindeutiger Tag-Counter (ein Link kann mehrfach vorkommen)
                 set tagName "link_[incr linkTagCounter]"
                 $textWidget tag configure $tagName \

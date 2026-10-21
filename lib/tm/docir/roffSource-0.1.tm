@@ -61,10 +61,10 @@ proc docir::roff::fromAst {ast} {
                     type    doc_header \
                     content {} \
                     meta    [dict create \
-                        name    [docir::roff::_unescapeNroff [expr {[dict exists $meta name]    ? [dict get $meta name]    : ""}]] \
+                        name    [docir::roff::_unescapeNroff [if {[dict exists $meta name]} {dict get $meta name} else {lindex ""}]] \
                         section [docir::roff::_unescapeNroff [_dictDef $meta section ""]] \
                         version [docir::roff::_unescapeNroff [_dictDef $meta version ""]] \
-                        part    [docir::roff::_unescapeNroff [expr {[dict exists $meta part]    ? [dict get $meta part]    : ""}]]]]
+                        part    [docir::roff::_unescapeNroff [if {[dict exists $meta part]} {dict get $meta part} else {lindex ""}]]]]
             }
 
             section {
@@ -98,10 +98,15 @@ proc docir::roff::fromAst {ast} {
             paragraph {
                 set inlines [docir::roff::_mapInlines $content]
                 if {[llength $inlines] > 0} {
+                    # meta.version: Absatz zwischen .VS und .VE (nroffparser)
+                    set pmeta {}
+                    if {[dict exists $meta version]} {
+                        dict set pmeta version [dict get $meta version]
+                    }
                     lappend ir [dict create \
                         type    paragraph \
                         content $inlines \
-                        meta    {}]
+                        meta    $pmeta]
                 }
             }
 
@@ -246,7 +251,7 @@ proc docir::roff::_mapInlines {content} {
             emphasis  { lappend result [dict create type emphasis  text $text] }
             underline { lappend result [dict create type underline text $text] }
             link {
-                set name    [expr {[dict exists $inline name]    ? [dict get $inline name]    : $text}]
+                set name    [if {[dict exists $inline name]} {dict get $inline name} else {lindex $text}]
                 set section [_dictDef $inline section "n"]
                 set href [_dictDef $inline href ""]
                 lappend result [dict create type link text $text name $name section $section href $href]

@@ -244,7 +244,25 @@ test "md.list_dl_term_emphasized" {
     ] meta {kind dl}]]
     set md [docir::md::render $ir]
     assert [string match "*\\*\\*term\\*\\**" $md] "term wrapped in **"
-    assert [string match "*    definition*" $md] "definition indented 4 spaces"
+    # seit 2026-10-21 ": " statt 4 Leerzeichen (die waren nach einer
+    # Leerzeile ein Codeblock)
+    assert [string match "*\*\*term\*\*\n: definition*" $md] "definition as ': '"
+    assert [expr {![string match "*    definition*" $md]}] "no 4-space indent (code block)"
+}
+
+test "md.list_op_term" {
+    set ir [list [dict create type list content [list \
+        [dict create type listItem content {{type text text "Floating-point value."}} \
+            meta [dict create kind op term {{type text text "-closeenough|closeEnough|CloseEnough"}}]] \
+    ] meta {kind op}]]
+    set md [docir::md::render $ir]
+    assert [string match "*\*\*-closeenough\*\* (closeEnough/CloseEnough)\n: Floating-point value.*" $md] \
+        ".OP term as **-opt** (db/class): $md"
+}
+
+test "md.emphasis_whitespace_outside" {
+    set md [docir::md::renderInline {{type strong text "canvas "} {type emphasis text " pathName "} {type text text "?"}}]
+    assert {$md eq "**canvas**  *pathName* ?"} "whitespace outside markers: $md"
 }
 
 test "md.list_marker_option" {
@@ -337,9 +355,60 @@ test "md.escape_asterisk" {
 }
 
 test "md.escape_underscore" {
-    set ir [list [dict create type paragraph content {{type text text "foo_bar"}} meta {}]]
+    # zwischen zwei Wortzeichen bleibt "_" stehen (Tk_GetPixels), am
+    # Wortrand wird es maskiert
+    set ir [list [dict create type paragraph content {{type text text "foo_bar _x y_"}} meta {}]]
     set md [docir::md::render $ir]
-    assert [string match "*foo\\\\_bar*" $md] "_ escaped"
+    assert [string match "*foo_bar \\\\_x y\\\\_*" $md] "_ nur am Wortrand escaped"
+}
+
+test "md.escape_html_like" {
+    set ir [list [dict create type paragraph content {{type text text "a <newline> b < c"}} meta {}]]
+    set md [docir::md::render $ir]
+    assert [string match "*a \\\\<newline> b < c*" $md] "<Wort escaped, < allein nicht"
+}
+
+test "md.number_text_unchanged" {
+    # expr {... ? $x : ""} machte aus "2.10" die Zahl 2.1
+    set ir [list [dict create type paragraph content {{type strong text "2.10"} {type text text " 0x10"}} meta {}]]
+    set md [docir::md::render $ir]
+    assert [string match "**2.10** 0x10*" $md] "Zahlentext bleibt: $md"
+}
+
+test "md.strong_then_emphasis_adjacent" {
+    # "\fB$\fIname\fR" -> nicht "**$***name*" (mdstack zeigt "**$**")
+    set ir [list [dict create type paragraph content {{type strong text "$"} {type emphasis text name} {type strong text "("}} meta {}]]
+    set md [docir::md::render $ir]
+    assertEqual {**\$**_name_**(**} [string trim $md] "zweites Stueck mit _"
+}
+
+test "md.escape_dollar" {
+    # "$" oeffnet/schliesst sonst Inline-Mathe (format.n, mathfunc.n)
+    set ir [list [dict create type paragraph content {{type strong text {sin($x)}} {type text text { or $}}} meta {}]]
+    set md [docir::md::render $ir]
+    assertEqual {**sin(\$x)** or \$} [string trim $md] "jedes Dollarzeichen maskiert"
+}
+
+test "md.deflist_nested_flat" {
+    # verschachtelte .TP-Liste (indentLevel 1) trotzdem ab Spalte 0
+    set ir [list [dict create type list meta {kind tp indentLevel 1} content [list \
+        [dict create type listItem meta {kind tp term {{type text text a}}} content {{type text text b}}]]]]
+    set md [docir::md::render $ir]
+    assert [string match "**a**\n: b*" $md] "Spalte 0: $md"
+}
+
+test "md.deflist_term_markup_not_wrapped" {
+    set ir [list [dict create type list meta {kind tp} content [list \
+        [dict create type listItem meta {kind tp term {{type text text "A "} {type strong text "numeric value"}}} content {{type text text x}}]]]]
+    set md [docir::md::render $ir]
+    assert [string match "A **numeric value**\n: x*" $md] "kein zweites **: $md"
+}
+
+test "md.op_db_strong" {
+    set ir [list [dict create type list meta {kind op} content [list \
+        [dict create type listItem meta {kind op term {{type text text "-command|command|Command"}}} content {{type text text x}}]]]]
+    assert [string match "**-command** (command/Command)*" [docir::md::render $ir]] "Standard"
+    assert [string match "**-command** (**command**/**Command**)*" [docir::md::render $ir {opDbStrong 1}]] "TIP 700"
 }
 
 test "md.escape_brackets" {

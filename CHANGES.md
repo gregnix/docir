@@ -1,5 +1,50 @@
 # DocIR — Changelog
 
+## 2026-10-21 — PDF index: long page lists wrap
+
+- `docir::pdf` subject index: the page list of a term is limited to 60 %
+  of the text width and wraps onto further right-aligned lines. Before it
+  was one line; "widget" in the Tcl/Tk manual (bookkit `manual-build.tcl
+  -index`, more than 16 pages) ran over the term and past the left margin.
+  Each page number stays a link to its occurrence.
+
+## 2026-10-21 — Markdown sink: definition lists, escaping, `$`
+
+Measured with man-viewer's n2md over Tcl 9.0.5 and Tk 9.0 (231 pages),
+rendered with mdstack.
+
+- `.TP`/`.IP`/`.OP`/`.AP` lists and `dl`: term line, then `: description`
+  (continuation lines indented by 2). Before, the description followed a
+  blank line indented by 4 -- in Markdown an indented CODE BLOCK; every
+  option description of a manual page showed as code.
+- Definition lists always start in column 0, also nested ones
+  (`indentLevel` > 0): mdstack only reads `: ` at the start of a line,
+  and 4+ spaces after a blank line are code again (Tcl.n). man2markdown
+  writes nested lists flat as well.
+- A term is set bold only when it is plain text. `A \fBnumeric value\fR`
+  gave `**A **numeric value****`.
+- `.OP` terms `cmd|db|class` -> `**-cmd** (db/class)`; render option
+  `opDbStrong 1` gives `(**db**/**class**)` as man2markdown (TIP 700).
+- Whitespace at the edge of bold/italic goes outside the markers
+  (`** canvas **` is not bold in Markdown): new `_mark`.
+- Bold directly followed by italic (`**$***name*`) is misparsed by
+  Markdown parsers (mdstack showed `**$**`); the second run then uses
+  `_`/`__`: `**$**_name_`.
+- `_escapeMd`: `_` only escaped at a word edge (`Tk_GetPixels` stays);
+  `<` before a letter, `/`, `!` or `?` is escaped (`<newline>` vanished as
+  an HTML tag); every `$` is escaped -- `**sin($x)** or **atan2($y,$x)**`
+  (mathfunc.n) and `**$**, as in **%2$d**` (format.n) became inline
+  math between two `$` in mdstack.
+- `expr {[dict exists $d k] ? [dict get $d k] : ""}` returns the NUMBER
+  for numeric text: `2.10` came back as `2.1`, `0x10` as `16`. Replaced by
+  `if` for the text fields (name, part, id, url, text, alt, source, href,
+  type) in md, html, pdf, svg, canvas, roff, roffSource, mdSource, block,
+  rendererTk and docir-0.1.1.tm.
+- roffSource: paragraph `meta.version` from man-viewer's nroffparser
+  (`.VS`/`.VE`) is kept (spec: paragraph row).
+- Tests: test-docir-md.tcl (dl, op, escaping, `$`, adjacent markers,
+  numbers), test-docir.tcl list order (outer list first).
+
 ## 2026-10-21 — index marker and link inside bold or italic
 
 - `docir::md::fromAst`: a span or link inside `**`, `*` or `~~` keeps its own

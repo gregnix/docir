@@ -114,7 +114,7 @@ proc ::docir::block::runs {inlines {style {}}} {
             image {
                 # Inline images are not drawn inside a text run. The spec
                 # asks sinks that cannot render them to emit `[image: alt]`.
-                set a [expr {[dict exists $in text] ? [dict get $in text] : ""}]
+                set a [if {[dict exists $in text]} {dict get $in text} else {lindex ""}]
                 lappend out [list "\[image: $a\]" $style] ; continue
             }
             footnote_ref - math {
@@ -300,8 +300,8 @@ proc ::docir::block::pdf {pdfobj ir args} {
                 # Scaled to fit -w, aspect preserved; if -h is set and the
                 # scaled image would be taller, it is scaled down to -h
                 # instead. PNG and JPEG only -- see the note on SVG below.
-                set url [expr {[dict exists $meta url] ? [dict get $meta url] : ""}]
-                set alt [expr {[dict exists $meta alt] ? [dict get $meta alt] : ""}]
+                set url [if {[dict exists $meta url]} {dict get $meta url} else {lindex ""}]
+                set alt [if {[dict exists $meta alt]} {dict get $meta alt} else {lindex ""}]
                 if {$url eq "" || ![file readable $url]} {
                     # Missing file must be visible, not silently skipped:
                     # on a label a blank space looks like a design decision.

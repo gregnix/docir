@@ -572,7 +572,7 @@ proc docir::_dumpInlines {inlines pad} {
     foreach i $inlines {
         set type [docir::_field $i type "?"]
         if {$type eq "text"} continue  ;# text-Inlines nicht einzeln zeigen
-        set text [expr {[dict exists $i text] ? [dict get $i text] : ""}]
+        set text [if {[dict exists $i text]} {dict get $i text} else {lindex ""}]
         append out "${pad}<$type> «$text»\n"
     }
     return $out

@@ -96,7 +96,7 @@ The current set of block types accepted by `docir::validate`:
 | `doc_meta`   | `{}`                 | `irSchemaVersion` (int ≥ 1, required)|
 | `doc_header` | `{}`                 | `name`, `section`, `version`, `part`|
 | `heading`    | Inline list          | `level` (1..6), `id` (optional)     |
-| `paragraph`  | Inline list          | `{}` or `class`                     |
+| `paragraph`  | Inline list          | `{}`, `class`, `version` (roff `.VS`)|
 | `pre`        | Inline list          | `kind` (code/example/html/math/…)   |
 | `list`       | listItem list        | `kind` (tp/ip/op/ap/ul/ol/dl), `indentLevel` (best-effort: structural sinks (md, pdf, roff, html, rendererTk) honor; visual sinks (svg, canvas, tilepdf) may ignore depending on layout) |
 | `listItem`   | Inline list (desc)   | `kind`, `term` (inline list)        |

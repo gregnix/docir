@@ -106,10 +106,10 @@ proc ::docir::roff::_renderBlock {node} {
 
 proc ::docir::roff::_renderDocHeader {node} {
     set m [_dictDef $node meta {}]
-    set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
+    set name    [if {[dict exists $m name]} {dict get $m name} else {lindex ""}]
     set section [_dictDef $m section ""]
     set version [_dictDef $m version ""]
-    set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
+    set part    [if {[dict exists $m part]} {dict get $m part} else {lindex ""}]
 
     if {$name eq "" && $section eq ""} { return "" }
 

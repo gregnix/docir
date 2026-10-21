@@ -1190,10 +1190,10 @@ proc docir::pdf::_renderDocHeader {node} {
     set lh [_lineHeight $fontSize]
 
     set m [dict get $node meta]
-    set name    [expr {[dict exists $m name]    ? [dict get $m name]    : ""}]
+    set name    [if {[dict exists $m name]} {dict get $m name} else {lindex ""}]
     set section [_dictDef $m section ""]
     set version [_dictDef $m version ""]
-    set part    [expr {[dict exists $m part]    ? [dict get $m part]    : ""}]
+    set part    [if {[dict exists $m part]} {dict get $m part} else {lindex ""}]
 
     set parts {}
     if {$name ne ""} {
@@ -2533,12 +2533,32 @@ proc docir::pdf::_renderIndex {} {
         set entryX [expr {$x + 8}]
 
         # page list right-aligned (e.g. "3, 7, 12"); width via getStringWidth.
-        set pageStr [join $pages ", "]
-        set pageW [$pdf getStringWidth $pageStr]
-        set pageX [expr {$rightEdge - $pageW}]
+        # A long list wraps onto further lines (right-aligned) instead of
+        # running over the term and the left margin: "widget" in the Tcl/Tk
+        # manual has more than 16 pages (until 2026-10-21 one line).
+        set sep ", "
+        set sepW [$pdf getStringWidth $sep]
+        set maxPW [expr {[dict get $st contentW] * 0.6}]
+        set rows {}
+        set row {}
+        set rowW 0
+        foreach pg $pages dest $dests {
+            set w [$pdf getStringWidth $pg]
+            set need [expr {[llength $row] ? $rowW + $sepW + $w : $w}]
+            if {[llength $row] && $need + $sepW > $maxPW} {
+                lappend rows [list $row $rowW]
+                set row {}
+                set need $w
+            }
+            lappend row [list $pg $dest $w]
+            set rowW $need
+        }
+        if {[llength $row]} { lappend rows [list $row $rowW] }
 
         # term on the left; truncate if needed so the page column stays free.
-        set maxTextW [expr {[dict get $st contentW] - 8 - $pageW - 12}]
+        set firstW [lindex $rows 0 1]
+        if {[llength $rows] > 1} { set firstW [expr {$firstW + $sepW}] }
+        set maxTextW [expr {[dict get $st contentW] - 8 - $firstW - 12}]
         set displayText [::pdf4tcllib::unicode::sanitize $text]
         set tw [$pdf getStringWidth $displayText]
         if {$maxTextW > 0 && $tw > $maxTextW} {
@@ -2548,24 +2568,37 @@ proc docir::pdf::_renderIndex {} {
             }
             set displayText "${displayText}..."
         }
-
         $pdf text $displayText -x $entryX -y $ey
+
         # Page numbers one by one, each a link to its occurrence.
-        set px $pageX
-        set last [expr {[llength $pages] - 1}]
-        set k 0
-        foreach pg $pages dest $dests {
-            $pdf text $pg -x $px -y $ey
-            set w [$pdf getStringWidth $pg]
-            if {$dest ne ""} {
-                _addLink $px [dict get $st y] $w $lh $dest
+        set nRows [llength $rows]
+        set r 0
+        foreach rw $rows {
+            lassign $rw cells rowW
+            set lastRow [expr {$r == $nRows - 1}]
+            if {$r > 0} {
+                _advanceY $lh
+                _ensureSpace $lh
+                _setFont $fontSize ""
+                set ey [expr {[dict get $st y] + $fontSize}]
             }
-            set px [expr {$px + $w}]
-            if {$k < $last} {
-                $pdf text ", " -x $px -y $ey
-                set px [expr {$px + [$pdf getStringWidth ", "]}]
+            set px [expr {$rightEdge - $rowW - ($lastRow ? 0 : $sepW)}]
+            set nc [llength $cells]
+            set k 0
+            foreach c $cells {
+                lassign $c pg dest w
+                $pdf text $pg -x $px -y $ey
+                if {$dest ne ""} {
+                    _addLink $px [dict get $st y] $w $lh $dest
+                }
+                set px [expr {$px + $w}]
+                if {$k < $nc - 1 || !$lastRow} {
+                    $pdf text $sep -x $px -y $ey
+                    set px [expr {$px + $sepW}]
+                }
+                incr k
             }
-            incr k
+            incr r
         }
 
         _advanceY $lh
