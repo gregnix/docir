@@ -147,6 +147,22 @@ The sink supports, among other things, a table of contents with page
 numbers and a subject index (see the next chapter). It relies on the
 Unicode-safe text and font handling of pdf4tcllib.
 
+The [synopsis]{.index} of a TIP-700 manual page (`::: {.synopsis}` with
+the spans `.cmd .sub .lit .arg .ins .optarg .optlit .optdot`) comes out one
+line per call form, set as in the Tcl man pages: `.cmd .sub .lit` bold,
+`.arg .ins` italic, the optional ones in question marks (`?id?`,
+`?-strict?`, `?script script ...?`). This applies to a paragraph made only
+of these spans, blanks and soft line breaks that starts with `.cmd` or
+`.ins`; other paragraphs stay as they are. Up to 2026-10-23 the synopsis ran
+on as one paragraph.
+
+For the PDF [metadata]{.index} there are, besides `title` and `author`,
+the options `subject`, `keywords`, `creator` (default `docir::pdf`) and
+`lang`, the document language as a BCP 47 tag (`"de"`, `"en-GB"`). It is
+written to the catalog and the XMP data, so readers and screen readers use
+the right language; this needs pdf4tcl 0.9.4.73 or later. The creation
+date is always set.
+
 A code block that no longer fits on the page starts on the next one, in the
 fixed-width font. Up to 2026-10-19 it came out proportional there, because
 the page break writes the footer in the body font.
@@ -208,6 +224,40 @@ initial letter, each term with all pages where it occurs. The page is
 captured while typesetting, so it stays correct across page breaks too. In
 HTML, `includeIndex 1` enables the index with links to the occurrences,
 labelled with the section title.
+
+After typesetting, `docir::pdf::indexEntries` returns this index as a list
+of `{term pages}` with the printed page numbers, so the indexes of several
+PDFs can be merged into one combined index (bookkit `index-gesamt.tcl`).
+For that the PDF sink turns a relative link to another PDF file,
+`other.pdf` or `other.pdf#page=12`, into a jump to that page in that file
+(`/GoToR`, pdf4tcl 0.9.4.73 or later; with an older pdf4tcl it stays a URI
+link).
+
+## 5.3  Running header
+
+In a long manual the page number alone does not tell where you are. The
+header and footer templates (`header`, `footer`) therefore know `%t` (the
+document title) and `%c`, the [running title]{.index}, besides `%p` (the
+page): the first heading of level `runningLevel` (default 1) that starts on
+the page, else the one still running -- as in a dictionary. TOC and index
+pages show their titles. A tab splits a template into a left and a right
+part:
+
+```tcl
+docir::pdf::render $ir book.pdf [dict create title "Tcl/Tk 9.0" \
+    header "%t\t%c" footer "%p"]
+```
+
+A header with `%c` is drawn when the page is finished and gets a thin rule
+below. With `runningProc` a command of your own returns several texts
+instead of the heading, longest first; the first that fits the line is
+used. bookkit `manual-build.tcl` passes the path and the neighbouring
+chapters this way (`‹ disjointset  |  struct / graph  |  graph1 ›`), and only
+the path or the name when space is short.
+
+Text in `**...**` is set bold in header and footer. `manual-build.tcl`
+uses it to mark the current page:
+`‹ abstract  |  tcl / **after**  |  append ›`.
 
 # 6  Building Books
 

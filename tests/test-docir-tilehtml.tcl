@@ -386,5 +386,7 @@ test "tilehtml.theme.sepia_has_sepia_colors" {
     assert [string match "*--bg: #f4ecd8*" $html] "sepia sollte f4ecd8 bg haben"
 }
 
-exit [test::runAll]
+# Aufraeumen vor exit (Review 2026-10-24)
+set rc [test::runAll]
 file delete -force $tmpDir
+exit $rc

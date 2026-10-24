@@ -165,6 +165,33 @@ test "tilemd.table.uses_md_table" {
     assert [string match "*| L1 | V1 |*" $md] "table sollte | L1 | V1 | als Zeile"
 }
 
+# B2. Escaping (2026-10-22, Bash-Spickzettel: ${#var}, [[ ]], a|b)
+proc csdSheetMd {sec} {
+    set sheet [dict create title T subtitle "" sections [list $sec]]
+    set out [file join $::tmpDir esc.md]
+    ::docir::tilemd::renderSheets [list $sheet] $out
+    set fh [open $out r]; fconfigure $fh -encoding utf-8
+    set md [read $fh]; close $fh
+    return $md
+}
+test "tilemd.escape.table_literal" {
+    set md [csdSheetMd {title S type table content {{{a|b)} {${#var} [[ x ]] *.txt _y <z>}}}}]
+    assert [expr {[string first {| a\|b) | \${#var} \[\[ x \]\] \*.txt \_y \<z> |} $md] >= 0}] \
+        "Tabelle: | \$ \[ \* \_ \< escapen: $md"
+}
+test "tilemd.escape.table_mono_code_span" {
+    set md [csdSheetMd {title S type table content {{L {echo `x` | wc} 1}}}]
+    assert [expr {[string first {| L | ``echo `x` \| wc`` |} $md] >= 0}] "mono: Code-Span, Fence laenger als Inhalt: $md"
+}
+test "tilemd.escape.list_keeps_markup" {
+    set md [csdSheetMd {title S type list content {{**fett** und `code` und [Doku](https://x.org) $HOME}}}]
+    assert [expr {[string first {- **fett** und `code` und [Doku](https://x.org) \$HOME} $md] >= 0}] "Liste: Markup bleibt, \$ escapt: $md"
+}
+test "tilemd.escape.code_fence_longer" {
+    set md [csdSheetMd {title S type code content {{```} {x}}}]
+    assert [string match "*````\n```\nx\n````*" $md] "Fence laenger als ``` im Code: $md"
+}
+
 # ============================================================
 # C. TOC + Multi-Sheet
 # ============================================================
@@ -255,5 +282,8 @@ test "tilemd.hr.false_no_separator" {
     assertEqual 0 $hrCount
 }
 
-exit [test::runAll]
+# Aufraeumen vor exit -- danach lief es nie (Ordner blieb liegen, Review
+# 2026-10-24).
+set rc [test::runAll]
 file delete -force $tmpDir
+exit $rc

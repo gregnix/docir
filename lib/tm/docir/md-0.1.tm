@@ -247,6 +247,7 @@ proc docir::md::_renderList {node} {
                 # If descMd contains newlines: indent the further lines
                 set descMd [_indentContinuationLines $descMd 4]
                 append out "${indent}${ord}. $descMd\n"
+                append out [_itemBlocks $item "${indent}    "]
                 incr ord
             }
             tp - ip - op - ap - dl {
@@ -310,16 +311,50 @@ proc docir::md::_renderList {node} {
                     append out "${indent}: \n"
                 }
                 append out "\n"
+                # Item with further blocks (listItem.blocks: paragraphs, a
+                # nested list, code -- htmlSource from <dd>): the first
+                # paragraph is the description above, the rest follows flat,
+                # like nested nroff lists (mdstack reads ": " only in column 0).
+                if {[dict exists $item blocks]} {
+                    set rest [dict get $item blocks]
+                    if {[llength $rest] && [dict get [lindex $rest 0] type] eq "paragraph"} {
+                        set rest [lrange $rest 1 end]
+                    }
+                    foreach b $rest { append out [_renderBlock $b] }
+                }
             }
             default {
                 # ul + unknown
                 set marker [dict get $opts listMarker]
                 set descMd [_indentContinuationLines $descMd [expr {[string length $marker] + 1}]]
                 append out "${indent}$marker $descMd\n"
+                append out [_itemBlocks $item "${indent}[string repeat { } [expr {[string length $marker] + 1}]]"]
             }
         }
     }
     return "$out\n"
+}
+
+# Further blocks of a bullet or numbered item (listItem.blocks without the
+# first paragraph, which is the item line): indented to the item's text, so
+# they stay inside the item -- a code block, a quote, another paragraph.
+proc docir::md::_itemBlocks {item pad} {
+    if {![dict exists $item blocks]} { return "" }
+    set rest [dict get $item blocks]
+    if {[llength $rest] && [dict get [lindex $rest 0] type] eq "paragraph"} {
+        set rest [lrange $rest 1 end]
+    }
+    set out ""
+    foreach b $rest {
+        set md [string trimright [_renderBlock $b] "\n"]
+        if {$md eq ""} continue
+        append out "\n"
+        foreach line [split $md "\n"] {
+            if {$line eq ""} { append out "\n" } else { append out "$pad$line\n" }
+        }
+    }
+    if {$out ne ""} { append out "\n" }
+    return $out
 }
 
 proc docir::md::_renderListItem {node} {

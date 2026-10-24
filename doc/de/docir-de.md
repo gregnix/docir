@@ -153,6 +153,23 @@ Ein Codeblock, der nicht mehr auf die Seite passt, beginnt auf der
 naechsten, in fester Schrift. Bis 2026-10-19 kam er dort proportional
 heraus, weil der Seitenumbruch die Fusszeile in der Grundschrift schreibt.
 
+Die [Synopsis]{.index} einer Handbuchseite nach TIP 700
+(`::: {.synopsis}` mit den Spans `.cmd .sub .lit .arg .ins .optarg .optlit
+.optdot`) steht im PDF eine Zeile je Aufrufform, gesetzt wie in den
+Tcl-Manpages: `.cmd .sub .lit` fett, `.arg .ins` kursiv, die optionalen in
+Fragezeichen (`?id?`, `?-strict?`, `?script script ...?`). Das gilt fuer
+einen Absatz, der nur aus diesen Spans, Leerzeichen und weichen
+Zeilenumbruechen besteht und mit `.cmd` oder `.ins` beginnt; andere Absaetze
+bleiben, wie sie sind. Bis 2026-10-23 lief die Synopsis als ein Absatz
+durch.
+
+Fuer die [Metadaten]{.index} des PDF gibt es neben `title` und `author`
+die Optionen `subject`, `keywords`, `creator` (Vorgabe `docir::pdf`) und
+`lang`, die Sprache des Dokuments als BCP-47-Kennung (`"de"`,
+`"en-GB"`). Sie steht im Katalog und in den XMP-Daten, sodass Leseprogramme
+und Vorleser die richtige Sprache nehmen; das braucht pdf4tcl ab 0.9.4.73.
+Das Erstelldatum wird immer gesetzt.
+
 ## 4.2  HTML
 
 `docir::html` rendert nach eigenstaendigem HTML mit eingebettetem CSS.
@@ -250,6 +267,41 @@ Anfangsbuchstaben gruppiert, je Begriff mit allen Seiten seines
 Vorkommens. Die Seite wird beim Setzen erfasst, also auch ueber
 Seitenumbrueche hinweg korrekt. In HTML aktiviert `includeIndex 1` den
 Index mit Links zu den Vorkommen, beschriftet mit dem Abschnittstitel.
+
+Nach dem Setzen liefert `docir::pdf::indexEntries` dieses Verzeichnis als
+Liste von `{begriff seiten}`, mit den gedruckten Seitenzahlen. So lassen
+sich die Verzeichnisse mehrerer PDFs zu einem Gesamtindex zusammenfassen
+(bookkit `index-gesamt.tcl`). Dafuer setzt die PDF-Senke einen relativen
+Link auf eine andere PDF-Datei, `andere.pdf` oder `andere.pdf#page=12`,
+als Sprung in diese Datei auf die Seite (`/GoToR`, ab pdf4tcl 0.9.4.73;
+mit aelterem pdf4tcl bleibt es ein URI-Link).
+
+## 5.3  Kolumnentitel
+
+In einem langen Handbuch zeigt die Seitenzahl allein nicht, wo man ist.
+Die Vorlagen fuer Kopf- und Fusszeile (`header`, `footer`) kennen deshalb
+neben `%p` (Seite) auch `%t` (Titel des Dokuments) und `%c`, den
+[Kolumnentitel]{.index}: die erste Ueberschrift der Ebene `runningLevel`
+(Vorgabe 1), die auf der Seite beginnt, sonst die noch laufende -- wie im
+Woerterbuch. Inhalts- und Stichwortverzeichnis zeigen ihren Titel. Ein
+Tabulator teilt die Vorlage in einen linken und einen rechten Teil:
+
+```tcl
+docir::pdf::render $ir buch.pdf [dict create title "Tcl/Tk 9.0" \
+    header "%t\t%c" footer "%p"]
+```
+
+Eine Kopfzeile mit `%c` entsteht erst, wenn die Seite fertig ist, und
+bekommt eine feine Linie darunter. Mit `runningProc` liefert ein eigener
+Befehl statt der Ueberschrift mehrere Texte, vom laengsten zum kuerzesten;
+genommen wird der erste, der in die Zeile passt. bookkit `manual-build.tcl`
+gibt so den Pfad und die Nachbarkapitel an
+(`‹ disjointset  |  struct / graph  |  graph1 ›`), bei Platzmangel nur den
+Pfad oder den Namen.
+
+Text in `**...**` steht in Kopf- und Fusszeile fett. So hebt
+`manual-build.tcl` die aktuelle Seite hervor:
+`‹ abstract  |  tcl / **after**  |  append ›`.
 
 # 6  Buecher bauen
 

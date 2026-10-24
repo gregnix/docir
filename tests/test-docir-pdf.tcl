@@ -14,12 +14,15 @@ set testDir [file dirname [file normalize [info script]]]
 source -encoding utf-8 [file join $testDir test-framework.tcl]
 source -encoding utf-8 [file join $testDir test-setup.tcl]
 
+# Seit 23.10.2026: 57 (indexEntries, Link in andere PDF-Datei,
+# lebender Kolumnentitel, Synopsis zeilenweise, Leerzeichen vor "?").
+# Seit 24.10.2026: 60 (Kopf mit Fettteil, Metadaten, fehlendes Bild).
 # Seit 19.10.2026: 49 (vier Tests fuer interne Links).
 # Soll-Zahl, gemessen am 27.09.2026 mit pdf4tcl UND pdf4tcllib im
 # Geschwisterbaum: 45 angemeldete Tests. Ohne pdf4tcllib sind es 3 -- der
 # Block ab "if {[catch {package require pdf4tcl}]}" faellt dann weg und
 # nimmt 42 Tests mit, ohne dass der Zaehler etwas davon sieht.
-::test::expect 49
+::test::expect 60
 
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
@@ -1127,6 +1130,241 @@ test "pdf.links.index_pages_link_to_marker" {
 }
 
 }  ;# end linkAdd block
+
+# indexEntries: das Stichwortverzeichnis des letzten Laufs, mit den
+# gedruckten Seiten (2026-10-23, fuer bookkit index-gesamt.tcl)
+if {$canRender} {
+test "pdf.index.entries_after_render" {
+    set ir [list \
+        [dict create type heading content [list [dict create type text text "Kapitel"]] \
+            meta [dict create level 1 id kapitel]] \
+        [dict create type paragraph content [list \
+            [dict create type span class index text "Zeta"] \
+            [dict create type text text " und "] \
+            [dict create type span class index text "Alpha"] \
+            [dict create type text text " und noch einmal "] \
+            [dict create type span class index text "Alpha"]] meta {}]]
+    set f [file join $::TMPBASE test-pdf-indexentries.pdf]
+    docir::pdf::render $ir $f [dict create generateIndex 1]
+    set e [docir::pdf::indexEntries]
+    assert [expr {[llength $e] == 2}] "zwei Begriffe: $e"
+    assert [expr {[lindex $e 0 0] eq "Alpha" && [lindex $e 1 0] eq "Zeta"}] "sortiert: $e"
+    assert [expr {[lindex $e 0 1] eq "1"}] "Alpha einmal, Seite 1: $e"
+    catch {file delete $f}
+}
+}
+
+# Lebender Kolumnentitel (2026-10-23): %c in der Kopfzeile ist die erste
+# Ueberschrift der Ebene runningLevel, die auf der Seite beginnt, sonst die
+# laufende; runningProc liefert Texte von lang nach kurz, der erste, der
+# passt, gilt.
+if {$canRender} {
+proc ::_runIr {} {
+    set ir {}
+    foreach kap {A B} n {70 70} {
+        lappend ir [dict create type heading content [list [dict create type text text "Kap$kap"]] \
+            meta [dict create level 1 id kap$kap]]
+        for {set i 0} {$i < $n} {incr i} {
+            lappend ir [dict create type paragraph content [list [dict create type text text "Zeile $i von $kap."]] meta {}]
+        }
+    }
+    return $ir
+}
+proc ::_runText {title level} {
+    if {$title eq "KapA"} { return [list [string repeat "SEHRLANG-" 40] RUN-A] }
+    if {$title eq "KapB"} { return [list RUN-B] }
+    return [list $title]
+}
+proc ::_pageHeads {f} {
+    # erste Zeile jeder Seite (pdftotext); {} ohne pdftotext
+    if {[auto_execok pdftotext] eq "" || [catch {exec pdfinfo $f} info]} { return {} }
+    regexp {Pages:\s+(\d+)} $info -> n
+    set out {}
+    for {set p 1} {$p <= $n} {incr p} {
+        set t [exec pdftotext -enc UTF-8 -layout -f $p -l $p $f -]
+        lappend out [string trim [lindex [split [string trim $t] \n] 0]]
+    }
+    return $out
+}
+test "pdf.header.running_title_dictionary_rule" {
+    set f [file join $::TMPBASE test-pdf-running.pdf]
+    docir::pdf::render [::_runIr] $f [dict create title Handbuch \
+        header "%t\t%c" footer "%p" runningProc ::_runText]
+    set heads [::_pageHeads $f]
+    if {![llength $heads]} {
+        puts "  (pdftotext fehlt, nur Lauf geprueft)"
+        assert [file exists $f] "PDF erzeugt"
+    } else {
+        set kinds [lmap h $heads {
+            expr {[string match "Handbuch*RUN-A" $h] ? "A" : [string match "Handbuch*RUN-B" $h] ? "B" : "?$h"}
+        }]
+        assert [expr {"?" ni [lmap k $kinds {string index $k 0}]}] "jede Seite: Titel links, A oder B rechts: $kinds"
+        assert [expr {[lindex $kinds 0] eq "A" && [lindex $kinds end] eq "B"}] "erst A, zuletzt B: $kinds"
+        set firstB [lsearch $kinds B]
+        assert [expr {[lsearch -start $firstB $kinds A] < 0}] "nach dem ersten B kein A mehr: $kinds"
+        assert [expr {![string match *SEHRLANG* $heads]}] "zu langer Text nicht genommen"
+    }
+    catch {file delete $f}
+}
+test "pdf.header.without_running_unchanged" {
+    set f [file join $::TMPBASE test-pdf-noheader.pdf]
+    docir::pdf::render [::_runIr] $f [dict create header "Seite %p"]
+    set heads [::_pageHeads $f]
+    if {[llength $heads]} {
+        assert [expr {[lindex $heads 0] eq "Seite 1" && [lindex $heads 1] eq "Seite 2"}] "einfache Kopfzeile wie bisher: [lrange $heads 0 1]"
+    } else {
+        assert [file exists $f] "PDF erzeugt"
+    }
+    catch {file delete $f}
+}
+}
+
+# Link auf eine andere PDF-Datei: GoToR (pdf4tcl fileLinkAdd, 0.9.4.73)
+if {$canRender && [llength [info commands ::pdf4tcl::pdf4tcl]] && \
+        "fileLinkAdd" in [info class methods ::pdf4tcl::pdf4tcl -all]} {
+test "pdf.links.relative_pdf_is_gotor" {
+    set ir [list [dict create type paragraph content [list \
+        [dict create type link text "S. 12" href "tcllib.pdf#page=12"] \
+        [dict create type text text " "] \
+        [dict create type link text "Datei" href "other%20file.pdf"] \
+        [dict create type text text " "] \
+        [dict create type link text "Web" href "https://example.com/a.pdf"]] meta {}]]
+    set f [file join $::TMPBASE test-pdf-gotor.pdf]
+    docir::pdf::render $ir $f [dict create compress 0]
+    set d [::_pdfRaw $f]
+    assert [regexp {/S /GoToR /F \(tcllib\.pdf\)\s+/D \[11 /Fit\]} $d] "Datei und Seite 12"
+    assert [regexp {/S /GoToR /F \(other file\.pdf\)\s+/D \[0 /Fit\]} $d] "ohne Seite: Seite 1, %20 dekodiert"
+    assert [regexp {/URI \(https://example.com/a.pdf\)} $d] "mit Schema bleibt URI"
+    catch {file delete $f}
+}
+} else {
+    puts "Note: pdf4tcl without fileLinkAdd -- GoToR test skipped"
+}
+
+# Codeblock laenger als eine Seite (2026-10-22, Tablelist-Anleitung S. 50):
+# wird auf mehrere Seiten verteilt, keine Zeile geht verloren.
+test "pdf.pre.longer_than_page_is_split" {
+    set code {}
+    for {set i 1} {$i <= 150} {incr i} { lappend code "zeile$i" }
+    set ir [list \
+        [dict create type doc_meta content {} meta [dict create irSchemaVersion 1]] \
+        [dict create type paragraph content [list [dict create type text text "Vorher."]] meta {}] \
+        [dict create type pre content [list [dict create type text text [join $code \n]]] meta {kind code}]]
+    set f [file join $::TMPBASE test-pdf-longpre.pdf]
+    docir::pdf::render $ir $f [dict create compress 0]
+    set d [::_pdfRaw $f]
+    set pages [regexp -all {/Type\s*/Page\M} $d]
+    assert {$pages >= 3} "150 Zeilen brauchen mindestens 3 Seiten, sind $pages"
+    catch {file delete $f}
+}
+
+# TIP-700-Synopsis (2026-10-23): eine Zeile je Aufrufform, Klassen
+# cmd/sub/lit fett, arg/ins kursiv, optarg/optlit/optdot in ?...?.
+proc ::_sp {cls text} { dict create type span class $cls text $text }
+proc ::_tx {text} { dict create type text text $text }
+proc ::_sb {} { dict create type softbreak }
+proc ::_synIr {} {
+    list [dict create type paragraph meta {} content [list \
+        [::_sp cmd after] [::_tx " "] [::_sp arg ms] [::_tx " "] [::_sp optdot "script script"] [::_sb] \
+        [::_sp cmd after] [::_tx " "] [::_sp sub info] [::_tx " "] [::_sp optarg id] [::_sb] \
+        [::_sp cmd binary] [::_tx " "] [::_sp sub decode] [::_tx " "] [::_sp optlit -strict] [::_tx " "] [::_sp arg data]]]
+}
+test "pdf.synopsis.softbreaks_become_linebreaks" {
+    set out [docir::pdf::_synopsisLines [dict get [lindex [::_synIr] 0] content]]
+    set types [lmap i $out {dict get $i type}]
+    assert [expr {"softbreak" ni $types}] "keine softbreaks mehr: $types"
+    assert [expr {[llength [lsearch -all $types linebreak]] == 2}] "zwei Zeilenumbrueche: $types"
+}
+test "pdf.synopsis.other_paragraphs_untouched" {
+    foreach c [list \
+        [list [::_tx "Ein Satz"] [::_sb] [::_tx "weiter."]] \
+        [list [::_sp arg x] [::_sb] [::_sp cmd y]] \
+        [list [::_sp cmd after] [::_tx " "] [::_sp arg ms]] \
+        [list [::_sp cmd after] [::_tx " wartet"] [::_sb] [::_sp cmd y]] \
+        [list [::_sp cmd after] [::_sb] [dict create type strong text x]]] {
+        assert [expr {[docir::pdf::_synopsisLines $c] eq $c}] "unveraendert: $c"
+    }
+}
+if {$canRender} {
+proc ::_pdfLines {f} {
+    if {[auto_execok pdftotext] eq ""} { return {} }
+    set t [exec pdftotext -enc UTF-8 -layout $f -]
+    return [lmap l [split $t \n] {string trim $l}]
+}
+test "pdf.synopsis.one_line_per_form" {
+    set f [file join $::TMPBASE test-pdf-synopsis.pdf]
+    docir::pdf::render [::_synIr] $f {}
+    set lines [::_pdfLines $f]
+    if {![llength $lines]} {
+        assert [file exists $f] "PDF erzeugt"
+    } else {
+        foreach want {"after ms ?script script ...?" "after info ?id?" "binary decode ?-strict? data"} {
+            assert [expr {$want in $lines}] "Zeile '$want' in: $lines"
+        }
+    }
+    catch {file delete $f}
+}
+test "pdf.text.explicit_space_before_question_mark_kept" {
+    # Begriff einer Beschreibungsliste: **after** *ms* ?*script ...*?
+    set ir [list [dict create type paragraph meta {} content [list \
+        [dict create type strong text after] [::_tx " "] [dict create type emphasis text ms] \
+        [::_tx " ?"] [dict create type emphasis text "script ..."] [::_tx "?, und "] \
+        [dict create type strong text weiter] [::_tx ", fertig ."]]]]
+    set f [file join $::TMPBASE test-pdf-qmark.pdf]
+    docir::pdf::render $ir $f {}
+    set lines [::_pdfLines $f]
+    if {![llength $lines]} {
+        assert [file exists $f] "PDF erzeugt"
+    } else {
+        assert [expr {"after ms ?script ...?, und weiter, fertig." in $lines}] "Abstaende: $lines"
+    }
+    catch {file delete $f}
+}
+}
+
+# Review 2026-10-24: Kopfzeile mit fettem Teil, Metadaten, laute Fehler.
+if {$canRender} {
+proc ::_boldRun {title level} { return [list "pfad / **$title**"] }
+test "pdf.header.bold_part_without_asterisks" {
+    set f [file join $::TMPBASE test-pdf-hdrbold.pdf]
+    docir::pdf::render [::_runIr] $f [dict create title Hb compress 0 \
+        header "%t\t%c" footer "%p" runningProc ::_boldRun]
+    set heads [::_pageHeads $f]
+    if {[llength $heads]} {
+        assert [string match "Hb*pfad / KapA" [lindex $heads 0]] "Kopf ohne Sternchen: [lindex $heads 0]"
+    }
+    assert [expr {[llength [docir::pdf::_hdrSegs "a / **b** c"]] == 3}] "drei Teile"
+    assert [expr {[lindex [docir::pdf::_hdrSegs "a / **b**"] 1] eq {b 1}}] "b fett"
+    catch {file delete $f}
+}
+test "pdf.meta.subject_creator_date_lang" {
+    set f [file join $::TMPBASE test-pdf-meta.pdf]
+    docir::pdf::render [::_runIr] $f [dict create title T subject "Ref pages" \
+        lang en-GB compress 0]
+    set d [::_pdfRaw $f]
+    assert [regexp {/Subject \(Ref pages\)} $d] "Subject"
+    assert [regexp {/Creator \(docir::pdf\)} $d] "Creator Vorgabe"
+    assert [regexp {/CreationDate \(D:} $d] "Erstelldatum"
+    set p [pdf4tcl::new %AUTO%]
+    set hasLang [expr {![catch {$p metadata -lang de}]}]
+    $p destroy
+    if {$hasLang} {
+        assert [regexp {/Lang \(en-GB\)} $d] "Sprache im Katalog"
+    } else {
+        puts "  (pdf4tcl ohne metadata -lang, /Lang nicht geprueft)"
+    }
+    catch {file delete $f}
+}
+test "pdf.image.missing_warns" {
+    catch {unset ::docir::pdf::_warnedKeys(img:gibtsnicht.png)}
+    set ir [list [dict create type image content {} \
+        meta [dict create url gibtsnicht.png alt Weg]]]
+    set f [file join $::TMPBASE test-pdf-noimg.pdf]
+    docir::pdf::render $ir $f {}
+    assert [info exists ::docir::pdf::_warnedKeys(img:gibtsnicht.png)] "Warnung fuer fehlendes Bild"
+    catch {file delete $f}
+}
+}
 
 }  ;# end pdf4tcl-availability block
 

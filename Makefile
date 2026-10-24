@@ -19,7 +19,7 @@ BINDIR     := $(PREFIX)/bin
 help:
 	@echo "Targets:"
 	@echo "  make install        # Module nach $(INSTALLDIR) (sudo evtl. noetig)"
-	@echo "  make install-bin    # CLI-Tools (md2tilepdf etc.) nach $(BINDIR)"
+	@echo "  make install-bin    # CLI-Tools (md2tilepdf, md2html, n2md, h2md ...) nach $(BINDIR)"
 	@echo "  make install-user   # Module nach $(USERDIR), ohne sudo"
 	@echo "  make uninstall      # entfernt $(INSTALLDIR)"
 	@echo "  make pkgindex       # pkgIndex.tcl neu generieren"
@@ -38,8 +38,9 @@ install-bin:
 	cp bin/md2html $(BINDIR)/
 	cp bin/md2odt $(BINDIR)/
 	cp bin/n2md $(BINDIR)/
-	chmod +x $(BINDIR)/md2tilepdf $(BINDIR)/md2tilehtml $(BINDIR)/md2tilemd $(BINDIR)/md2html $(BINDIR)/md2odt $(BINDIR)/n2md
-	@echo "Installiert: $(BINDIR)/md2tilepdf $(BINDIR)/md2tilehtml"
+	cp bin/h2md $(BINDIR)/
+	chmod +x $(BINDIR)/md2tilepdf $(BINDIR)/md2tilehtml $(BINDIR)/md2tilemd $(BINDIR)/md2html $(BINDIR)/md2odt $(BINDIR)/n2md $(BINDIR)/h2md
+	@echo "Installiert nach $(BINDIR): md2tilepdf md2tilehtml md2tilemd md2html md2odt n2md h2md"
 
 install-user:
 	mkdir -p $(USERDIR)

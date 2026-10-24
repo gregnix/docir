@@ -16,6 +16,13 @@
 #                                            run off the page)
 #         title          String             (default: from DocIR)
 #         author         String             (default "")
+#         subject, keywords  String         (default ""; PDF metadata)
+#         creator        String             (default "docir::pdf"; the tool
+#                                            that made the document)
+#         lang           BCP 47 tag ("de", "en-GB"; default ""): document
+#                        language, /Lang and XMP dc:language (pdf4tcl with
+#                        "metadata -lang", from 0.9.4.73; older: ignored)
+#                        Creation date: always set (now).
 #         subtitle       String             (default ""; title page only)
 #         date           String             (default ""; title page only)
 #         titlePage      Bool   (default 0)  eigene Titelseite vor dem TOC
@@ -23,6 +30,23 @@
 #         sansBoldFont, sansItalicFont, sansBoldItalicFont, monoFont
 #         header         String             (Header-Template, %p = Pagenumber)
 #         footer         String             (Footer-Template, %p = Pagenumber)
+#                        Further placeholders (2026-10-23):
+#                          %t  document title (option title)
+#                          %c  running title: the first heading of level
+#                              runningLevel that starts on this page, else
+#                              the one still running (as in a dictionary);
+#                              on TOC and index pages their titles
+#                        A tab splits a template into a left and a right
+#                        part ("%t\t%c"). With %c the header is drawn when
+#                        the page is finished, so it knows the page.
+#                        "**...**" in a template or a runningProc text
+#                        is set bold (2026-10-24).
+#         runningLevel   Int    (default 1) heading level for %c
+#         runningProc    command prefix (default ""): called as
+#                        {*}runningProc title level, returns a list of
+#                        texts for %c, longest first; the first that fits
+#                        the line is used (e.g. a path, then the name).
+#                        Without it %c is the heading text.
 #         theme          Theme-Name         (optional, via mdstack::theme::toPdfOpts)
 #
 #         # NEU in 0.2:
@@ -36,6 +60,18 @@
 #         indexLevel     Int    (default 3) heading level that counts as an index entry
 #         bookmarks      Bool   (default 1) PDF-Outline-Bookmarks bei Headings
 #       Returns: nichts (schreibt nach outputPath)
+#
+#   docir::pdf::indexEntries
+#       After render/renderToHandle: the subject index of that render as a
+#       list of {term pages}, terms sorted like the printed index, pages
+#       sorted and unique, numbered as printed (the %p of the footer). Empty
+#       before the first render or without [term]{.index} markers. For tools
+#       that combine the indexes of several PDFs (bookkit index-gesamt.tcl).
+#
+#   Links: "#id" jumps inside the document (linkAdd). A relative link to a
+#   PDF file, "other.pdf" or "other.pdf#page=N" (no scheme), opens that file
+#   at page N (pdf4tcl fileLinkAdd, /GoToR, pdf4tcl >= 0.9.4.73); with an
+#   older pdf4tcl it stays a URI link. Everything else is a URI link.
 #
 #   docir::pdf::renderToHandle pdfHandle ir ?options?
 #       Writes into an existing pdf4tcl handle.
@@ -137,8 +173,7 @@ proc docir::pdf::render {ir outputPath {options {}}} {
     if {!$genToc} {
         # Single-pass render (unchanged behaviour when no TOC is requested).
         set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
-        if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
-        if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
+        _setMetadata $pdf
         $pdf startPage
         _renderInto $pdf $ir
         $pdf write -file $outputPath
@@ -165,8 +200,7 @@ proc docir::pdf::render {ir outputPath {options {}}} {
     for {set iter 1} {$iter <= $maxIter} {incr iter} {
         dict set opts _tocPageList $tocPageList
         set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
-        if {[dict get $opts title]  ne ""} { $pdf metadata -title  [dict get $opts title]  }
-        if {[dict get $opts author] ne ""} { $pdf metadata -author [dict get $opts author] }
+        _setMetadata $pdf
         $pdf startPage
         _renderInto $pdf $ir
 
@@ -202,6 +236,29 @@ proc docir::pdf::renderToHandle {pdf ir {options {}}} {
     return
 }
 
+# Metadata of a new document: title, author, subject, keywords, creator,
+# creation date (now) and -- if pdf4tcl knows "metadata -lang" -- language.
+proc docir::pdf::_setMetadata {pdf} {
+    variable opts
+    set args {}
+    foreach {k o} {title -title author -author subject -subject
+                   keywords -keywords creator -creator} {
+        if {[dict exists $opts $k] && [dict get $opts $k] ne ""} {
+            lappend args $o [dict get $opts $k]
+        }
+    }
+    lappend args -creationdate 0
+    $pdf metadata {*}$args
+    set lang [expr {[dict exists $opts lang] ? [dict get $opts lang] : ""}]
+    if {$lang ne "" && [catch {$pdf metadata -lang $lang} err]} {
+        if {[string match "unknown metadata option*" $err]} {
+            _warnOnce metalang "pdf4tcl without \"metadata -lang\" (0.9.4.73): language not written"
+        } else {
+            _warnOnce metalang "language \"$lang\" not written: $err"
+        }
+    }
+}
+
 proc docir::pdf::_normalizeOptions {options} {
     set opts [dict create \
         paper              a4 \
@@ -209,6 +266,10 @@ proc docir::pdf::_normalizeOptions {options} {
         fontSize           11 \
         title              "" \
         author             "" \
+        subject            "" \
+        keywords           "" \
+        creator            "docir::pdf" \
+        lang               "" \
         subtitle           "" \
         date               "" \
         titlePage          0 \
@@ -231,6 +292,8 @@ proc docir::pdf::_normalizeOptions {options} {
         generateIndex      0 \
         indexTitle         "Stichwortverzeichnis" \
         indexLevel         3 \
+        runningLevel       1 \
+        runningProc        "" \
         bookmarks          1 \
         internalLinks      1 \
         pdfa               "" \
@@ -387,6 +450,40 @@ proc docir::pdf::_coalesceIndexSpans {inlines} {
     return $out
 }
 
+# A TIP-700 synopsis (::: {.synopsis} ::: in the Markdown) reaches the IR as
+# one paragraph of command spans separated by soft breaks; the div itself is
+# gone. Such a paragraph -- only cmd/sub/lit/arg/ins/opt* spans, blanks and
+# soft breaks, starting with a command -- keeps its lines: soft breaks
+# become line breaks. Every other paragraph is returned unchanged.
+proc docir::pdf::_synopsisLines {inlines} {
+    set first 1; set breaks 0
+    foreach i $inlines {
+        set t [_dictDef $i type ""]
+        switch -- $t {
+            span {
+                set cls [split [_dictDef $i class ""]]
+                if {![llength [lsearch -all -inline -regexp $cls \
+                        {^(cmd|sub|lit|arg|ins|optarg|optlit|optdot)$}]]} { return $inlines }
+                if {$first && "cmd" ni $cls && "ins" ni $cls} { return $inlines }
+                set first 0
+            }
+            text { if {[string trim [_dictDef $i text ""]] ne ""} { return $inlines } }
+            softbreak { incr breaks }
+            default { return $inlines }
+        }
+    }
+    if {$first || !$breaks} { return $inlines }
+    set out {}
+    foreach i $inlines {
+        if {[_dictDef $i type ""] eq "softbreak"} {
+            lappend out [dict create type linebreak]
+        } else {
+            lappend out $i
+        }
+    }
+    return $out
+}
+
 # Converts a docir-IR inline list into segments.
 # Each segment: {text style url}.  url is set only for link inlines.
 proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
@@ -466,6 +563,30 @@ proc docir::pdf::_inlinesToSegments {inlines {parentStyle normal}} {
                             set st [expr {$st in {bold bolditalic} ? "bolditalic" : "italic"}]
                         }
                     }
+                }
+                # TIP-700 classes of the synopsis (n2md, man2markdown):
+                # cmd/sub/lit bold, arg/ins italic, optional ones in ?...?
+                # as in the Tcl man pages (optdot had its "..." removed).
+                set tip [lsearch -inline -regexp [split $cls] \
+                    {^(cmd|sub|lit|arg|ins|optarg|optlit|optdot)$}]
+                if {$tip ne "" && $idxTerm eq ""} {
+                    set bold   [expr {$st in {italic bolditalic} ? "bolditalic" : "bold"}]
+                    set ital   [expr {$st in {bold bolditalic} ? "bolditalic" : "italic"}]
+                    switch -- $tip {
+                        cmd - sub - lit { lappend segs [list $text $bold "" "" keepspace] }
+                        arg - ins       { lappend segs [list $text $ital "" "" keepspace] }
+                        optarg {
+                            lappend segs [list "?" $st "" "" keepspace] [list $text $ital ""] [list "?" $st ""]
+                        }
+                        optlit {
+                            lappend segs [list "?" $st "" "" keepspace] [list $text $bold ""] [list "?" $st ""]
+                        }
+                        optdot {
+                            lappend segs [list "?" $st "" "" keepspace] [list $text $ital ""] \
+                                [list " ...?" $st "" "" keepspace]
+                        }
+                    }
+                    continue
                 }
                 lappend segs [list $text $st "" $idxTerm]
             }
@@ -608,7 +729,16 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize {allowTallMath 0}} 
             } else {
                 set spaced 1
             }
-            if {[string index $w 0] in {, . : ; ! ? )}} { set spaced 0 }
+            # punctuation sticks to the word before -- except the "?" that
+            # opens an optional argument and the " ...?" closing an optdot
+            # in a synopsis (fifth segment field "keepspace")
+            # An explicit space before "?" or "..." in the source stays too:
+            # "*ms* ?*script ...*?" in a manual's description list.
+            if {[string index $w 0] in {, . : ; ! ? )} && [lindex $seg 4] ne "keepspace"
+                    && !(($i > 0 || $hasLeading)
+                         && ([string index $w 0] eq "?" || [string match ...* $w]))} {
+                set spaced 0
+            }
             # Index term only on the first word of the span, so the term is
             # captured once at its starting position.
             set wIdx [expr {$i == 0 ? $idx : ""}]
@@ -769,9 +899,21 @@ proc docir::pdf::_renderStyledLine {lineSegments y x0 fontSize} {
             if {[string match "#*" $url]} {
                 # Inside the document. As a URI link it would point nowhere.
                 _addLink $x $linkY $w $linkH [_destName [string range $url 1 end]]
+            } elseif {[regexp {^([^:#?]+\.pdf)(?:#page=([0-9]+))?$} $url -> lfile lpage]
+                      && [_canFileLink $pdf]} {
+                # Another PDF file, relative: open it at the page (GoToR).
+                if {$lpage eq ""} { set lpage 1 }
+                if {[catch {
+                    $pdf fileLinkAdd $x $linkY $w $linkH [_urlDecode $lfile] $lpage
+                } err]} {
+                    # text stays in the link colour, the jump is missing
+                    _warnOnce fileLinkAdd "fileLinkAdd failed ($err); link to $url missing"
+                }
             } else {
-                catch {
+                if {[catch {
                     $pdf hyperlinkAdd $x $linkY $w $linkH $url
+                } err]} {
+                    _warnOnce hyperlinkAdd "hyperlinkAdd failed ($err); link to $url missing"
                 }
             }
         }
@@ -835,6 +977,9 @@ proc docir::pdf::_initState {pdf} {
         footerTemplate $footerTemplate \
         headingsSeen   {} \
         indexEntries   {} \
+        runningCurrent "" \
+        runningAtStart "" \
+        runningFirst   "" \
         canLink        [_canLink $pdf] \
         destsUsed      {}]
     # headingsSeen: list of dicts {level, text, page, anchor, isIndexEntry}
@@ -870,6 +1015,40 @@ proc docir::pdf::_ensureSpace {needed} {
 # document is written, so a TOC can point forward. Needs pdf4tcl with
 # destinationAdd/linkAdd (0.9.4.72); without it, nothing is linked and
 # "#id" links are not turned into broken URI links either.
+
+# pdf4tcl >= 0.9.4.73 has fileLinkAdd (link into another PDF file).
+proc docir::pdf::_canFileLink {pdf} {
+    if {[catch {info object methods $pdf -all} methods]} { return 0 }
+    return [expr {"fileLinkAdd" in $methods}]
+}
+
+# %20 and friends in a relative file link back to characters.
+proc docir::pdf::_urlDecode {s} {
+    set out ""
+    while {[regexp -indices {%([0-9A-Fa-f]{2})} $s m h]} {
+        lassign $m a b
+        append out [string range $s 0 [expr {$a-1}]]
+        append out [format %c [scan [string range $s {*}$h] %x]]
+        set s [string range $s [expr {$b+1}] end]
+    }
+    return $out$s
+}
+
+# Subject index of the last render: list of {term pages} (see header).
+proc docir::pdf::indexEntries {} {
+    variable st
+    if {![info exists st] || ![dict exists $st indexEntries]} { return {} }
+    set byTerm [dict create]
+    foreach e [dict get $st indexEntries] {
+        lassign $e term page
+        dict set byTerm $term $page 1
+    }
+    set out {}
+    foreach term [lsort -dictionary [dict keys $byTerm]] {
+        lappend out [list $term [lsort -integer [dict keys [dict get $byTerm $term]]]]
+    }
+    return $out
+}
 
 proc docir::pdf::_canLink {pdf} {
     variable opts
@@ -966,24 +1145,132 @@ proc docir::pdf::_renderTitlePage {} {
     dict set st y [dict get $st topY]
 }
 
-proc docir::pdf::_writeHeader {} {
+# Running title for %c: the first running heading that started on this
+# page, else the one still running from the pages before.
+proc docir::pdf::_runningTitle {} {
+    variable st
+    if {[dict get $st runningFirst] ne ""} { return [dict get $st runningFirst] }
+    return [dict get $st runningAtStart]
+}
+
+# A heading (or the TOC/index title) becomes the running title.
+proc docir::pdf::_setRunning {text} {
+    variable st
+    if {[dict get $st runningFirst] eq ""} { dict set st runningFirst $text }
+    dict set st runningCurrent $text
+}
+
+# Header/footer text in parts: "**...**" is set bold (runningProc can so
+# mark the current name: "tcl / **after**"). -> list of {text bold}
+proc docir::pdf::_hdrSegs {text} {
+    if {[string first ** $text] < 0} { return [list [list $text 0]] }
+    set out {}; set b 0
+    foreach p [split [string map [list ** \x01] $text] \x01] {
+        if {$p ne ""} { lappend out [list $p $b] }
+        set b [expr {!$b}]
+    }
+    return $out
+}
+
+# Width of a header text at the given size (bold parts measured bold).
+proc docir::pdf::_hdrWidth {text size} {
+    variable st
+    set pdf [dict get $st pdf]
+    set w 0
+    foreach seg [_hdrSegs $text] {
+        lassign $seg t b
+        $pdf setFont $size [expr {$b ? [::pdf4tcllib::fonts::fontSansBold] : [::pdf4tcllib::fonts::fontSans]}]
+        set w [expr {$w + [$pdf getStringWidth [::pdf4tcllib::unicode::sanitize $t]]}]
+    }
+    $pdf setFont $size [::pdf4tcllib::fonts::fontSans]
+    return $w
+}
+
+# Draw a header text at x (left edge, or right edge with align right).
+proc docir::pdf::_hdrDraw {text x y size {align left}} {
+    variable st
+    set pdf [dict get $st pdf]
+    if {$align eq "right"} { set x [expr {$x - [_hdrWidth $text $size]}] }
+    foreach seg [_hdrSegs $text] {
+        lassign $seg t b
+        set t [::pdf4tcllib::unicode::sanitize $t]
+        $pdf setFont $size [expr {$b ? [::pdf4tcllib::fonts::fontSansBold] : [::pdf4tcllib::fonts::fontSans]}]
+        $pdf text $t -x $x -y $y
+        set x [expr {$x + [$pdf getStringWidth $t]}]
+    }
+    $pdf setFont $size [::pdf4tcllib::fonts::fontSans]
+}
+
+# Template -> {left right}: placeholders replaced, a tab splits the parts.
+# %c: the first candidate (runningProc) whose part fits the line next to the
+# other part; the current font must be set (widths are measured).
+proc docir::pdf::_fillTemplate {tpl {size ""}} {
+    variable opts
+    variable st
+    if {$size eq ""} { set size [expr {[dict get $opts fontSize] - 1}] }
+    set title [expr {[dict exists $opts title] ? [dict get $opts title] : ""}]
+    set base [string map [list %p [dict get $st pageNo] %t $title] $tpl]
+    set parts [split $base \t]
+    set left [lindex $parts 0]
+    set right [join [lrange $parts 1 end] " "]
+    if {[string first %c $base] < 0} { return [list $left $right] }
+
+    set rt [_runningTitle]
+    set cands [list $rt]
+    set proc [dict get $opts runningProc]
+    if {$proc ne "" && $rt ne ""} {
+        if {[catch {{*}$proc $rt [dict get $opts runningLevel]} c]} {
+            _warnOnce runningProc "runningProc failed ($c); heading text used"
+        } elseif {[llength $c]} {
+            set cands $c
+        }
+    }
+    set pdf [dict get $st pdf]
+    set width [dict get $st contentW]
+    set gap 18
+    foreach cand $cands {
+        set l [string map [list %c $cand] $left]
+        set r [string map [list %c $cand] $right]
+        set w [expr {[_hdrWidth $l $size] + [_hdrWidth $r $size]}]
+        if {$r ne "" && $l ne ""} { set w [expr {$w + $gap}] }
+        if {$w <= $width} { return [list $l $r] }
+    }
+    return [list $l $r]
+}
+
+# atEnd: 1 when called as the page is finished. A header with %c waits for
+# that, so it can show the first heading of the page.
+proc docir::pdf::_writeHeader {{atEnd 0}} {
     variable opts
     variable st
     set tpl [dict get $st headerTemplate]
     if {$tpl eq ""} { return }
+    set late [expr {[string first %c $tpl] >= 0}]
+    if {$late != $atEnd} { return }
 
     set pdf      [dict get $st pdf]
     set margin   [dict get $st margin]
-    set pageNo   [dict get $st pageNo]
+    set pageW    [dict get $st pageW]
     set fontSize [dict get $opts fontSize]
 
-    # Template-Substitution: %p = Pagenumber
-    set text [string map [list %p $pageNo] $tpl]
-    set text [::pdf4tcllib::unicode::sanitize $text]
-
     set headerY [expr {$margin * 0.5}]
-    $pdf setFont [expr {$fontSize - 1}] [::pdf4tcllib::fonts::fontSans]
-    $pdf text $text -x $margin -y $headerY
+    set size [expr {$fontSize - 1}]
+    $pdf setFont $size [::pdf4tcllib::fonts::fontSans]
+    lassign [_fillTemplate $tpl $size] left right
+    if {[string trim $left] ne ""} {
+        _hdrDraw $left $margin $headerY $size
+    }
+    if {[string trim $right] ne ""} {
+        _hdrDraw $right [expr {$pageW - $margin}] $headerY $size right
+    }
+    if {$late} {
+        # thin rule under a running header
+        set ry [expr {$headerY + 4}]
+        $pdf setStrokeColor 0.6 0.6 0.6
+        $pdf setLineWidth 0.4
+        $pdf line $margin $ry [expr {$pageW - $margin}] $ry
+        $pdf setStrokeColor 0 0 0
+    }
 }
 
 proc docir::pdf::_writeFooter {} {
@@ -999,20 +1286,31 @@ proc docir::pdf::_writeFooter {} {
     set pageNo   [dict get $st pageNo]
     set fontSize [dict get $opts fontSize]
 
-    set text [string map [list %p $pageNo] $tpl]
-    set text [::pdf4tcllib::unicode::sanitize $text]
-
     set footerY [expr {$pageH - $margin * 0.5}]
     set footerX [expr {$pageW - $margin}]
-    $pdf setFont [expr {$fontSize - 2}] [::pdf4tcllib::fonts::fontSans]
-    $pdf text $text -x $footerX -y $footerY -align right
+    set size [expr {$fontSize - 2}]
+    $pdf setFont $size [::pdf4tcllib::fonts::fontSans]
+    lassign [_fillTemplate $tpl $size] left right
+    if {$right eq "" && [string first "\t" $tpl] < 0} {
+        # no tab: as before, the whole footer right-aligned
+        _hdrDraw $left $footerX $footerY $size right
+        return
+    }
+    if {[string trim $left] ne ""} {
+        _hdrDraw $left $margin $footerY $size
+    }
+    if {[string trim $right] ne ""} {
+        _hdrDraw $right $footerX $footerY $size right
+    }
 }
 
 proc docir::pdf::_newPage {} {
     variable st
     set pdf [dict get $st pdf]
 
-    # write the footer for the current page (before endPage)
+    # write the footer for the current page (before endPage), and a
+    # running header (%c), which needs the finished page
+    _writeHeader 1
     _writeFooter
 
     # pdf4tcl: no 'newPage' — endPage + startPage
@@ -1022,6 +1320,8 @@ proc docir::pdf::_newPage {} {
     # increment the page counter
     dict set st pageNo [expr {[dict get $st pageNo] + 1}]
     dict set st y [dict get $st topY]
+    dict set st runningAtStart [dict get $st runningCurrent]
+    dict set st runningFirst ""
 
     # header for the new page
     _writeHeader
@@ -1077,6 +1377,7 @@ proc docir::pdf::_renderInto {pdf ir} {
     }
 
     # footer for the last page (no _newPage at the end)
+    _writeHeader 1
     _writeFooter
 }
 
@@ -1274,6 +1575,7 @@ proc docir::pdf::_renderHeading {node} {
         anchor        "h-$anchorIdx" \
         isIndexEntry  [expr {$lv == $indexLv}]]
     dict lappend st headingsSeen $entry
+    if {$lv == [dict get $opts runningLevel]} { _setRunning $plainText }
 
     # Jump targets: a little above the heading, so it is not cut off.
     set destY [expr {max(0, [dict get $st y] - 6)}]
@@ -1319,7 +1621,7 @@ proc docir::pdf::_renderParagraph {node} {
     set wText [expr {[dict get $st contentW] - $indent}]
 
     # Per-Inline-Pipeline: Segments → Wrapped Lines → Render
-    set inlines [dict get $node content]
+    set inlines [_synopsisLines [dict get $node content]]
     set segs    [_inlinesToSegments $inlines $baseStyle]
     set lines   [_wrapStyledSegments $segs $wText $fontSize 1]
 
@@ -1556,29 +1858,51 @@ proc docir::pdf::_renderPre {node} {
         set lines [_wrapCodeLines $lines [expr {[dict get $st contentW] - 2 * 4 - 2}]]
     }
 
-    set yTop [dict get $st y]
-    set rectH [expr {[llength $lines] * $lh + 2 * $padding}]
-    _ensureSpace $rectH
-    # A page break in _ensureSpace writes the footer in the sans font; set
-    # mono again, otherwise a code block at the top of a page came out in
-    # the proportional font (seen 2026-10-20, Linux-TclTk-de p. 35).
-    _setFont $fontSize mono
-    set yTop [dict get $st y]
+    # A block taller than the room left is split across pages, each part
+    # with its own grey box. Up to 2026-10-22 the whole block went onto the
+    # next page and ran off its bottom: a 70-line listing in the Tablelist
+    # guide lost everything below line 50, and the page before stayed half
+    # empty. A short block that does not fit still moves to the next page;
+    # it is split only if at least 4 lines fit here and 3 go over.
+    set n [llength $lines]
+    set i 0
+    while {$i < $n} {
+        set rows [expr {int(([dict get $st bottomY] - [dict get $st y] - 2 * $padding) / $lh)}]
+        set left [expr {$n - $i}]
+        if {$rows < $left} {
+            set pageRows [expr {int(([dict get $st bottomY] - [dict get $st topY] - 2 * $padding) / $lh)}]
+            set atTop [expr {[dict get $st y] <= [dict get $st topY]}]
+            if {!$atTop && ($rows < 4 || ($left <= $pageRows && $left - $rows < 3))} {
+                _newPage
+                continue
+            }
+        }
+        if {$rows < 1} { set rows 1 }          ;# page shorter than one line
+        set part [lrange $lines $i [expr {$i + $rows - 1}]]
+        incr i [llength $part]
 
-    # code block background: theme color or default
-    lassign [_hexToRgb [dict get $opts colorCode]] cr cg cb
-    $pdf setFillColor $cr $cg $cb
-    $pdf rectangle $x $yTop [dict get $st contentW] $rectH -filled true -stroke false
-    $pdf setFillColor 0 0 0
+        # A page break writes the footer in the sans font; set mono again,
+        # otherwise a code block at the top of a page came out in the
+        # proportional font (seen 2026-10-20, Linux-TclTk-de p. 35).
+        _setFont $fontSize mono
+        set yTop [dict get $st y]
+        set rectH [expr {[llength $part] * $lh + 2 * $padding}]
+        # code block background: theme color or default
+        lassign [_hexToRgb [dict get $opts colorCode]] cr cg cb
+        $pdf setFillColor $cr $cg $cb
+        $pdf rectangle $x $yTop [dict get $st contentW] $rectH -filled true -stroke false
+        $pdf setFillColor 0 0 0
 
-    _advanceY $padding
-    foreach line $lines {
-        # already wrapped to the box above (option codeWrap, default on)
-        set y [expr {[dict get $st y] + $fontSize}]
-        $pdf text [::pdf4tcllib::unicode::sanitize $line -mono 1] -x [expr {$x + 4}] -y $y
-        _advanceY $lh
+        _advanceY $padding
+        foreach line $part {
+            # already wrapped to the box above (option codeWrap, default on)
+            set y [expr {[dict get $st y] + $fontSize}]
+            $pdf text [::pdf4tcllib::unicode::sanitize $line -mono 1] -x [expr {$x + 4}] -y $y
+            _advanceY $lh
+        }
+        _advanceY $padding
+        if {$i < $n} { _newPage }
     }
-    _advanceY $padding
     _advanceY 4
 }
 
@@ -2042,10 +2366,12 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
         set resolved [_resolveImagePath $url]
         if {$resolved eq "" || ![file exists $resolved] || ![file readable $resolved]} {
             # cannot load — alt text as fallback
+            _warnOnce "cellimg:$url" "image in table cell not found: $url (alt text shown)"
             lappend images [dict create kind text text "\[$alt\]" w 0 h $lh]
             continue
         }
         if {[catch {$pdf addImage $resolved} imgId]} {
+            _warnOnce "cellimg:$url" "image in table cell not loaded: $url ($imgId; alt text shown)"
             lappend images [dict create kind text text "\[$alt\]" w 0 h $lh]
             continue
         }
@@ -2206,9 +2532,11 @@ proc docir::pdf::_resolveImagePath {url} {
 }
 
 proc docir::pdf::_renderImageFallback {url alt} {
-    # if the image is not loadable: textual marker
+    # if the image is not loadable: textual marker (and a warning, else the
+    # export looks fine and only the page shows the grey marker)
     variable opts
     variable st
+    _warnOnce "img:$url" "image not loaded: $url (marker drawn)"
     set pdf [dict get $st pdf]
     set fontSize [dict get $opts fontSize]
     set lh [_lineHeight $fontSize]
@@ -2340,6 +2668,7 @@ proc docir::pdf::_renderToc {tocHeadings} {
     set fontSize [dict get $opts fontSize]
     set tocDepth [dict get $opts tocDepth]
     set tocTitle [dict get $opts tocTitle]
+    _setRunning $tocTitle
 
     # TOC header (large, bold)
     set titleSize [expr {$fontSize + 8}]
@@ -2472,6 +2801,7 @@ proc docir::pdf::_renderIndex {} {
 
     # new page for the index
     _newPage
+    _setRunning [dict get $opts indexTitle]
 
     # Index-Titel
     set titleSize [expr {$fontSize + 8}]

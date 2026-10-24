@@ -495,7 +495,7 @@ test "tilepdf.fontFor.maps_types_to_pdf_fonts" {
     assertEqual Courier           [::docir::tilepdf::_fontFor code]
 }
 
-exit [test::runAll]
-
-# Cleanup nach allen Tests
+# Cleanup nach allen Tests -- vor exit, danach lief es nie (Review 2026-10-24)
+set rc [test::runAll]
 file delete -force $tmpDir
+exit $rc

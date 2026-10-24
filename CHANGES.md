@@ -1,5 +1,164 @@
 # DocIR — Changelog
 
+## 2026-10-24 — PDF: bold part in the header, metadata, louder failures
+
+From a review of the Tcl/Tk 9.0 manual PDF and of docir.
+
+- Header and footer: `**...**` in a template or in a `runningProc` text
+  is set bold (`"tcl / **after**"`). bookkit `manual-build.tcl` marks the
+  current man page this way. Other text is drawn as before.
+- Metadata: options `subject`, `keywords`, `creator` (default
+  `docir::pdf`) and `lang` (BCP 47, `"de"`, `"en-GB"`). The creation date
+  is always set. `lang` goes into the catalog (`/Lang`) and XMP
+  (`dc:language`) through pdf4tcl `metadata -lang` (0.9.4.73); an older
+  pdf4tcl gets a warning and no language.
+- No longer silent: a failing `fileLinkAdd` / `hyperlinkAdd` (the text
+  stood in link colour without a link), an image in a table cell that is
+  missing or does not load (alt text only), a block image drawn as the
+  grey marker. Each warns once on stderr (`_warnOnce`). `runningProc`
+  already warned.
+- `make install-bin` also installs `bin/h2md`; the closing line names all
+  seven programs.
+- Tests: `test-docir-tilemd.tcl`, `-tilehtml.tcl`, `-tilepdf.tcl`
+  deleted their temporary folder after `exit`, i.e. never; the folders
+  stayed in `tests/`. Now before `exit`.
+- Tests `pdf.header.bold_part_without_asterisks`,
+  `pdf.meta.subject_creator_date_lang`, `pdf.image.missing_warns`.
+
+## 2026-10-23 — PDF: TIP-700 synopsis one line per form
+
+The synopsis of a manual page (`::: {.synopsis}` with spans `.cmd .sub
+.lit .arg .ins .optarg .optlit .optdot`) came out as one run-on paragraph
+with the optional parts unmarked.
+
+- `docir::pdf`: a paragraph made only of these spans (first one `.cmd` or
+  `.ins`), blanks and soft line breaks keeps its line breaks: one line
+  per call form. Other paragraphs are untouched.
+- The classes are styled as in the Tcl man pages: `.cmd .sub .lit` bold,
+  `.arg .ins` italic, `.optarg` as `?arg?`, `.optlit` as `?-opt?`,
+  `.optdot` as `?args ...?`.
+- An explicit space before `?` or `...` in the source is kept
+  (`**after** *ms* ?*script ...*?` in a description list no longer
+  becomes "ms?script...?"). Other punctuation still sticks to the word
+  before.
+- Tests `pdf.synopsis.softbreaks_become_linebreaks`,
+  `pdf.synopsis.other_paragraphs_untouched`,
+  `pdf.synopsis.one_line_per_form`,
+  `pdf.text.explicit_space_before_question_mark_kept`.
+
+## 2026-10-23 — PDF: running header (where am I on this page?)
+
+In a long manual a page showed only its number. Now the header can say
+where the page is.
+
+- `docir::pdf`: header and footer templates know `%t` (document title) and
+  `%c` (running title): the first heading of level `runningLevel`
+  (default 1) that starts on the page, else the one still running from
+  before -- as in a dictionary. TOC and index pages show their titles. A
+  tab splits a template into a left and a right part (`"%t\t%c"`). A
+  header with `%c` is drawn when the page is finished, since only then is
+  it known which heading starts on it; it gets a thin rule below.
+- Option `runningProc`: a command prefix that returns several texts for
+  `%c`, longest first (a path, neighbouring chapters, the name); the first
+  that fits the line is taken. bookkit `manual-build.tcl` uses it for
+  "< prev  |  struct / graph  |  next >".
+- Templates without `%c` and without a tab behave as before.
+- Tests `pdf.header.running_title_dictionary_rule`,
+  `pdf.header.without_running_unchanged` (per page via pdftotext; without
+  pdftotext only the run is checked).
+
+## 2026-10-23 — PDF: index entries for other tools; links into other PDF files
+
+For bookkit `index-gesamt.tcl`, a combined index over several manual PDFs.
+
+- `docir::pdf::indexEntries`: after `render` / `renderToHandle`, the
+  subject index of that run as `{term pages}` pairs, pages as printed.
+  `manual-build.tcl -index-tsv` read the internal state `::docir::pdf::st`
+  for this until now.
+- `docir::pdf`: a relative link to a PDF file, `other.pdf` or
+  `other.pdf#page=N`, opens that file at page N (`/GoToR`, through
+  pdf4tcl `fileLinkAdd`, new in pdf4tcl 0.9.4.73). With an older pdf4tcl it
+  stays a URI link, as before. Links with a scheme (`https://…/a.pdf`) are
+  unchanged.
+- Tests `pdf.index.entries_after_render`,
+  `pdf.links.relative_pdf_is_gotor` (the latter only with pdf4tcl
+  0.9.4.73).
+
+## 2026-10-22 — PDF: long code blocks across pages; htmlSource: code in list items
+
+Found in a PDF of the Tablelist guide exported from mdhelp 5.
+
+- `docir::pdf`: a code block taller than the room left on the page went
+  whole onto the next page and ran off its bottom -- a 70-line listing
+  lost everything below line 50, and the page before stayed half empty.
+  It is now split across pages, each part with its own grey box. A short
+  block still moves to the next page; it is split only if at least 4 lines
+  fit and at least 3 go over. Test `pdf.pre.longer_than_page_is_split`
+  (fails with the old code: 2 pages instead of 3).
+- `htmlSource`: block children of an `<li>` (`<pre>`, `<blockquote>`,
+  `<p>`, `<table>`) become `listItem.blocks`; a `<blockquote>` holding
+  only a `<pre>` becomes the code block. They were flattened into the
+  item line ("Implement the procedure ckbtnCmd as follows: proc ckbtnCmd
+  {tbl row col} { ... }").
+- `htmlSource`: the line break right after `<pre>` (dropped by HTML
+  itself) and before `</pre>` no longer become empty first and last
+  lines of every code block.
+- `docir::md`: further blocks of a bullet or numbered item are written
+  indented under the item (`_itemBlocks`), so they stay inside it.
+- Tests in `html-roundtrip-test.tcl` (24 checks).
+
+## 2026-10-22 — tilemd escapes literal text
+
+Measured on the 159 cheat sheets in cheatSheets/csd (4575 table rows):
+after the change every table cell reads back through mdstack as the CSD
+text (apart from autolinked URLs and trimmed edge spaces), and no page
+contains math or raw HTML any more.
+
+- `docir::tilemd`: text was passed through unchanged, so mdstack read
+  `${#var}` as math, `[[ ]]` as a link, `a|b)` as a cell border and `*`/`_`
+  as emphasis. Now table cells are literal like in tilepdf (label and value
+  escaped, a `mono` value as a code span whose fence is longer than any
+  backtick run inside); list, hint and intro lines keep the pseudo-markdown
+  that tilehtml reads (`**`, `*`, `` ` ``, links, images) and escape the
+  rest; titles are escaped; a code block containing ``` gets a longer fence.
+- TOC anchors use mdstack's rule (lower case, every run outside a-z0-9
+  becomes `-`); umlauts were transliterated before and missed the anchors.
+- tests/test-docir-tilemd.tcl: four tests for the escaping (23 tests).
+
+## 2026-10-22 — htmlSource for foreign HTML, bin/h2md
+
+Measured on the HTML documentation of Tablelist 7.12, Mentry 4.5.1,
+Scrollutil 2.11, Wcb 4.2 and tsw 1.5 (38 pages).
+
+- `htmlSource::fromHtml`: if tdom's `-html` parser fails, the HTML is
+  repaired and read a second time (`_balance`): end tags that close nothing
+  are dropped, elements left open are closed explicitly (implied ends of
+  `dd`/`dt`/`li`/`p`/table cells, the end tag of an enclosing element, the
+  end of the document), a `<td>` outside any `<tr>` gets one, end tags with
+  attributes are written plainly (`</dl COMPACT>`). tablelistWidget.html has
+  three stray tags; BWidget's BWman/*.html (38 pages) and tclws (11) are tag
+  soup -- tdom stopped with "Unterminated element", "Unexpected end" or
+  "Missing '>'" on 24 of them. Now all 87 pages are read.
+- `<a name="x">` without `href` is an anchor, not a link (it gave a link
+  with an empty target, which docir::md wrote as `(.md)`); `id` of
+  headings, `<p>` and `<dt>` falls back to such an `<a name>` inside.
+- A `<dd>` that holds blocks (paragraphs, a nested `<dl>`, `<pre>`) becomes a
+  listItem with `blocks` (spec: listItem.blocks); `content` is the first
+  paragraph. Before, the whole command reference of tablelistWidget.html
+  came out as one paragraph. `_blocks` split into `_blocks` + `_block`.
+- `id` of `<p>` and `<dt>` kept as `meta.id`.
+- `docir::md`: a definition-list item with `blocks` writes the first paragraph
+  as `: description` and the other blocks after it, flat (as nested nroff
+  lists).
+- `bin/h2md`: HTML -> Markdown, single file or `--batch DIR OUT` (links to
+  `.html`/`.htm` become `.md`, a fragment with no heading to point to links
+  to the page itself, images are copied, `#id` links are rewritten to the
+  anchors mdstack derives from the heading text; ids of paragraphs and terms
+  point to the heading before them). Result on the 38 pages: all converted,
+  552 of 579 in-page anchors resolve in mdstack.
+- Tests: html-roundtrip-test.tcl (stray end tag, open cells, `<td>` without
+  `<tr>`, `<a name>`, nested `<dl>` in `<dd>`).
+
 ## 2026-10-21 — PDF index: long page lists wrap
 
 - `docir::pdf` subject index: the page list of a term is limited to 60 %

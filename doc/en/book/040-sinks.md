@@ -21,6 +21,22 @@ A code block that no longer fits on the page starts on the next one, in the
 fixed-width font. Up to 2026-10-19 it came out proportional there, because
 the page break writes the footer in the body font.
 
+The [synopsis]{.index} of a TIP-700 manual page (`::: {.synopsis}` with
+the spans `.cmd .sub .lit .arg .ins .optarg .optlit .optdot`) comes out one
+line per call form, set as in the Tcl man pages: `.cmd .sub .lit` bold,
+`.arg .ins` italic, the optional ones in question marks (`?id?`,
+`?-strict?`, `?script script ...?`). This applies to a paragraph made only
+of these spans, blanks and soft line breaks that starts with `.cmd` or
+`.ins`; other paragraphs stay as they are. Up to 2026-10-23 the synopsis ran
+on as one paragraph.
+
+For the PDF [metadata]{.index} there are, besides `title` and `author`,
+the options `subject`, `keywords`, `creator` (default `docir::pdf`) and
+`lang`, the document language as a BCP 47 tag (`"de"`, `"en-GB"`). It is
+written to the catalog and the XMP data, so readers and screen readers use
+the right language; this needs pdf4tcl 0.9.4.73 or later. The creation
+date is always set.
+
 ## HTML
 
 `docir::html` renders to self-contained HTML with embedded CSS.

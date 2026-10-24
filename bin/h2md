@@ -1,0 +1,164 @@
+#!/usr/bin/env tclsh
+# h2md -- HTML -> Markdown ueber DocIR (docir::htmlSource -> docir::md)
+#
+# Aufruf:
+#   h2md input.html ?output.md?
+#   h2md --batch DIR OUT          alle *.html in DIR nach OUT/*.md
+#
+# Im Batch-Modus:
+#   - relative Links auf .html werden zu .md (wcbRef.html#x -> wcbRef.md#x)
+#   - Bilder (png, gif, jpg, svg) aus DIR werden nach OUT kopiert
+#   - Exit-Status 1, wenn eine Datei nicht umgewandelt werden konnte
+#
+# Gedacht fuer Paketdoku in HTML (Tablelist, Mentry, Scrollutil, Wcb, tsw):
+# normales Markdown fuer mdstack/mdserver, kein TIP-700-Format.
+# Braucht tdom.
+
+set scriptDir [file dirname [file normalize [info script]]]
+source [file join $scriptDir .. lib repos-path.tcl]
+::tcl::tm::path add [file join $scriptDir .. lib tm]
+package require docir
+package require docir::htmlSource
+package require docir::md
+
+proc usage {} {
+    puts stderr "Aufruf: h2md input.html ?output.md?"
+    puts stderr "        h2md --batch DIR OUT"
+    exit 2
+}
+
+proc lies {f} {
+    set fh [open $f r]
+    # HTML-Dateien ohne Angabe sind hier meist UTF-8; <meta charset> wird
+    # nicht ausgewertet
+    fconfigure $fh -encoding utf-8
+    set t [read $fh]
+    close $fh
+    return $t
+}
+
+# relative Links auf .html -> .md (nur im Batch-Modus sinnvoll)
+proc htmlLinksToMd {md} {
+    regsub -all {\]\((?![a-z]+:)([^)#\s]+)\.html?(#[^)\s]*)?\)} $md {](\1.md\2)} md
+    return $md
+}
+
+# Heading-ID -> Anker, wie mdstack ihn aus dem Ueberschriftentext bildet
+# (mdstack::parser::anchorize: klein, alles ausser a-z0-9 -> "-"). Die
+# HTML-IDs (#sortByColumn) gibt es im Markdown nicht; ohne Umschreiben
+# fuehrten die Inhaltsverzeichnisse der Paketdoku ins Leere.
+proc anchorize {s} {
+    set a [string tolower $s]
+    regsub -all {[^a-z0-9]+} $a "-" a
+    set a [string trim $a "-"]
+    if {$a eq ""} { return "section" }
+    return $a
+}
+# IDs an Absaetzen und Begriffen (<p id>, <dt id>) haben in Markdown kein
+# Sprungziel; sie zeigen auf die Ueberschrift davor (naeher geht es nicht).
+proc anchorMap {ir} {
+    set m [dict create]
+    set cur ""
+    foreach b $ir {
+        if {[dict get $b type] eq "heading"} {
+            set cur [anchorize [docir::md::_inlinesToText [dict get $b content]]]
+        }
+        if {$cur ne ""} { _ids $b $cur m }
+    }
+    return $m
+}
+# alle meta.id in einem Block (auch in Listen und deren blocks) -> anker
+proc _ids {b anker mVar} {
+    upvar $mVar m
+    if {[dict exists $b meta id] && [dict get $b meta id] ne ""} {
+        dict set m [dict get $b meta id] $anker
+    }
+    if {[dict get $b type] eq "list"} {
+        foreach it [dict get $b content] {
+            if {[dict exists $it meta id]} { dict set m [dict get $it meta id] $anker }
+            if {[dict exists $it blocks]} {
+                foreach sub [dict get $it blocks] { _ids $sub $anker m }
+            }
+        }
+    }
+}
+# ](#id) und ](datei.md#id) auf mdstack-Anker umschreiben; maps: datei -> map
+proc rewriteAnchors {md self maps} {
+    set out ""
+    set pos 0
+    while {[regexp -indices -start $pos {\]\(([^)#\s]*)#([^)\s]+)\)} $md m f a]} {
+        lassign $m x y
+        set file [string range $md {*}$f]
+        set id   [string range $md {*}$a]
+        set key  [expr {$file eq "" ? $self : [file rootname $file]}]
+        if {[dict exists $maps $key $id]} {
+            set ziel "${file}#[dict get $maps $key $id]"
+        } elseif {[dict exists $maps $key]} {
+            # Seite bekannt, Sprungziel dort ohne Ueberschrift davor (BWidget
+            # hat gar keine): auf die Seite selbst
+            set ziel [expr {$file eq "" ? "#" : $file}]
+        } else {
+            set ziel "${file}#$id"
+        }
+        append out [string range $md $pos [expr {$x - 1}]] "]($ziel)"
+        set pos [expr {$y + 1}]
+    }
+    append out [string range $md $pos end]
+    return $out
+}
+
+proc readIr {in} {
+    if {[catch {docir::htmlSource::fromHtml [lies $in]} ir]} {
+        puts stderr "h2md: [file tail $in]: $ir"
+        return -code error $ir
+    }
+    return $ir
+}
+
+proc writeMd {md out} {
+    if {$out eq ""} {
+        fconfigure stdout -encoding utf-8
+        puts -nonewline $md
+    } else {
+        set fh [open $out w]
+        fconfigure $fh -encoding utf-8
+        puts -nonewline $fh $md
+        close $fh
+    }
+}
+
+if {[lindex $argv 0] eq "--batch"} {
+    lassign [lrange $argv 1 end] dir out
+    if {$dir eq "" || $out eq "" || ![file isdirectory $dir]} usage
+    file mkdir $out
+    set ok 0; set fail 0
+    set irs [dict create]; set maps [dict create]
+    foreach f [lsort [glob -nocomplain -directory $dir *.html *.htm]] {
+        set name [file rootname [file tail $f]]
+        if {[catch {readIr $f} ir]} { incr fail; continue }
+        dict set irs $name $ir
+        dict set maps $name [anchorMap $ir]
+    }
+    dict for {name ir} $irs {
+        if {[catch {docir::md::render $ir} md]} {
+            puts stderr "h2md: $name: $md"; incr fail; continue
+        }
+        set md [rewriteAnchors [htmlLinksToMd $md] $name $maps]
+        writeMd $md [file join $out $name.md]
+        incr ok
+    }
+    set img 0
+    foreach f [glob -nocomplain -directory $dir *.png *.gif *.jpg *.jpeg *.svg] {
+        file copy -force $f $out
+        incr img
+    }
+    puts stderr "h2md: $ok umgewandelt, $fail Fehler, $img Bilder kopiert -> $out"
+    exit [expr {$fail ? 1 : 0}]
+}
+
+lassign $argv in out
+if {$in eq "" || [string match -* $in]} usage
+if {[catch {readIr $in} ir]} { exit 1 }
+set name [file rootname [file tail $in]]
+writeMd [rewriteAnchors [docir::md::render $ir] $name [dict create $name [anchorMap $ir]]] $out
+exit 0

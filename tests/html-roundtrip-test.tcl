@@ -71,6 +71,37 @@ check "back valide (standalone)"       {[docir::validate $back1] eq ""}
 check "MD gleich (standalone)"         {[docir::md::render $ir] eq [docir::md::render $back1]}
 check "kein TOC/Nav als Block"         {[llength $back1] == [llength $ir]}
 
+# Fremdes HTML (2026-10-22, Tablelist-Doku)
+# 1. ueberzaehliges </dd>: tdom bricht ab, htmlSource liest trotzdem
+set h {<html><body><dl><dd><dl><dt id="size">size</dt><dd>Returns the number.</dd>
+  Synonym for <b>rowcount</b>.</dd><dt id="sort">sort</dt><dd>Sorts.</dd></dl></dd></dl></body></html>}
+check "ueberzaehliges </dd> wird gelesen" {![catch {docir::htmlSource::fromHtml $h}]}
+check "_balance: ueberzaehliges weg, Offenes geschlossen" {
+    [docir::htmlSource::_balance {<dl><dd>a</dd> b</dd><dd>c</dl>}] eq {<dl><dd>a</dd> b<dd>c</dd></dl>}}
+check "_balance: </dl COMPACT>, offene Zellen, Ende" {
+    [docir::htmlSource::_balance {<dl><dd><table><tr><td>x</table></dd></dl COMPACT><p>y}] eq {<dl><dd><table><tr><td>x</td></tr></table></dd></dl><p>y</p>}}
+# 2. <dd> mit verschachtelter Liste: nicht mehr eine einzige Zeile
+set h {<html><body><dl><dt>WIDGET COMMAND</dt><dd><p>Intro.</p><dl><dt id="a">a</dt><dd>Does a.</dd><dt>b</dt><dd>Does b.</dd></dl></dd></dl></body></html>}
+set md [docir::md::render [docir::htmlSource::fromHtml $h]]
+check "dd mit Unterliste: Begriffe einzeln" {[string first "\n**a**\n: Does a." $md] > 0 && [string first "\n**b**\n: Does b." $md] > 0}
+check "dd mit Unterliste: dt-id als meta.id" {[string match "*id a*" [docir::htmlSource::fromHtml $h]]}
+
+# BWidget (BWman): <td> nach "</TR>" ohne <tr>, <a name> ohne href
+check "_balance: <td> ohne <tr> bekommt eins" {
+    [docir::htmlSource::_balance {<table><tr><td>a</tr><td>b</tr></table>}] eq {<table><tr><td>a</td></tr><tr><td>b</td></tr></table>}}
+set ir [docir::htmlSource::fromHtml {<html><body><dl><dt><a name="-type"><b>-type</b></a></dt><dd>Type.</dd></dl></body></html>}]
+check "<a name> ist kein Link, aber Sprungziel" {
+    [string first "(.md)" [docir::md::render $ir]] < 0 && [string match "*id -type*" $ir]}
+
+# <pre> in <li> (Tablelist-Anleitung): Unterblock statt eine Zeile;
+# erster Zeilenumbruch nach <pre> und letzter vor </pre> fallen weg
+set ir [docir::htmlSource::fromHtml "<html><body><ul><li>Implement it:<blockquote><pre>\nproc a {} { return 1 }\n</pre></blockquote></li><li>plain</li></ul></body></html>"]
+set md [docir::md::render $ir]
+check "li mit pre: Codeblock im Eintrag" {[string first "- Implement it:\n\n  ```\n  proc a {} { return 1 }\n  ```" $md] >= 0}
+check "li ohne Block bleibt einzeilig"   {[string first "- plain" $md] >= 0}
+set ir [docir::htmlSource::fromHtml "<html><body><pre>\nx\ny\n</pre></body></html>"]
+check "pre: ohne Leerzeile am Rand"      {[string first "```\nx\ny\n```" [docir::md::render $ir]] >= 0}
+
 puts "------------------------------------------"
 puts "PASS $pass   FAIL $fail"
 exit [expr {$fail > 0 ? 1 : 0}]
