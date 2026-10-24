@@ -168,7 +168,7 @@ die Optionen `subject`, `keywords`, `creator` (Vorgabe `docir::pdf`) und
 `lang`, die Sprache des Dokuments als BCP-47-Kennung (`"de"`,
 `"en-GB"`). Sie steht im Katalog und in den XMP-Daten, sodass Leseprogramme
 und Vorleser die richtige Sprache nehmen; das braucht pdf4tcl ab 0.9.4.73.
-Das Erstelldatum wird immer gesetzt.
+Das Erstelldatum wird immer gesetzt: aus der Option `creationDate` (Sekunden), sonst aus der Umgebungsvariablen `SOURCE_DATE_EPOCH`, sonst die aktuelle Zeit. Mit festem Datum ergeben zwei Läufe mit derselben Eingabe dieselben Bytes.
 
 ## 4.2  HTML
 

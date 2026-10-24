@@ -161,7 +161,7 @@ the options `subject`, `keywords`, `creator` (default `docir::pdf`) and
 `lang`, the document language as a BCP 47 tag (`"de"`, `"en-GB"`). It is
 written to the catalog and the XMP data, so readers and screen readers use
 the right language; this needs pdf4tcl 0.9.4.73 or later. The creation
-date is always set.
+date is always set: from the option `creationDate` (seconds), else from the environment variable `SOURCE_DATE_EPOCH`, else the current time. With a fixed date two runs on the same input give the same bytes.
 
 A code block that no longer fits on the page starts on the next one, in the
 fixed-width font. Up to 2026-10-19 it came out proportional there, because

@@ -1,5 +1,38 @@
 # DocIR — Changelog
 
+## 2026-10-24 — PDF: tables with image cells (header, height, widths)
+
+From the bookkit review of 2026-10-24 (P02, P03), with the test PDFs from
+the review (`generate.tcl`). Text-only tables go through pdf4tcllib as
+before; this is the branch for tables with image cells.
+
+- A row higher than a page is split: the text lines continue on the next
+  page(s), the images stay with the first piece. Before, such a row ran
+  over the footer and off the page (the 145-sentence test row lost most
+  of its text).
+- After a page break inside the table the header row is drawn again.
+- Column widths follow the content: each column gets at least its widest
+  word or image, the rest goes to the columns by the length of their text.
+  An icon column is narrow now; before every column had the same width.
+- A cell image is loaded once per document (before, every cell added the
+  file again).
+- Tests `pdf.imgtable.header_repeated_after_page_break`,
+  `pdf.imgtable.tall_row_split_across_pages`,
+  `pdf.imgtable.icon_column_narrow` (need pdftotext).
+
+## 2026-10-24 — PDF: handles freed on errors, reproducible creation date
+
+From the bookkit review of 2026-10-24 (P01, P04).
+
+- `docir::pdf::render` destroys its pdf4tcl object on every path
+  (`try`/`finally`), also when rendering or writing fails, in the
+  single-pass and in the TOC loop. Before, a failed `write` left the
+  object behind. Test `pdf.handle.destroyed_on_write_error`.
+- Creation date: option `creationDate` (clock seconds), else the
+  environment variable `SOURCE_DATE_EPOCH`, else now. With a fixed date two
+  builds of the same input give the same bytes (pdf4tcl's `/ID` is a hash
+  of the content). Test `pdf.meta.reproducible_with_source_date_epoch`.
+
 ## 2026-10-24 — PDF: bold part in the header, metadata, louder failures
 
 From a review of the Tcl/Tk 9.0 manual PDF and of docir.
