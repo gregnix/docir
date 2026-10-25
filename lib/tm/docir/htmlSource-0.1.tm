@@ -305,7 +305,7 @@ proc docir::htmlSource::_block {n depth} {
         }
         pre {
             set code [lindex [_childElems $n {code}] 0]
-            set src [expr {$code ne "" ? $code : $n}]
+            set src [if {$code ne ""} {set code} else {set n}]
             set meta [dict create kind code]
             if {$code ne ""} {
                 set cc [_class $code]

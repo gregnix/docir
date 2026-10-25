@@ -247,7 +247,8 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                     if {[dict exists $inline text]} { append txt [dict get $inline text] }
                 }
                 set lang [_dictDef $meta language ""]
-                set _ff [expr {[dict exists $options flowFont] ? [dict get $options flowFont] : ""}]
+                set _ff ""
+                if {[dict exists $options flowFont]} { set _ff [dict get $options flowFont] }
                 if {[docir::diagram::isDiagram $lang] \
                         && [_insertFlowImage $textWidget $txt $lang $_ff]} {
                     # embedded as a diagram image

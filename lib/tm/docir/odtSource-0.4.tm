@@ -73,7 +73,9 @@ proc docir::odtSource::_inlineText {node} {
 ## ---- style resolution (via odf) ---------------------------------------
 
 proc docir::odtSource::_prop {props key {default ""}} {
-    expr {[dict exists $props $key] ? [dict get $props $key] : $default}
+    # no expr ternary: it would rewrite values like "010" or "1.50"
+    if {[dict exists $props $key]} { return [dict get $props $key] }
+    return $default
 }
 
 ## Flatten odf's grouped+prefixed style props ({group {prefix:attr val}}) to
@@ -293,7 +295,7 @@ proc docir::odtSource::_mapList {node depth {inheritKind ""} {inheritFmt ""}} {
     # text:style-name on nested lists (they inherit the parent's style), so when
     # it is absent/unknown we inherit the kind/format from the enclosing list.
     set kind [expr {$inheritKind ne "" ? $inheritKind : "ul"}]
-    set numFormat [expr {$inheritFmt ne "" ? $inheritFmt : "1"}]
+    set numFormat [if {$inheritFmt ne ""} {set inheritFmt} else {return -level 0 1}]
     if {$Sty ne ""} {
         set sn [$node getAttribute text:style-name ""]
         if {$sn ne ""} {

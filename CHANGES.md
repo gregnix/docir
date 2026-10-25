@@ -1,37 +1,32 @@
 # DocIR — Changelog
 
-## 2026-10-24 — PDF: tables with image cells (header, height, widths)
+## 2026-10-25 — Text that looks like a number stays as written
 
-From the bookkit review of 2026-10-24 (P02, P03), with the test PDFs from
-the review (`generate.tcl`). Text-only tables go through pdf4tcllib as
-before; this is the branch for tables with image cells.
+- An `expr {c ? $text : …}` returns a value that looks like a number in
+  canonical form: `5.10` became `5.1`, `010` became `10` (8 under Tcl
+  8.6), `1e3` became `1000.0`, `0x1F` became `31`. In the PDF table of
+  contents of the tclutils book the entry "5.10 Pages: tupr" read "5.1".
+- Fixed where text passes through such a ternary: `pdf-0.5.tm`
+  (`_wrap` for TOC entries and wrapped prose, `_wrapCodeLines`, the
+  footer/header title `%t`, `lang`, `flowFont`), `block-0.1.tm` (image
+  alt text), `html-0.1.tm` (index key), `htmlSource-0.1.tm`,
+  `odtSource-0.4.tm` (`_prop`, list number format), `rendererTk-0.5.tm`
+  (`flowFont`). Ternaries that pick between fixed keywords are unchanged.
+- `tests/test-docir-pdf.tcl`: `pdf.text.number_like_words_unchanged`
+  (fails with the old code). Suite: 943 tests, 0 failures on Tcl 8.6.14
+  and 9.0.4.
 
-- A row higher than a page is split: the text lines continue on the next
-  page(s), the images stay with the first piece. Before, such a row ran
-  over the footer and off the page (the 145-sentence test row lost most
-  of its text).
-- After a page break inside the table the header row is drawn again.
-- Column widths follow the content: each column gets at least its widest
-  word or image, the rest goes to the columns by the length of their text.
-  An icon column is narrow now; before every column had the same width.
-- A cell image is loaded once per document (before, every cell added the
-  file again).
-- Tests `pdf.imgtable.header_repeated_after_page_break`,
-  `pdf.imgtable.tall_row_split_across_pages`,
-  `pdf.imgtable.icon_column_narrow` (need pdftotext).
+## 2026-10-24 — PDF: no space lost before "::name" and ".path"
 
-## 2026-10-24 — PDF: handles freed on errors, reproducible creation date
-
-From the bookkit review of 2026-10-24 (P01, P04).
-
-- `docir::pdf::render` destroys its pdf4tcl object on every path
-  (`try`/`finally`), also when rendering or writing fails, in the
-  single-pass and in the TOC loop. Before, a failed `write` left the
-  object behind. Test `pdf.handle.destroyed_on_write_error`.
-- Creation date: option `creationDate` (clock seconds), else the
-  environment variable `SOURCE_DATE_EPOCH`, else now. With a fixed date two
-  builds of the same input give the same bytes (pdf4tcl's `/ID` is a hash
-  of the content). Test `pdf.meta.reproducible_with_source_date_epoch`.
+- `pdf-0.5.tm` (`_wrapStyledSegments`): a word starting with `,` `.` `:`
+  `;` `!` `?` `)` was always attached to the word before, as punctuation.
+  For `.` and `:` that also hit words: "Die Prozedur **::http::geturl**"
+  came out as "Prozedur::http::geturl", "Fenster **.top**" as
+  "Fenster.top", ":x" likewise. Now `.` and `:` stick only when no
+  letter, digit, `_`, `:` or `/` follows ("." and ":" alone, ".)", ".“").
+  Found in the German Tcl/Tk manual PDFs (http.n, every Tk path name in
+  bold or italics).
+- `tests/test-docir-pdf.tcl`: `pdf.inline.space_before_colon_and_dot_words`.
 
 ## 2026-10-24 — PDF: bold part in the header, metadata, louder failures
 

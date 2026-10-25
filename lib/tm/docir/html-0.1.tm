@@ -230,7 +230,7 @@ proc docir::html::_buildIndex {} {
     set seen   [dict create]
     foreach e $indexEntries {
         lassign $e term anchor secTitle secId
-        set key "$term\u0000[expr {$secId ne "" ? $secId : $anchor}]"
+        set key "$term\u0000[if {$secId ne ""} {set secId} else {set anchor}]"
         if {[dict exists $seen $key]} { continue }
         dict set seen $key 1
         dict lappend byTerm $term [list $anchor $secTitle]

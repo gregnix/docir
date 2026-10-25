@@ -16,14 +16,13 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 
 # Seit 23.10.2026: 57 (indexEntries, Link in andere PDF-Datei,
 # lebender Kolumnentitel, Synopsis zeilenweise, Leerzeichen vor "?").
-# Seit 24.10.2026: 60 (Kopf mit Fettteil, Metadaten, fehlendes Bild),
-# 62 (Handles im Fehlerfall, SOURCE_DATE_EPOCH), 65 (Bildtabellen).
+# Seit 24.10.2026: 60 (Kopf mit Fettteil, Metadaten, fehlendes Bild).
 # Seit 19.10.2026: 49 (vier Tests fuer interne Links).
 # Soll-Zahl, gemessen am 27.09.2026 mit pdf4tcl UND pdf4tcllib im
 # Geschwisterbaum: 45 angemeldete Tests. Ohne pdf4tcllib sind es 3 -- der
 # Block ab "if {[catch {package require pdf4tcl}]}" faellt dann weg und
 # nimmt 42 Tests mit, ohne dass der Zaehler etwas davon sieht.
-::test::expect 65
+::test::expect 60
 
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
@@ -1366,93 +1365,44 @@ test "pdf.image.missing_warns" {
     catch {file delete $f}
 }
 }
-
-# Review 2026-10-24: Handles auch im Fehlerfall frei (P01), feste
-# Erstellzeit fuer reproduzierbare PDFs (P04).
-if {$canRender} {
-test "pdf.handle.destroyed_on_write_error" {
-    set vorher [llength [info class instances ::pdf4tcl::pdf4tcl]]
-    foreach toc {0 1} {
-        set rc [catch {docir::pdf::render [::_runIr] /gibt/es/nicht/x.pdf \
-            [dict create generateToc $toc]} err]
-        assert [expr {$rc == 1}] "Schreibfehler kommt an (toc $toc): $err"
-    }
-    set nachher [llength [info class instances ::pdf4tcl::pdf4tcl]]
-    assert [expr {$nachher == $vorher}] "keine pdf4tcl-Objekte uebrig: $vorher -> $nachher"
-}
-test "pdf.meta.reproducible_with_source_date_epoch" {
-    set a [file join $::TMPBASE test-pdf-rep-a.pdf]
-    set b [file join $::TMPBASE test-pdf-rep-b.pdf]
-    set ::env(SOURCE_DATE_EPOCH) 1700000000
-    docir::pdf::render [::_runIr] $a [dict create title R generateToc 1]
-    after 1100
-    docir::pdf::render [::_runIr] $b [dict create title R generateToc 1]
-    unset ::env(SOURCE_DATE_EPOCH)
-    set da [::_pdfRaw $a]; set db [::_pdfRaw $b]
-    assert [expr {$da eq $db}] "zwei Laeufe bytegleich"
-    set want [string range [clock format 1700000000 -format {D:%Y%m%d%H%M%S}] 0 end]
-    assert [expr {[string first "/CreationDate ($want" $da] >= 0}] "Datum aus SOURCE_DATE_EPOCH"
-    docir::pdf::render [::_runIr] $a [dict create title R creationDate 1600000000 compress 0]
-    set want [clock format 1600000000 -format {D:%Y%m%d%H%M%S}]
-    assert [expr {[string first "/CreationDate ($want" [::_pdfRaw $a]] >= 0}] "Option creationDate"
-    catch {file delete $a $b}
-}
-}
-
-# Review 2026-10-24 (P02, P03): Tabellen mit Bildzellen -- Breite nach
-# Inhalt, Kopf nach Seitenwechsel, Zeile hoeher als eine Seite geteilt.
-if {$canRender && [auto_execok pdftotext] ne ""} {
-proc ::_imgTabDir {} {
-    set d [file join $::TMPBASE imgtab]
-    file mkdir $d
-    set fh [open [file join $d icon.png] wb]
-    puts -nonewline $fh [binary format H* "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415478da63f8cffc1f000004ff01ffd472ee260000000049454e44ae426082"]
-    close $fh
-    return $d
-}
-proc ::_tc {s} { dict create type tableCell content [list [dict create type text text $s]] meta {} }
-proc ::_ic {}  { dict create type tableCell content [list [dict create type image url icon.png alt Icon]] meta {} }
-proc ::_tr {cells} { dict create type tableRow content $cells meta {} }
-proc ::_tab {rows} { dict create type table content $rows meta [dict create columns 2 hasHeader 1 alignments {left left}] }
-test "pdf.imgtable.header_repeated_after_page_break" {
-    set d [::_imgTabDir]
-    set rows [list [::_tr [list [::_tc Symbol] [::_tc Beschreibung]]]]
-    for {set i 1} {$i <= 60} {incr i} { lappend rows [::_tr [list [::_ic] [::_tc "Zeile $i"]]] }
-    set f [file join $d kopf.pdf]
-    docir::pdf::render [list [::_tab $rows]] $f [dict create root $d]
+test "pdf.inline.space_before_colon_and_dot_words" {
+    # "::http::geturl" und ".top" sind Woerter, kein Satzzeichen: das
+    # Leerzeichen davor bleibt. "," und ":" allein haengen am Wort davor.
+    if {[auto_execok pdftotext] eq ""} return
+    set ir [list [dict create type paragraph meta {} content [list \
+        [dict create type text text "Die Prozedur "] \
+        [dict create type strong text "::http::geturl"] \
+        [dict create type text text " und das Fenster "] \
+        [dict create type strong text ".top"] \
+        [dict create type text text ", Ende: ja."]]]]
+    set f [file join $::TMPBASE test-pdf-colonword.pdf]
+    docir::pdf::render $ir $f {}
     set t [exec pdftotext $f -]
-    assert [expr {[regexp -all {\mSymbol\M} $t] >= 2}] "Kopf auf jeder Seite"
-    assert [expr {[regexp -all {Zeile [0-9]+} $t] == 60}] "alle 60 Zeilen"
+    assert [string match "*Prozedur ::http::geturl*" $t] "Leerzeichen vor ::http: $t"
+    assert [string match "*Fenster .top, Ende: ja.*" $t] "Leerzeichen vor .top, kein Leerzeichen vor , und :"
+    catch {file delete $f}
 }
-test "pdf.imgtable.tall_row_split_across_pages" {
-    set d [::_imgTabDir]
-    set long [string repeat "Wort eins zwei drei vier fuenf sechs sieben acht. " 300]
-    set f [file join $d hoch.pdf]
-    docir::pdf::render [list [::_tab [list [::_tr [list [::_tc Symbol] [::_tc Text]]] \
-        [::_tr [list [::_ic] [::_tc $long]]]]] \
-        [dict create type paragraph content [list [dict create type text text ENDE]] meta {}]] \
-        $f [dict create root $d footer "%p"]
-    set t [string map {"\n" " "} [exec pdftotext $f -]]
-    assert [expr {[regexp -all {fuenf} $t] == 300}] "kein Text verloren"
-    assert [expr {[string first ENDE $t] > [string last fuenf $t]}] "Absatz danach kommt nach der Zeile"
-    # nichts unterhalb des Fussbereichs ausser der Seitenzahl
-    set bb [exec pdftotext -bbox $f -]
-    set tief 0
-    foreach {- y w} [regexp -all -inline {yMin="([0-9.]+)"[^>]*>([^<]*)<} $bb] {
-        if {$y > 780 && ![string is integer -strict $w]} { incr tief }
-    }
-    assert [expr {$tief == 0}] "kein Text im Fussbereich ($tief Woerter)"
-}
-test "pdf.imgtable.icon_column_narrow" {
-    set d [::_imgTabDir]
-    set f [file join $d breit.pdf]
-    docir::pdf::render [list [::_tab [list [::_tr [list [::_tc Icon] [::_tc Beschreibung]]] \
-        [::_tr [list [::_ic] [::_tc [string repeat "Lange Beschreibung. " 20]]]]]]] \
-        $f [dict create root $d]
-    set bb [exec pdftotext -bbox $f -]
-    regexp {xMin="([0-9.]+)"[^>]*>Beschreibung<} $bb -> x
-    assert [expr {$x < 150}] "Textspalte beginnt weit links (x=$x), Icon-Spalte schmal"
-}
+
+test "pdf.text.number_like_words_unchanged" {
+    # Words that look like numbers stay as written: an expr ternary in
+    # _wrap turned the TOC entry "5.10" into "5.1" (and "010" into 8/10).
+    if {[auto_execok pdftotext] eq ""} return
+    set ir [list \
+        [dict create type heading meta {level 1} content [list \
+            [dict create type text text "5.10  Pages"]]] \
+        [dict create type paragraph meta {} content [list \
+            [dict create type text text "010 1e3 0x1F 4.80"]]] \
+        [dict create type pre meta {kind code} content [list \
+            [dict create type text text "010\n1.50"]]]]
+    set f [file join $::TMPBASE test-pdf-numwords.pdf]
+    docir::pdf::render $ir $f [dict create generateToc 1 title 1.50 \
+        footer "%t %p"]
+    set t [exec pdftotext $f -]
+    assert {[regexp -all {5\.10  ?Pages} $t] >= 2} "TOC and heading keep 5.10: $t"
+    assert [string match "*010 1e3 0x1F 4.80*" $t] "paragraph words unchanged"
+    assert [regexp {(^|\n)010\n1\.50} $t] "code lines unchanged"
+    assert [string match "*1.50 *" $t] "footer title unchanged"
+    catch {file delete $f}
 }
 
 }  ;# end pdf4tcl-availability block

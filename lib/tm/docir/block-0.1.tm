@@ -306,7 +306,7 @@ proc ::docir::block::pdf {pdfobj ir args} {
                     # Missing file must be visible, not silently skipped:
                     # on a label a blank space looks like a design decision.
                     set rr [runs [list [dict create type text \
-                        text "\[image: [expr {$alt ne "" ? $alt : $url}]\]"]] [newStyle]]
+                        text "\[image: [if {$alt ne ""} {set alt} else {set url}]\]"]] [newStyle]]
                     set lines [wrap $pdfobj $rr $wpt $bs $base $mono]
                     foreach line $lines {
                         if {!$dry} {

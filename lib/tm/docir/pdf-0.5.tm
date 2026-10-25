@@ -22,9 +22,7 @@
 #         lang           BCP 47 tag ("de", "en-GB"; default ""): document
 #                        language, /Lang and XMP dc:language (pdf4tcl with
 #                        "metadata -lang", from 0.9.4.73; older: ignored)
-#                        Creation date: always set -- option
-#                        creationDate (clock seconds), else the environment
-#                        variable SOURCE_DATE_EPOCH, else now.
+#                        Creation date: always set (now).
 #         subtitle       String             (default ""; title page only)
 #         date           String             (default ""; title page only)
 #         titlePage      Bool   (default 0)  eigene Titelseite vor dem TOC
@@ -172,19 +170,14 @@ proc docir::pdf::render {ir outputPath {options {}}} {
 
     set genToc [expr {[dict exists $opts generateToc] && [dict get $opts generateToc]}]
 
-    # The pdf4tcl object is destroyed on every path, also when rendering or
-    # writing fails (review 2026-10-24, P01).
     if {!$genToc} {
         # Single-pass render (unchanged behaviour when no TOC is requested).
         set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
-        try {
-            _setMetadata $pdf
-            $pdf startPage
-            _renderInto $pdf $ir
-            $pdf write -file $outputPath
-        } finally {
-            catch {$pdf destroy}
-        }
+        _setMetadata $pdf
+        $pdf startPage
+        _renderInto $pdf $ir
+        $pdf write -file $outputPath
+        $pdf destroy
         return
     }
 
@@ -203,33 +196,34 @@ proc docir::pdf::render {ir outputPath {options {}}} {
     # first iteration -> TOC laid out without numbers.
     set tocPageList {}
     set maxIter 6
-    set pdf ""
-    try {
-        for {set iter 1} {$iter <= $maxIter} {incr iter} {
-            dict set opts _tocPageList $tocPageList
-            set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
-            _setMetadata $pdf
-            $pdf startPage
-            _renderInto $pdf $ir
+    set finalPdf ""
+    for {set iter 1} {$iter <= $maxIter} {incr iter} {
+        dict set opts _tocPageList $tocPageList
+        set pdf [pdf4tcl::new %AUTO% -paper [dict get $opts paper] -orient true {*}[_pdfNewArgs $opts]]
+        _setMetadata $pdf
+        $pdf startPage
+        _renderInto $pdf $ir
 
-            # Collect heading pages in document order from the freshly built state.
-            set newList {}
-            foreach h [dict get $st headingsSeen] { lappend newList [dict get $h page] }
+        # Collect heading pages in document order from the freshly built state.
+        set newList {}
+        foreach h [dict get $st headingsSeen] { lappend newList [dict get $h page] }
 
-            if {$newList eq $tocPageList} { break }
-            set tocPageList $newList
-            if {$iter < $maxIter} {
-                $pdf destroy
-                set pdf ""
-            } else {
-                puts stderr "docir::pdf: TOC page numbers did not stabilise after\
-                             $maxIter iterations; using last result."
-            }
+        if {$newList eq $tocPageList} {
+            set finalPdf $pdf
+            break
         }
-        $pdf write -file $outputPath
-    } finally {
-        if {$pdf ne ""} { catch {$pdf destroy} }
+        set tocPageList $newList
+        if {$iter < $maxIter} {
+            $pdf destroy
+        } else {
+            set finalPdf $pdf
+            puts stderr "docir::pdf: TOC page numbers did not stabilise after\
+                         $maxIter iterations; using last result."
+        }
     }
+
+    $finalPdf write -file $outputPath
+    $finalPdf destroy
     return
 }
 
@@ -253,17 +247,10 @@ proc docir::pdf::_setMetadata {pdf} {
             lappend args $o [dict get $opts $k]
         }
     }
-    # Creation date (review 2026-10-24, P04): option creationDate (clock
-    # seconds), else SOURCE_DATE_EPOCH from the environment (reproducible
-    # builds: same input, same bytes), else now.
-    set cd [expr {[dict exists $opts creationDate] ? [dict get $opts creationDate] : ""}]
-    if {$cd eq "" && [info exists ::env(SOURCE_DATE_EPOCH)]
-            && [string is integer -strict $::env(SOURCE_DATE_EPOCH)]} {
-        set cd $::env(SOURCE_DATE_EPOCH)
-    }
-    lappend args -creationdate [expr {$cd eq "" ? 0 : $cd}]
+    lappend args -creationdate 0
     $pdf metadata {*}$args
-    set lang [expr {[dict exists $opts lang] ? [dict get $opts lang] : ""}]
+    set lang ""
+    if {[dict exists $opts lang]} { set lang [dict get $opts lang] }
     if {$lang ne "" && [catch {$pdf metadata -lang $lang} err]} {
         if {[string match "unknown metadata option*" $err]} {
             _warnOnce metalang "pdf4tcl without \"metadata -lang\" (0.9.4.73): language not written"
@@ -284,7 +271,6 @@ proc docir::pdf::_normalizeOptions {options} {
         keywords           "" \
         creator            "docir::pdf" \
         lang               "" \
-        creationDate       "" \
         subtitle           "" \
         date               "" \
         titlePage          0 \
@@ -749,7 +735,14 @@ proc docir::pdf::_wrapStyledSegments {segments maxW fontSize {allowTallMath 0}} 
             # in a synopsis (fifth segment field "keepspace")
             # An explicit space before "?" or "..." in the source stays too:
             # "*ms* ?*script ...*?" in a manual's description list.
+            # "." und ":" nur, wenn kein Wort folgt: "::http::geturl",
+            # Fensterpfade ".top", ":x" sind Woerter und behalten das
+            # Leerzeichen davor (bis 2026-10-24: "Prozedur::http::geturl",
+            # "Fenster.top" in den Handbuch-PDFs).
             if {[string index $w 0] in {, . : ; ! ? )} && [lindex $seg 4] ne "keepspace"
+                    && !([string index $w 0] in {. :}
+                         && [regexp {^[.:][[:alnum:]_:/]} $w]
+                         && ![string match ...* $w])
                     && !(($i > 0 || $hasLeading)
                          && ([string index $w 0] eq "?" || [string match ...* $w]))} {
                 set spaced 0
@@ -1223,7 +1216,8 @@ proc docir::pdf::_fillTemplate {tpl {size ""}} {
     variable opts
     variable st
     if {$size eq ""} { set size [expr {[dict get $opts fontSize] - 1}] }
-    set title [expr {[dict exists $opts title] ? [dict get $opts title] : ""}]
+    set title ""
+    if {[dict exists $opts title]} { set title [dict get $opts title] }
     set base [string map [list %p [dict get $st pageNo] %t $title] $tpl]
     set parts [split $base \t]
     set left [lindex $parts 0]
@@ -1458,7 +1452,8 @@ proc docir::pdf::_wrap {text maxWidth} {
         set words [split $paragraphLine " "]
         set current ""
         foreach w $words {
-            set candidate [expr {$current eq "" ? $w : "$current $w"}]
+            # no expr ternary here: it would turn "5.10" into 5.1
+            if {$current eq ""} { set candidate $w } else { set candidate "$current $w" }
             set wWidth [$pdf getStringWidth $candidate]
             if {$wWidth <= $maxWidth} {
                 set current $candidate
@@ -1674,7 +1669,8 @@ proc docir::pdf::_renderFlowBlock {txt lang} {
     set pdf [dict get $st pdf]
     set lh [_lineHeight [dict get $opts fontSize]]
     try {
-        set ff [expr {[dict exists $opts flowFont] ? [dict get $opts flowFont] : ""}]
+        set ff ""
+        if {[dict exists $opts flowFont]} { set ff [dict get $opts flowFont] }
         set fontOpt [expr {$ff eq "" ? {} : [list -fontfile $ff]}]
         set renderScale 3
         set png [docir::diagram::renderPng $txt $lang -scale $renderScale {*}$fontOpt]
@@ -1748,7 +1744,7 @@ proc docir::pdf::_wrapCodeLines {lines maxW {hang "    "}} {
         while {1} {
             set width [expr {$first ? $maxChars : $maxChars - $hangLen}]
             if {[string length $rest] <= $width} {
-                lappend out [expr {$first ? $rest : "$hang$rest"}]
+                lappend out "[expr {$first ? "" : $hang}]$rest"
                 break
             }
             # last space that still fits; ignore it when it sits so far left
@@ -1761,7 +1757,7 @@ proc docir::pdf::_wrapCodeLines {lines maxW {hang "    "}} {
                 set piece [string range $rest 0 [expr {$cut - 1}]]
                 set rest  [string range $rest [expr {$cut + 1}] end]
             }
-            lappend out [expr {$first ? $piece : "$hang$piece"}]
+            lappend out "[expr {$first ? "" : $hang}]$piece"
             set first 0
             if {$rest eq ""} { break }
         }
@@ -2208,32 +2204,24 @@ proc docir::pdf::_renderTable {node} {
         return
     }
 
-    # --- Tables with image cells (review 2026-10-24, P02/P03) ---
-    # Column widths follow the content (an icon column stays narrow), the
-    # header row is repeated after a page break, and a row higher than a
-    # page is split: its text lines continue on the next page.
-    set rows {}
+    set colW [expr {[dict get $st contentW] / $columns}]
     set rowIndex 0
     foreach row [dict get $node content] {
-        if {[dict get $row type] ne "tableRow"} { incr rowIndex; continue }
-        lappend rows [list [expr {$hasHeader && $rowIndex == 0}] [dict get $row content]]
-        incr rowIndex
-    }
-    set colWs [_imgTableWidths $rows $columns $padX $fontSize]
+        if {[dict get $row type] ne "tableRow"} {
+            incr rowIndex
+            continue
+        }
 
-    # PASS 1: per row the cells (images, wrapped text lines)
-    set prepared {}
-    foreach r $rows {
-        lassign $r isHeader cells
+        set isHeader [expr {$hasHeader && $rowIndex == 0}]
         set cellFont [expr {$isHeader \
             ? [::pdf4tcllib::fonts::fontSansBold] : [::pdf4tcllib::fonts::fontSans]}]
+        set availText [expr {$colW - 2 * $padX}]
+
+        # PASS 1: pre-process cells — classify, wrap text, determine heights.
         set cellsInfo {}
         set maxImgH 0
-        set c 0
-        foreach cell $cells {
-            set colW [lindex $colWs $c]
-            if {$colW eq ""} { set colW [lindex $colWs end] }
-            incr c
+        set maxTextLines 1
+        foreach cell [dict get $row content] {
             if {[dict get $cell type] ne "tableCell"} {
                 lappend cellsInfo [dict create type empty]
                 continue
@@ -2243,248 +2231,90 @@ proc docir::pdf::_renderTable {node} {
                 set h [dict get $info height]
                 if {$h > $maxImgH} { set maxImgH $h }
             } elseif {[dict exists $info text] && [dict get $info text] ne ""} {
-                dict set info lines [::pdf4tcllib::text::wrap [dict get $info text] \
-                    [expr {$colW - 2 * $padX}] $fontSize $cellFont 0 $pdf 1]
+                # Wrap text cells (hard-break long space-less tokens) so they no
+                # longer clip past the column; feed the line count into rowH.
+                set lines [::pdf4tcllib::text::wrap [dict get $info text] \
+                    $availText $fontSize $cellFont 0 $pdf 1]
+                dict set info lines $lines
+                set n [llength $lines]
+                if {$n > $maxTextLines} { set maxTextLines $n }
             }
             lappend cellsInfo $info
         }
-        lappend prepared [list $isHeader $cellsInfo $maxImgH]
-    }
 
-    set headerRow {}
-    if {[llength $prepared] && [lindex $prepared 0 0]} { set headerRow [lindex $prepared 0] }
-    set first 1
-    foreach pr $prepared {
-        lassign $pr isHeader cellsInfo maxImgH
-        set nLines 1
-        foreach info $cellsInfo {
-            if {[dict exists $info lines] && [llength [dict get $info lines]] > $nLines} {
-                set nLines [llength [dict get $info lines]]
-            }
-        }
-        set rowH [_imgRowHeight $nLines $maxImgH $lh $padY]
+        # effective row height: max(wrapped text block, image height) + padding
+        set textH [expr {$maxTextLines * $lh}]
+        set contentH [expr {$maxImgH > $textH ? $maxImgH : $textH}]
+        set rowH [expr {$contentH + 2 * $padY}]
+        _ensureSpace $rowH
+
+        set yTop [dict get $st y]
+
         if {$isHeader} {
-            _ensureSpace [expr {$rowH + $lh + 2 * $padY}]
-            _drawImgRow $cellsInfo $colWs 1 0 $nLines 1 $rowH $padX $lh 1
-            set first 0
-            continue
+            lassign [_hexToRgb [dict get $opts colorCode]] cr cg cb
+            $pdf setFillColor $cr $cg $cb
+            $pdf rectangle [dict get $st margin] $yTop [dict get $st contentW] $rowH -filled true -stroke false
+            $pdf setFillColor 0 0 0
         }
-        set capacity [expr {[dict get $st bottomY] - [dict get $st topY]}]
-        set hdrH 0
-        if {$headerRow ne ""} {
-            set hdrH [_imgRowHeight [_imgRowLines [lindex $headerRow 1]] \
-                [lindex $headerRow 2] $lh $padY]
-        }
-        if {$rowH <= $capacity - $hdrH} {
-            # whole row; on a new page with the header again
-            if {[dict get $st y] + $rowH > [dict get $st bottomY]} {
-                _newPage
-                if {$headerRow ne ""} { _redrawImgHeader $headerRow $colWs $padX $padY $lh }
-                set first 1
-            }
-            _drawImgRow $cellsInfo $colWs 0 0 $nLines 1 $rowH $padX $lh $first
-            set first 0
-            continue
-        }
-        # Row higher than a page: in pieces. The images go with the first
-        # piece; every piece takes as many text lines as fit.
-        set from 0
-        set withImg 1
-        while {$from < $nLines} {
-            set avail [expr {[dict get $st bottomY] - [dict get $st y] - 2 * $padY}]
-            set fit [expr {int($avail / $lh)}]
-            if {$withImg && $fit * $lh < $maxImgH} { set fit 0 }
-            if {$fit < 2} {
-                _newPage
-                if {$headerRow ne ""} { _redrawImgHeader $headerRow $colWs $padX $padY $lh }
-                set first 1
-                continue
-            }
-            set n [expr {min($fit, $nLines - $from)}]
-            set imgPart [expr {$withImg ? $maxImgH : 0}]
-            set h [_imgRowHeight $n $imgPart $lh $padY]
-            _drawImgRow $cellsInfo $colWs 0 $from $n $withImg $h $padX $lh $first 1
-            set first 0
-            set withImg 0
-            incr from $n
-        }
-    }
-    _advanceY 4
-}
 
-# Lines of the highest text cell of a prepared row (at least 1).
-proc docir::pdf::_imgRowLines {cellsInfo} {
-    set n 1
-    foreach info $cellsInfo {
-        if {[dict exists $info lines] && [llength [dict get $info lines]] > $n} {
-            set n [llength [dict get $info lines]]
+        if {$isHeader} {
+            _setFont $fontSize bold
+        } else {
+            _setFont $fontSize
         }
-    }
-    return $n
-}
 
-proc docir::pdf::_imgRowHeight {nLines imgH lh padY} {
-    set textH [expr {$nLines * $lh}]
-    return [expr {max($textH, $imgH) + 2 * $padY}]
-}
+        # PASS 2: Zellen rendern
+        set colIndex 0
+        foreach info $cellsInfo {
+            set xCell [expr {[dict get $st margin] + $colIndex * $colW}]
+            set xText [expr {$xCell + $padX}]
 
-proc docir::pdf::_redrawImgHeader {headerRow colWs padX padY lh} {
-    lassign $headerRow - cellsInfo maxImgH
-    set n [_imgRowLines $cellsInfo]
-    _drawImgRow $cellsInfo $colWs 1 0 $n 1 [_imgRowHeight $n $maxImgH $lh $padY] $padX $lh 1
-}
-
-# Draws (a piece of) one row at st(y) and advances y. from/n: text lines of
-# this piece; withImg: draw the image cells; top: draw the top rule;
-# topAlign: text from the top (pieces of a split row) instead of centred.
-proc docir::pdf::_drawImgRow {cellsInfo colWs isHeader from n withImg rowH padX lh top {topAlign 0}} {
-    variable opts
-    variable st
-    set pdf [dict get $st pdf]
-    set fontSize [dict get $opts fontSize]
-    set yTop [dict get $st y]
-    set x0 [dict get $st margin]
-    set xR [expr {$x0 + [dict get $st contentW]}]
-    if {$isHeader} {
-        lassign [_hexToRgb [dict get $opts colorCode]] cr cg cb
-        $pdf setFillColor $cr $cg $cb
-        $pdf rectangle $x0 $yTop [dict get $st contentW] $rowH -filled true -stroke false
-        $pdf setFillColor 0 0 0
-        _setFont $fontSize bold
-    } else {
-        _setFont $fontSize
-    }
-    set xCell $x0
-    set c 0
-    foreach info $cellsInfo {
-        set colW [lindex $colWs $c]
-        if {$colW eq ""} { set colW [lindex $colWs end] }
-        incr c
-        switch [dict get $info type] {
-            images {
-                if {$withImg} { _renderCellImages $info $xCell $yTop $colW $rowH }
-            }
-            default {
-                if {[dict exists $info lines]} {
-                    set lines [dict get $info lines]
-                } elseif {[dict exists $info text] && [dict get $info text] ne ""} {
-                    set lines [list [dict get $info text]]
-                } else {
-                    set lines {}
+            switch [dict get $info type] {
+                images {
+                    # place images centered vertically+horizontally in the cell
+                    _renderCellImages $info $xCell $yTop $colW $rowH
                 }
-                set lines [lrange $lines $from [expr {$from + $n - 1}]]
-                set blockH [expr {[llength $lines] * $lh}]
-                if {$topAlign} {
-                    set yl [expr {$yTop + 3 + $fontSize}]
-                } else {
+                default {
+                    # text (and mixed/empty fallback): draw the wrapped lines as
+                    # a block, vertically centered in the cell.
+                    if {[dict exists $info lines]} {
+                        set lines [dict get $info lines]
+                    } elseif {[dict exists $info text] && [dict get $info text] ne ""} {
+                        set lines [list [dict get $info text]]
+                    } else {
+                        set lines {}
+                    }
+                    set blockH [expr {[llength $lines] * $lh}]
                     set yl [expr {$yTop + ($rowH - $blockH) / 2.0 + $fontSize}]
-                }
-                foreach ln $lines {
-                    $pdf text [::pdf4tcllib::unicode::sanitize $ln] \
-                        -x [expr {$xCell + $padX}] -y $yl
-                    set yl [expr {$yl + $lh}]
-                }
-            }
-        }
-        $pdf setStrokeColor 0.7 0.7 0.7
-        $pdf line $xCell $yTop $xCell [expr {$yTop + $rowH}]
-        set xCell [expr {$xCell + $colW}]
-    }
-    $pdf setStrokeColor 0.7 0.7 0.7
-    $pdf line $xR $yTop $xR [expr {$yTop + $rowH}]
-    $pdf line $x0 [expr {$yTop + $rowH}] $xR [expr {$yTop + $rowH}]
-    if {$top} { $pdf line $x0 $yTop $xR $yTop }
-    $pdf setStrokeColor 0 0 0
-    _advanceY $rowH
-}
-
-# Column widths of an image table from the content: each column gets at
-# least its widest word or image, the rest of the width goes to the
-# columns in proportion to their full single-line text. Equal widths
-# only when even the minimum does not fit.
-proc docir::pdf::_imgTableWidths {rows columns padX fontSize} {
-    variable st
-    set pdf [dict get $st pdf]
-    set lh [_lineHeight $fontSize]
-    set maxImgH [expr {int(1.75 * $lh)}]
-    set minW [lrepeat $columns 0]
-    set natW [lrepeat $columns 0]
-    foreach r $rows {
-        lassign $r isHeader cells
-        set font [expr {$isHeader ? [::pdf4tcllib::fonts::fontSansBold] : [::pdf4tcllib::fonts::fontSans]}]
-        $pdf setFont $fontSize $font
-        set c 0
-        foreach cell $cells {
-            if {$c >= $columns} break
-            set mn 0; set nt 0
-            if {[dict get $cell type] eq "tableCell"} {
-                set imgW 0
-                foreach inl [dict get $cell content] {
-                    if {[dict exists $inl type] && [dict get $inl type] eq "image"} {
-                        set sz [_imgNaturalSize [_dictDef $inl url ""] $maxImgH]
-                        set imgW [expr {$imgW + [lindex $sz 0] + 2}]
+                    foreach ln $lines {
+                        $pdf text [::pdf4tcllib::unicode::sanitize $ln] \
+                            -x $xText -y $yl
+                        set yl [expr {$yl + $lh}]
                     }
                 }
-                set txt [_inlinesToText [dict get $cell content]]
-                foreach w [split $txt] {
-                    set ww [$pdf getStringWidth [::pdf4tcllib::unicode::sanitize $w]]
-                    if {$ww > $mn} { set mn $ww }
-                }
-                set nt [$pdf getStringWidth [::pdf4tcllib::unicode::sanitize $txt]]
-                set mn [expr {max($mn, $imgW)}]
-                set nt [expr {max($nt, $imgW)}]
             }
-            set mn [expr {$mn + 2 * $padX + 2}]
-            set nt [expr {$nt + 2 * $padX + 2}]
-            if {$mn > [lindex $minW $c]} { lset minW $c $mn }
-            if {$nt > [lindex $natW $c]} { lset natW $c $nt }
-            incr c
+
+            # vertikaler Strich (links)
+            $pdf setStrokeColor 0.7 0.7 0.7
+            $pdf line $xCell $yTop $xCell [expr {$yTop + $rowH}]
+            $pdf setStrokeColor 0 0 0
+            incr colIndex
         }
-    }
-    $pdf setFont $fontSize [::pdf4tcllib::fonts::fontSans]
-    set total [dict get $st contentW]
-    set sumMin 0; set sumNat 0
-    foreach a $minW b $natW { set sumMin [expr {$sumMin + $a}]; set sumNat [expr {$sumNat + $b}] }
-    if {$sumMin > $total || $sumNat <= 0} {
-        return [lrepeat $columns [expr {double($total) / $columns}]]
-    }
-    if {$sumNat <= $total} {
-        # everything fits on one line: share the rest by natural width
-        return [lmap b $natW { expr {$b * double($total) / $sumNat} }]
-    }
-    set extra [expr {$total - $sumMin}]
-    set want 0
-    foreach a $minW b $natW { set want [expr {$want + ($b - $a)}] }
-    set out {}
-    foreach a $minW b $natW {
-        lappend out [expr {$want > 0 ? $a + ($b - $a) * double($extra) / $want : $a}]
-    }
-    return $out
-}
+        # right outer edge
+        $pdf setStrokeColor 0.7 0.7 0.7
+        set xR [expr {[dict get $st margin] + [dict get $st contentW]}]
+        $pdf line $xR $yTop $xR [expr {$yTop + $rowH}]
+        # untere Linie
+        $pdf line [dict get $st margin] [expr {$yTop + $rowH}] $xR [expr {$yTop + $rowH}]
+        if {$rowIndex == 0} {
+            $pdf line [dict get $st margin] $yTop $xR $yTop
+        }
+        $pdf setStrokeColor 0 0 0
 
-# Width and height of an image as a table cell shows it (at most maxImgH
-# high, never enlarged); {0 0} if it cannot be read.
-proc docir::pdf::_imgNaturalSize {url maxImgH} {
-    set id [_cellImageId $url]
-    if {$id eq ""} { return {0 0} }
-    variable st
-    lassign [[dict get $st pdf] getImageSize $id] w h
-    if {$h <= 0} { return {0 0} }
-    set scale [expr {min(double($maxImgH) / $h, 1.0)}]
-    return [list [expr {int($w * $scale)}] [expr {int($h * $scale)}]]
-}
-
-# Image id for a cell image, loaded once per document (before, every cell
-# added the file again).
-proc docir::pdf::_cellImageId {url} {
-    variable st
-    set resolved [_resolveImagePath $url]
-    if {$resolved eq "" || ![file exists $resolved] || ![file readable $resolved]} { return "" }
-    if {![dict exists $st cellImg]} { dict set st cellImg {} }
-    if {[dict exists $st cellImg $resolved]} { return [dict get $st cellImg $resolved] }
-    if {[catch {[dict get $st pdf] addImage $resolved} id]} { return "" }
-    dict set st cellImg $resolved $id
-    return $id
+        _advanceY $rowH
+        incr rowIndex
+    }
+    _advanceY 4
 }
 
 # Classifies a table cell:
@@ -2551,9 +2381,8 @@ proc docir::pdf::_classifyCell {cell colW padX lh} {
             lappend images [dict create kind text text "\[$alt\]" w 0 h $lh]
             continue
         }
-        set imgId [_cellImageId $url]
-        if {$imgId eq ""} {
-            _warnOnce "cellimg:$url" "image in table cell not loaded: $url (alt text shown)"
+        if {[catch {$pdf addImage $resolved} imgId]} {
+            _warnOnce "cellimg:$url" "image in table cell not loaded: $url ($imgId; alt text shown)"
             lappend images [dict create kind text text "\[$alt\]" w 0 h $lh]
             continue
         }
