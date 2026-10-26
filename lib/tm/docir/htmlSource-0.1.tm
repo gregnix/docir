@@ -229,7 +229,26 @@ proc docir::htmlSource::_list {node depth} {
     return $blocks
 }
 
+# A table -> list of blocks. A table with a single cell is a frame around
+# its content (BWidget's BWman pages box every example as
+# <TABLE><TR><TD><PRE>...): the cell content comes out as blocks, so a <pre>
+# keeps its lines. Up to 2026-10-25 it became a one-cell Markdown table and
+# the code ran into one line.
 proc docir::htmlSource::_table {node} {
+    set rowsNodes {}
+    foreach sec [concat [list $node] [_childElems $node {thead tbody tfoot}]] {
+        foreach tr [_childElems $sec {tr}] { lappend rowsNodes $tr }
+    }
+    if {[llength $rowsNodes] == 1} {
+        set cells [_childElems [lindex $rowsNodes 0] {th td}]
+        if {[llength $cells] == 1} {
+            return [_flow [lindex $cells 0] 0]
+        }
+    }
+    return [list [_tableBlock $node]]
+}
+
+proc docir::htmlSource::_tableBlock {node} {
     # alignments from colgroup
     set aligns {}
     set cg [lindex [_childElems $node {colgroup}] 0]
@@ -262,17 +281,66 @@ proc docir::htmlSource::_table {node} {
 }
 
 # childNodes of a container -> block list
+# An element that is only a link target: <a name=x></a>, or a <p> holding
+# nothing else (<p><a name="Config"></a></p>). Returns the id, else "".
+proc docir::htmlSource::_emptyAnchor {n} {
+    if {[$n nodeType] ne "ELEMENT_NODE" || [string trim [$n asText]] ne ""} { return "" }
+    set tag [string tolower [$n nodeName]]
+    set as {}
+    if {$tag eq "a"} {
+        set as [list $n]
+    } elseif {$tag eq "p"} {
+        foreach k [$n childNodes] {
+            if {[$k nodeType] eq "ELEMENT_NODE"} {
+                if {[string tolower [$k nodeName]] ne "a"} { return "" }
+                lappend as $k
+            }
+        }
+    }
+    foreach a $as {
+        foreach att {id name} {
+            if {![catch {$a getAttribute $att} v] && $v ne ""} { return $v }
+        }
+    }
+    return ""
+}
+# Blocks after a pending link target: a heading first takes the target as
+# its id (if the HTML gave it none); any other block drops the target.
+proc docir::htmlSource::_takeAnchor {blk pendingVar} {
+    upvar $pendingVar pending
+    if {![llength $blk]} { return $blk }
+    if {$pending ne "" && [dict get [lindex $blk 0] type] eq "heading"
+            && ![dict exists [lindex $blk 0] meta htmlId]} {
+        set h [lindex $blk 0]
+        dict set h meta id $pending
+        lset blk 0 $h
+    }
+    set pending ""
+    return $blk
+}
+
 proc docir::htmlSource::_blocks {node depth} {
     set ir {}
+    # An empty anchor right before a heading (<A name=Overview></A><H2>...,
+    # MediaWiki export of tclws) is the heading's link target: it becomes
+    # the heading id. Until 2026-10-25 it was dropped, and "#Overview" in the
+    # table of contents pointed nowhere.
+    set pending ""
     foreach n [$node childNodes] {
         set nt [$n nodeType]
         if {$nt eq "TEXT_NODE"} {
             set v [string trim [$n nodeValue]]
-            if {$v ne ""} { lappend ir [dict create type paragraph content [list [dict create type text text $v]] meta {}] }
+            if {$v ne ""} {
+                lappend ir [dict create type paragraph content [list [dict create type text text $v]] meta {}]
+                set pending ""
+            }
             continue
         }
         if {$nt ne "ELEMENT_NODE"} continue
-        lappend ir {*}[_block $n $depth]
+        set a [_emptyAnchor $n]
+        if {$a ne ""} { set pending $a; continue }
+        set blk [_block $n $depth]
+        lappend ir {*}[_takeAnchor $blk pending]
     }
     return $ir
 }
@@ -286,10 +354,32 @@ proc docir::htmlSource::_block {n depth} {
             set lv [string index $tag 1]
             set id [_anchorId $n]
             set inl [_inlines $n]
-            if {$id eq ""} { set id [_slug [_elemText $n]] }
-            lappend ir [dict create type heading content $inl meta [dict create level $lv id $id]]
+            # a link inside a heading that points into the same page (old
+            # man2html pages: <H2><A HREF="#toc0">NAME</A></H2>, a way back
+            # to the table of contents) is plain text in the heading
+            set inl [lmap i $inl {
+                if {[dict get $i type] eq "link" && [string match "#*" [dict get $i href]]} {
+                    dict create type text text [dict get $i text]
+                } else { set i }
+            }]
+            set hm [dict create level $lv]
+            if {$id eq ""} {
+                set id [_slug [_elemText $n]]
+            } else {
+                dict set hm htmlId 1
+            }
+            dict set hm id $id
+            lappend ir [dict create type heading content $inl meta $hm]
         }
         p {
+            # A <p> that holds block elements: old pages leave <P> open before
+            # a <DL> or <PRE> (BWidget: "<P><DL><DT>-borderwidth ..."), and the
+            # parser puts the list into the paragraph. As one paragraph it ran
+            # into a single line (until 2026-10-25).
+            if {[_hasBlocks $n]} {
+                lappend ir {*}[_flow $n $depth]
+                return $ir
+            }
             set img [_onlyImg $n]
             if {$img ne ""} {
                 set src ""; set alt ""
@@ -320,7 +410,7 @@ proc docir::htmlSource::_block {n depth} {
             lappend ir [dict create type pre content [list [dict create type text text $t]] meta $meta]
         }
         ul - ol - dl { lappend ir {*}[_list $n $depth] }
-        table        { lappend ir [_table $n] }
+        table        { lappend ir {*}[_table $n] }
         hr           { lappend ir [dict create type hr content {} meta {}] }
         img {
             set src ""; set alt ""
@@ -352,14 +442,28 @@ proc docir::htmlSource::_flow {node depth} {
     variable blockTags
     set ir {}
     set run {}
+    set pending ""
     foreach n [$node childNodes] {
-        if {[$n nodeType] eq "ELEMENT_NODE" && [string tolower [$n nodeName]] in $blockTags} {
+        set a [_emptyAnchor $n]
+        if {$a ne ""} { set pending $a; continue }
+        set isBlock 0
+        if {[$n nodeType] eq "ELEMENT_NODE"} {
+            set nn [string tolower [$n nodeName]]
+            # a stray <dd>/<dt>/<li> outside its list that holds blocks
+            # (BWidget: "<BR>Other standard options are: <DD><TABLE>...")
+            if {$nn in $blockTags || ($nn in {dd dt li} && [_hasBlocks $n])} { set isBlock 1 }
+        }
+        if {$isBlock} {
             set run [_mergeText $run]
             if {[string trim [_inlinesText $run]] ne ""} {
                 lappend ir [dict create type paragraph content [_trimInl $run] meta {}]
             }
             set run {}
-            lappend ir {*}[_block $n $depth]
+            if {$nn in {dd dt li}} {
+                lappend ir {*}[_takeAnchor [_flow $n $depth] pending]
+            } else {
+                lappend ir {*}[_takeAnchor [_block $n $depth] pending]
+            }
         } else {
             lappend run {*}[_inlineOf $n]
         }
@@ -507,6 +611,12 @@ proc docir::htmlSource::_balance {html} {
 }
 
 proc docir::htmlSource::fromHtml {html} {
+    # Unclosed <LI> (MediaWiki export of tclws: "<LI><A ...>1 ...</A>" without
+    # </LI>): tdom nests each item in the one before and pulls the rest of
+    # the page into the list. _balance closes them as HTML implies.
+    if {[regexp -all -nocase {<li[\s>]} $html] > [regexp -all -nocase {</li>} $html]} {
+        set html [_balance $html]
+    }
     if {[catch {dom parse -html -keepEmpties $html} doc]} {
         set doc [dom parse -html -keepEmpties [_balance $html]]
     }

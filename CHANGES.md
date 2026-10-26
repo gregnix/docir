@@ -1,5 +1,32 @@
 # DocIR — Changelog
 
+## 2026-10-25 — HTML import: framed code, nested lists, link targets
+
+Found in the German manual PDF (BWidget DynamicHelp: the example ran into
+one line inside a table cell). `htmlSource-0.1.tm`:
+
+- A table with a single cell is a frame: its content comes out as blocks
+  (`<TABLE><TR><TD><PRE>` -> code block with its lines; a framed image ->
+  image). Before: a one-cell Markdown table, code in one line.
+- A `<p>` that holds block elements (old pages leave `<P>` open before a
+  `<DL>`) goes through `_flow`; a stray `<dd>`/`<li>` with blocks as well.
+  Before: option lists and option tables ran into one paragraph.
+- An empty anchor right before a heading (`<A name=Overview></A><H2>`, also
+  inside an otherwise empty `<p>`) becomes the heading id, so table of
+  contents links resolve; a link inside a heading that points into the
+  same page (`<H2><A HREF="#toc0">NAME</A></H2>`) becomes plain text.
+- Pages with more `<li>` than `</li>` go through `_balance` first: tdom
+  nested unclosed items and pulled the rest of the page into the list.
+- Affected: BWidget (14 pages), tclws (11), mpexpr, mclistbox, the
+  Nemethi packages (headings, framed images).
+- Tests in `test-docir-html.tcl` (`htmlSource.*`, 6). Suite: 953 tests,
+  0 failures on Tcl 8.6.14 and 9.0.4.
+- `bin/h2md`: a link within the same page whose target has no heading
+  (BWidget pages have none) becomes plain text; "(#)" led nowhere and gave
+  "linkAdd target never defined" in PDFs (505 links). An image whose file
+  is missing from the source folder is left out with a warning
+  (`constr.gif` of BWidget is not in `BWman/`).
+
 ## 2026-10-25 — Text that looks like a number stays as written
 
 - An `expr {c ? $text : …}` returns a value that looks like a number in

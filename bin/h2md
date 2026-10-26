@@ -95,12 +95,35 @@ proc rewriteAnchors {md self maps} {
             set ziel "${file}#[dict get $maps $key $id]"
         } elseif {[dict exists $maps $key]} {
             # Seite bekannt, Sprungziel dort ohne Ueberschrift davor (BWidget
-            # hat gar keine): auf die Seite selbst
-            set ziel [expr {$file eq "" ? "#" : $file}]
+            # hat gar keine): auf die Seite selbst. Auf derselben Seite wird
+            # der Link unten zu Text: "(#)" fuehrte nirgendwohin (im PDF:
+            # "linkAdd target never defined", 505 Links in BWidget/tclws).
+            if {$file eq ""} { set ziel "\x01" } else { set ziel $file }
         } else {
             set ziel "${file}#$id"
         }
         append out [string range $md $pos [expr {$x - 1}]] "]($ziel)"
+        set pos [expr {$y + 1}]
+    }
+    append out [string range $md $pos end]
+    regsub -all {\[([^\[\]]*)\]\(\x01\)} $out {\1} out
+    return $out
+}
+
+# Bilder, deren Datei im Quellordner fehlt, entfallen (BWidget: constr.gif,
+# "Under construction", liegt nicht in BWman/). Sonst ein Platzhalter im PDF.
+proc dropMissingImages {md dir name} {
+    set out ""
+    set pos 0
+    while {[regexp -indices -start $pos {!\[[^\]]*\]\(([^)\s]+)\)} $md m u]} {
+        lassign $m x y
+        set url [string range $md {*}$u]
+        append out [string range $md $pos [expr {$x - 1}]]
+        if {[regexp {^[a-z]+:} $url] || [file exists [file join $dir $url]]} {
+            append out [string range $md $x $y]
+        } else {
+            puts stderr "h2md: $name: Bild fehlt, weggelassen: $url"
+        }
         set pos [expr {$y + 1}]
     }
     append out [string range $md $pos end]
@@ -144,6 +167,7 @@ if {[lindex $argv 0] eq "--batch"} {
             puts stderr "h2md: $name: $md"; incr fail; continue
         }
         set md [rewriteAnchors [htmlLinksToMd $md] $name $maps]
+        set md [dropMissingImages $md $dir $name]
         writeMd $md [file join $out $name.md]
         incr ok
     }
