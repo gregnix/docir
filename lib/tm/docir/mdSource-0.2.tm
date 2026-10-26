@@ -1,6 +1,15 @@
-# docir-md-0.1.tm
+# docir-mdSource-0.2.tm
 #
 # Mapper: mdparser-0.2 AST  →  DocIR 0.2
+#
+# 0.2 (2026-10-26), for mdstack::parser 0.9.0 (TIP 700 format):
+#   - span: class (the classes, space separated), id and attrs (dict of the
+#     other attributes, e.g. type="Tcl_Interp", version="TIP500") are passed
+#     on to the span node.
+#   - definition list items with blocks (AST field defblocks): the listItem
+#     gets `blocks` (paragraphs, lists, code, inner definition lists ...),
+#     content keeps the flat text as before for content-only sinks.
+#   - heading alias anchors (section references) go to meta alias.
 #
 # Converts the nested mdparser tree into a flat
 # DocIR sequence (depth-first, SAX-like).
@@ -9,7 +18,7 @@
 # Requires:  mdparser 0.2  (for the AST)
 # Tcl 8.6+ / 9.x compatible
 
-package provide docir::mdSource 0.1
+package provide docir::mdSource 0.2
 
 namespace eval docir::md {}
 
@@ -136,10 +145,14 @@ proc docir::md::_mapHeading {block} {
     # content is Inline-list (like paragraph)
     set raw    [_dictDef $block content {}]
     set inlines [docir::md::_mapInlines $raw]
+    set meta [dict create level $level id $anchor]
+    # further anchors of this heading (parser 0.9.0: target of a section
+    # reference whose plain anchor an earlier heading has)
+    if {[dict exists $block alias]} { dict set meta alias [dict get $block alias] }
     return [dict create \
         type    heading \
         content $inlines \
-        meta    [dict create level $level id $anchor]]
+        meta    $meta]
 }
 
 proc docir::md::_mapParagraph {block} {
@@ -306,10 +319,31 @@ proc docir::md::_mapDeflist {block} {
                 }
             }
         }
-        lappend items [dict create \
+        set itemNode [dict create \
             type    listItem \
             content $descInlines \
             meta    [dict create kind dl term $term]]
+        # Definitions holding blocks (parser 0.9.0, field defblocks): the
+        # item carries them as `blocks` -- the full sequence, paragraphs,
+        # lists, code, inner definition lists. `content` stays the flat
+        # text above, so a sink that reads only content loses nothing.
+        if {[dict exists $dl defblocks]} {
+            set bl {}
+            foreach db [dict get $dl defblocks] {
+                foreach b $db {
+                    foreach mb [docir::md::_mapBlock $b] {
+                        # tagged copies of nested list blocks are for
+                        # content-only sinks at the top level; inside
+                        # blocks the nested list renders them itself
+                        if {[dict exists $mb meta]
+                                && [dict exists [dict get $mb meta] _listSibling]} continue
+                        lappend bl $mb
+                    }
+                }
+            }
+            if {[llength $bl] > 0} { dict set itemNode blocks $bl }
+        }
+        lappend items $itemNode
     }
     return [list [dict create \
         type    list \
@@ -460,7 +494,8 @@ proc docir::md::_mapInlines {inlines} {
                 lappend result {*}[docir::md::_mapWrapped strike $inline]
             }
             span {
-                # TIP-700: {type span content {nested} class? id?}
+                # TIP-700: {type span content {nested} class? id? attrs?}
+                # class holds all classes, space separated ("carg in").
                 # The whole span content becomes the text of ONE span node,
                 # with softbreaks turned into spaces. A span split across a
                 # source-text line break ([a\nb]{.c}) arrives as
@@ -482,6 +517,11 @@ proc docir::md::_mapInlines {inlines} {
                 set spanDict [dict create type span text [string trim $buf]]
                 if {$cls ne ""} { dict set spanDict class $cls }
                 if {$id  ne ""} { dict set spanDict id $id }
+                # further attributes (parser 0.9.0): {type Tcl_Interp},
+                # {version TIP500} -- for sinks that can show them (HTML
+                # data-*, Markdown); the others print the text as before
+                set attrs [_dictDef $inline attrs {}]
+                if {[dict size $attrs] > 0} { dict set spanDict attrs $attrs }
                 lappend result $spanDict
             }
             footnote_ref {

@@ -13,7 +13,7 @@ package require tcltest
 namespace import ::tcltest::*
 
 package require docir 0.1
-package require docir::txt 0.1
+package require docir::txt 0.2
 
 # --- Helpers ---
 
@@ -169,5 +169,32 @@ test txt-15 "image inline" -body {
         [dict create type image alt "diagram"]] meta {}]]
     string trim [docir::txt::render $ir]
 } -result {See [image: diagram]}
+
+
+test txt-16 "span from mdSource prints its text" -body {
+    set ir [list [dict create type paragraph content [list \
+        [dict create type span text "lfilter" class cmd attrs {version TIP735}] \
+        [dict create type text text " x"]] meta {}]]
+    string trim [docir::txt::render $ir]
+} -result {lfilter x}
+
+test txt-17 "definition with blocks prints them under the term" -body {
+    set item [dict create type listItem \
+        meta [dict create kind dl term [list [dict create type text text "T"]]] \
+        content [list [dict create type text text "flat"]] \
+        blocks [list \
+            [dict create type paragraph meta {} content [list [dict create type text text "P."]]] \
+            [dict create type list meta {kind ol indentLevel 0} content [list \
+                [dict create type listItem meta {kind ol term {}} content [list [dict create type text text "one"]]]]]]]
+    string trim [docir::txt::render [list [dict create type list meta {kind dl} content [list $item]]]]
+} -result "T\n  P.\n\n  1. one"
+
+test txt-18 "link with href (mdSource) shows the target; empty name/section is no target" -body {
+    set p [dict create type paragraph meta {} content [list \
+        [dict create type link text "zipfs root" name "" section "" href "../Tcl/zipfs.md"] \
+        [dict create type text text " / "] \
+        [dict create type link text "here" name "" section ""]]]
+    string trim [docir::txt::render [list $p]]
+} -result "zipfs root (../Tcl/zipfs.md) / here"
 
 cleanupTests

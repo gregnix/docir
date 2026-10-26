@@ -12,7 +12,7 @@ DocIR is a **flat, type-bound block sequence** as a common intermediate
 format for:
 
 - `nroffparser` → `docir/roffSource-0.1.tm` (DocIR source)
-- `mdstack::parser` → `docir/mdSource-0.1.tm` (DocIR source)
+- `mdstack::parser` → `docir/mdSource-0.2.tm` (DocIR source)
 - `htmlSource` / `odtSource` / `roffSource` / `csdSource` / `tkSource`
 
 Renderers (Tk, HTML, PDF) work exclusively on DocIR. Parsers do not need
@@ -95,7 +95,7 @@ The current set of block types accepted by `docir::validate`:
 |--------------|----------------------|-------------------------------------|
 | `doc_meta`   | `{}`                 | `irSchemaVersion` (int ≥ 1, required)|
 | `doc_header` | `{}`                 | `name`, `section`, `version`, `part`|
-| `heading`    | Inline list          | `level` (1..6), `id` (optional)     |
+| `heading`    | Inline list          | `level` (1..6), `id` (optional), `alias` (list, optional) |
 | `paragraph`  | Inline list          | `{}`, `class`, `version` (roff `.VS`)|
 | `pre`        | Inline list          | `kind` (code/example/html/math/…)   |
 | `list`       | listItem list        | `kind` (tp/ip/op/ap/ul/ol/dl), `indentLevel` (best-effort: structural sinks (md, pdf, roff, html, rendererTk) honor; visual sinks (svg, canvas, tilepdf) may ignore depending on layout) |
@@ -175,6 +175,13 @@ sub-list / indented code / block quote), the item additionally carries `blocks`
 `content` (odt for non-list blocks) fall back to the desc text plus a tagged
 trailing sibling. A tight single-paragraph item has no `blocks` key and is fully
 backward-compatible.
+
+Definition items (`kind dl`) from `docir::mdSource` 0.2 carry `blocks` when a
+definition holds more than paragraphs (a list, code, an inner definition list,
+a table; mdstack::parser 0.9.0, field `defblocks`). Their `content` stays the
+flat text of all definitions as before, so content-only sinks (roff, odt, tile
+sinks) print what they printed; pdf (0.6), html (0.2), md (0.2), txt (0.2) and
+rendererTk (0.6) render the blocks under the term.
 
 **Rationale:** Treating `listItem` as a real DocIR node (with the same
 type/content/meta shape as any other block) means the validator, the
@@ -282,7 +289,7 @@ docir::checkSchemaVersion $ir {1}      ;# v1 only
 docir::checkSchemaVersion $ir {1} 1    ;# v1 strict (no v0)
 ```
 
-**Sources:** `docir/roffSource-0.1.tm` and `docir/mdSource-0.1.tm`
+**Sources:** `docir/roffSource-0.1.tm` and `docir/mdSource-0.2.tm`
 emit `doc_meta` as the very first block — even when no `doc_header`
 follows (e.g. an nroff AST without `.TH`).
 
@@ -326,7 +333,7 @@ Inlines are dicts `{type <t> text <s>}` plus optional fields:
 | `image`        | `text` (= alt), `url`     | `title`              |
 | `linebreak`    | (none)                    | –                    |
 | `softbreak`    | (none)                    | –                    |
-| `span`         | `text`                    | `class`, `id`, `style` |
+| `span`         | `text`                    | `class`, `id`, `attrs`, `style` |
 | `footnote_ref` | `text` (= display num)    | `id` (target)        |
 | `math`         | `text` (= source)         | –                    |
 
@@ -364,6 +371,16 @@ visually unchanged.
 **`span`** — TIP-700 inline container. The `text` is the displayed
 content; `class` and `id` are HTML/CSS attributes preserved by
 HTML/Markdown/SVG sinks. nroff/text sinks just emit the text.
+`class` may hold several classes, space separated (`carg in` from
+`[*x]{.carg .in type="int"}`); `attrs` (since mdSource 0.2) is a dict of
+the other attributes of the Pandoc attribute list (`type`, `version`).
+HTML writes them as `data-*` attributes (and `version` also as `title`),
+Markdown writes the attribute list back; the other sinks show the text.
+
+**`alias` on `heading`** — further anchor names of the heading (since
+mdSource 0.2): the target of a section reference `[Examples]` in a merged
+manual whose plain id an earlier heading already has. PDF adds a named
+destination per alias, HTML an empty `<span id>` in the heading.
 
 **`footnote_ref`** — reference to a footnote definition. `text` holds
 the displayed marker (typically a number like "1"); `id` points to a
@@ -489,7 +506,7 @@ canvas \- create and manipulate 'canvas' widgets
 
 ---
 
-## Renderer Support (docir/rendererTk-0.5.tm)
+## Renderer Support (docir/rendererTk-0.6.tm)
 
 | DocIR Type   | Rendering                                              |
 |--------------|--------------------------------------------------------|
@@ -514,7 +531,7 @@ tree); the others read a format or a Tcl declaration directly:
 | Source              | Module             | Input                                            |
 |---------------------|--------------------|--------------------------------------------------|
 | `docir::roffSource` | roffSource-0.1.tm  | nroff AST (from `nroffparser`) — mapper          |
-| `docir::mdSource`   | mdSource-0.1.tm    | Markdown AST (from `mdstack::parser`) — mapper |
+| `docir::mdSource`   | mdSource-0.2.tm    | Markdown AST (from `mdstack::parser`) — mapper |
 | `docir::htmlSource` | htmlSource-0.1.tm  | HTML, read via `tdom` (semantic, not CSS/layout) |
 | `docir::odtSource`  | odtSource-0.4.tm   | OpenDocument Text (.odt), via `odf`              |
 | `docir::csdSource`  | csdSource-0.1.tm   | CSD — Tcl-declarative cheat-sheet definitions    |
@@ -540,18 +557,18 @@ sink takes a DocIR stream and produces an output format:
 
 | Sink               | Module                 | Output                                          |
 |--------------------|------------------------|-------------------------------------------------|
-| `docir::html`      | html-0.1.tm            | HTML5 with semantic classes                     |
-| `docir::md`        | md-0.1.tm              | Markdown (CommonMark + GFM)                     |
-| `docir::pdf`       | pdf-0.5.tm             | PDF via pdf4tcl, standard layout (display math typeset) |
+| `docir::html`      | html-0.2.tm            | HTML5 with semantic classes                     |
+| `docir::md`        | md-0.2.tm              | Markdown (CommonMark + GFM)                     |
+| `docir::pdf`       | pdf-0.6.tm             | PDF via pdf4tcl, standard layout (display math typeset) |
 | `docir::roff`      | roff-0.1.tm            | nroff/groff (man pages)                         |
 | `docir::odt`       | odt-0.4.tm             | OpenDocument Text (.odt)                         |
-| `docir::txt`       | txt-0.1.tm             | plain text (pagers, e-mail, logs)               |
+| `docir::txt`       | txt-0.3.tm             | plain text (pagers, e-mail, logs)               |
 | `docir::svg`       | svg-0.1.tm             | SVG graphics                                    |
 | `docir::canvas`    | canvas-0.1.tm          | Tk canvas items (for GUI display)               |
 | `docir::tilepdf`   | tilepdf-0.1.tm         | 2-column tile PDF (cheatsheet style)            |
 | `docir::tilehtml`  | tilehtml-0.1.tm        | 2-column tile HTML with CSS Grid                |
 | `docir::tilemd`    | tilemd-0.1.tm          | Tile-structured Markdown (linear)               |
-| `docir::rendererTk`| rendererTk-0.5.tm      | Tk text widget (interactive viewer; display math typeset on canvas) |
+| `docir::rendererTk`| rendererTk-0.6.tm      | Tk text widget (interactive viewer; display math typeset on canvas) |
 
 Plus shared helper:
 

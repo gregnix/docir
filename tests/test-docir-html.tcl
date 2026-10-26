@@ -979,8 +979,10 @@ test "htmlSource.p_with_dl_is_not_one_paragraph" {
     package require docir::md
     set ir [docir::htmlSource::fromHtml "<body><DL><DT>configure</DT><DD>Configures.<P><DL><DT><B>-delay</B></DT><DD>Delay in ms.</DD></DL><DL><DT><B>-state</B></DT><DD>normal or disabled.</DD></DL></DD></DL></body>"]
     set md [docir::md::render $ir]
-    assert {[regexp {\*\*-delay\*\*\s*\n:\s*Delay in ms\.} $md]} "-delay is its own term: $md"
-    assert {[regexp {\*\*-state\*\*\s*\n:\s*normal or disabled\.} $md]} "-state is its own term: $md"
+    # since docir::md 0.2 the inner list stays in the definition: indented
+    # 4 spaces (Pandoc), no longer in column 0
+    assert {[regexp {\n    \*\*-delay\*\*\s*\n    :\s*Delay in ms\.} $md]} "-delay is its own term: $md"
+    assert {[regexp {\n    \*\*-state\*\*\s*\n    :\s*normal or disabled\.} $md]} "-state is its own term: $md"
 }
 test "htmlSource.stray_dd_with_table" {
     package require docir::htmlSource

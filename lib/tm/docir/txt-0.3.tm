@@ -1,4 +1,12 @@
-# docir-txt-0.1.tm -- DocIR -> plain text renderer (sink)
+# docir-txt-0.3.tm -- DocIR -> plain text renderer (sink)
+#
+# 0.3 (2026-10-26): a link takes its target from `href` (mdSource writes
+#   href, not url); an empty name/section no longer prints "text (())".
+#
+# 0.2 (2026-10-26): a definition with blocks (listItem.blocks) prints
+#   them under the term, indented like the description -- lists, code,
+#   inner definition lists keep their form. A span prints its text: spans
+#   from docir::mdSource carry `text`, not `content`, and came out empty.
 #
 # Converts a DocIR sequence into a plain text string. The seventh
 # sink in the DocIR hub (next to tk, html, md, svg, pdf, canvas).
@@ -33,7 +41,7 @@
 #   - Code blocks                -> indented with codeIndent spaces
 #   - Footnote section           -> at the end, numbered list
 
-package provide docir::txt 0.1
+package provide docir::txt 0.3
 package require Tcl 8.6-
 package require docir 0.1
 
@@ -254,10 +262,18 @@ proc docir::txt::_renderListItem {node depth {kind ul} {counter 1}} {
         } else {
             append out "${indent}${termText}\n"
         }
-        # desc als eingerueckter Folgeblock
+        # desc als eingerueckter Folgeblock; a definition with blocks
+        # (listItem.blocks) prints all of them
         set descIndent "${indent}  "
-        set descText [_renderInlinesOrBlocks [dict get $node content]]
+        if {[dict exists $node blocks]} {
+            set descText ""
+            foreach b [dict get $node blocks] { append descText [_renderBlock $b] }
+            set descText [string trimright $descText "\n"]
+        } else {
+            set descText [_renderInlinesOrBlocks [dict get $node content]]
+        }
         foreach ln [split [string trimright $descText "\n"] "\n"] {
+            if {$ln eq "" && [dict exists $node blocks]} { append out "\n"; continue }
             append out "${descIndent}${ln}\n"
         }
     } else {
@@ -418,9 +434,10 @@ proc docir::txt::_renderInline {inline} {
         link {
             set text [_dictGet $inline text [_renderInlines [_dictGet $inline content {}]]]
             set url  [_dictGet $inline url ""]
-            if {$url eq "" && [dict exists $inline name]} {
+            if {$url eq ""} { set url [_dictGet $inline href ""] }
+            if {$url eq "" && [_dictGet $inline name ""] ne ""} {
                 set url [dict get $inline name]
-                if {[dict exists $inline section]} {
+                if {[_dictGet $inline section ""] ne ""} {
                     append url "([dict get $inline section])"
                 }
             }
@@ -435,6 +452,7 @@ proc docir::txt::_renderInline {inline} {
             return "\[image: $alt\]"
         }
         span {
+            if {[dict exists $inline text]} { return [dict get $inline text] }
             return [_renderInlines [_dictGet $inline content {}]]
         }
         footnote_ref {

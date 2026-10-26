@@ -1,4 +1,11 @@
-# docir-md-0.1.tm -- DocIR -> Markdown renderer (sink)
+# docir-md-0.2.tm -- DocIR -> Markdown renderer (sink)
+#
+# 0.2 (2026-10-26): span attribute lists after Pandoc ([x]{.carg .in
+#   type="Tcl_Interp"}: all classes, id, attrs); a definition with blocks
+#   (listItem.blocks) writes its further blocks indented 4 spaces under the
+#   ": " line, so that they stay in the definition (Pandoc; mdstack::parser
+#   0.9.0 reads them back as blocks). Before, they followed in column 0,
+#   after the list.
 #
 # Converts a DocIR sequence into a Markdown file. The sixth sink
 # im DocIR-Hub (neben tk, html, svg, pdf, canvas).
@@ -34,7 +41,7 @@
 #     Kommentar als Warnung
 #   - Markdown escaping for text inlines (\*, \_, \`, \[, \])
 
-package provide docir::md 0.1
+package provide docir::md 0.2
 package require docir 0.1
 
 namespace eval ::docir::md {
@@ -239,6 +246,19 @@ proc docir::md::_renderList {node} {
         set itemKind [_dictDef $itemMeta kind $kind]
         set itemTerm [_dictDef $itemMeta term {}]
         set itemDescInlines [dict get $item content]
+        # A definition with blocks: the ": " line is its first paragraph
+        # (content may hold the flat text of all of them, mdSource 0.2), the
+        # other blocks follow indented (_defBlocks).
+        set defRest {}
+        if {$itemKind in {tp ip op ap dl} && [dict exists $item blocks]} {
+            set defRest [dict get $item blocks]
+            set itemDescInlines {}
+            if {[llength $defRest] && [dict get [lindex $defRest 0] type] eq "paragraph"
+                    && [_dictDef [_dictDef [lindex $defRest 0] meta {}] class ""] eq ""} {
+                set itemDescInlines [dict get [lindex $defRest 0] content]
+                set defRest [lrange $defRest 1 end]
+            }
+        }
 
         set descMd [_renderInlines $itemDescInlines]
 
@@ -307,20 +327,23 @@ proc docir::md::_renderList {node} {
                             append out "${indent}  $line\n"
                         }
                     }
-                } elseif {$termMd ne ""} {
+                } elseif {$termMd ne "" || [llength $defRest]} {
                     append out "${indent}: \n"
                 }
                 append out "\n"
                 # Item with further blocks (listItem.blocks: paragraphs, a
-                # nested list, code -- htmlSource from <dd>): the first
-                # paragraph is the description above, the rest follows flat,
-                # like nested nroff lists (mdstack reads ": " only in column 0).
-                if {[dict exists $item blocks]} {
-                    set rest [dict get $item blocks]
-                    if {[llength $rest] && [dict get [lindex $rest 0] type] eq "paragraph"} {
-                        set rest [lrange $rest 1 end]
+                # nested list, code, an inner definition list -- htmlSource
+                # from <dd>, mdSource from a TIP 700 definition): indented 4
+                # spaces, the Pandoc rule for blocks of a definition. Up to
+                # docir::md 0.1 they followed in column 0 and so left the
+                # definition.
+                foreach b $defRest {
+                    set md [string trimright [_renderBlock $b] "\n"]
+                    if {$md eq ""} continue
+                    foreach line [split $md "\n"] {
+                        if {$line eq ""} { append out "\n" } else { append out "    $line\n" }
                     }
-                    foreach b $rest { append out [_renderBlock $b] }
+                    append out "\n"
                 }
             }
             default {
@@ -614,14 +637,19 @@ proc docir::md::_renderInline {inline} {
             # We use the Pandoc extension [text]{.class #id}
             set cls [_dictDef $inline class ""]
             set id  [if {[dict exists $inline id]} {dict get $inline id} else {lindex ""}]
-            if {$cls eq "" && $id eq ""} {
+            set more [_dictDef $inline attrs {}]
+            if {$cls eq "" && $id eq "" && [dict size $more] == 0} {
                 # Without attributes, span is a no-op — just return the text
                 return $escTxt
             }
-            set attrs ""
-            if {$cls ne ""} { append attrs ".$cls " }
-            if {$id  ne ""} { append attrs "#$id " }
-            return [_wrapStyle $inline "\[$escTxt\]\{[string trimright $attrs]\}"]
+            # class holds all classes, space separated: ".carg .in"
+            set attrs {}
+            foreach c [split $cls] { if {$c ne ""} { lappend attrs ".$c" } }
+            if {$id  ne ""} { lappend attrs "#$id" }
+            dict for {k v} $more {
+                lappend attrs "$k=\"[string map {\\ \\\\ \" \\\"} $v]\""
+            }
+            return [_wrapStyle $inline "\[$escTxt\]\{[join $attrs { }]\}"]
         }
         footnote_ref {
             # [^id] in Markdown

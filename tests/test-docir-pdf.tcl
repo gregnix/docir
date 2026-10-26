@@ -22,7 +22,9 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 # Geschwisterbaum: 45 angemeldete Tests. Ohne pdf4tcllib sind es 3 -- der
 # Block ab "if {[catch {package require pdf4tcl}]}" faellt dann weg und
 # nimmt 42 Tests mit, ohne dass der Zaehler etwas davon sieht.
-::test::expect 60
+# Seit 26.10.2026: 64 (Definitionen mit Bloecken, Kopf am Seitenrand,
+# Alias-Anker einer Ueberschrift).
+::test::expect 64
 
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
@@ -1403,6 +1405,114 @@ test "pdf.text.number_like_words_unchanged" {
     assert [regexp {(^|\n)010\n1\.50} $t] "code lines unchanged"
     assert [string match "*1.50 *" $t] "footer title unchanged"
     catch {file delete $f}
+}
+
+# Definitions with blocks (listItem.blocks, mdSource 0.2 / TIP 700):
+# every block under the term, at the indent of the description; inner
+# definition lists step in further. Before 0.6 only the first paragraph
+# was printed and further paragraphs were lost.
+proc ::_dlBlocksIr {} {
+    set inner [dict create type list meta {kind dl indentLevel 0} content [list \
+        [dict create type listItem meta [dict create kind dl \
+            term [list [dict create type text text "InnerTermQ"]]] \
+            content [list [dict create type text text "InnerDefQ text."]]]]]
+    set ul [dict create type list meta {kind ul indentLevel 0} content [list \
+        [dict create type listItem meta {kind ul term {}} \
+            content [list [dict create type text text "BulletOneQ"]]]]]
+    set item [dict create type listItem \
+        meta [dict create kind dl term [list [dict create type text text "OuterTermQ"]]] \
+        content [list [dict create type text text "FLAT CONTENT NOT SHOWN"]] \
+        blocks [list \
+            [dict create type paragraph meta {} content [list [dict create type text text "FirstParaQ."]]] \
+            [dict create type paragraph meta {} content [list [dict create type text text "SecondParaQ."]]] \
+            $ul \
+            [dict create type pre meta {kind code language ""} content [list [dict create type text text "codeLineQ 1"]]] \
+            $inner]]
+    return [list [dict create type list meta {kind dl indentLevel 0} content [list $item]] \
+        [dict create type paragraph meta {} content [list [dict create type text text "AfterListQ"]]]]
+}
+proc ::_layoutCol {txt word} {
+    foreach line [split $txt \n] {
+        set c [string first $word $line]
+        if {$c >= 0} { return $c }
+    }
+    return -1
+}
+
+test "pdf.dl.blocks_all_rendered" {
+    if {[auto_execok pdftotext] eq ""} { skip "pdftotext not available" }
+    set f [file join $::TMPBASE test-pdf-dlblocks.pdf]
+    docir::pdf::render [::_dlBlocksIr] $f
+    set t [exec pdftotext -layout $f -]
+    foreach w {OuterTermQ FirstParaQ SecondParaQ BulletOneQ codeLineQ InnerTermQ InnerDefQ AfterListQ} {
+        assert [expr {[string first $w $t] >= 0}] "$w printed"
+    }
+    assert [expr {[string first "FLAT CONTENT" $t] < 0}] "blocks, not the flat content"
+    set order [lmap w {OuterTermQ FirstParaQ SecondParaQ BulletOneQ codeLineQ InnerTermQ InnerDefQ AfterListQ} {string first $w $t}]
+    assert [expr {$order eq [lsort -integer $order]}] "in order: $order"
+    catch {file delete $f}
+}
+
+test "pdf.dl.blocks_indented" {
+    if {[auto_execok pdftotext] eq ""} { skip "pdftotext not available" }
+    set f [file join $::TMPBASE test-pdf-dlblocks2.pdf]
+    docir::pdf::render [::_dlBlocksIr] $f
+    set t [exec pdftotext -layout $f -]
+    set cT  [::_layoutCol $t OuterTermQ]
+    set cP  [::_layoutCol $t SecondParaQ]
+    set cIT [::_layoutCol $t InnerTermQ]
+    set cID [::_layoutCol $t InnerDefQ]
+    set cA  [::_layoutCol $t AfterListQ]
+    assert [expr {$cP > $cT}] "paragraph under the term, indented ($cT/$cP)"
+    assert [expr {$cIT >= $cP}] "inner term at the description indent ($cP/$cIT)"
+    assert [expr {$cID > $cIT}] "inner description further in ($cIT/$cID)"
+    assert [expr {$cA == $cT}] "text after the list back at the margin ($cT/$cA)"
+    catch {file delete $f}
+}
+
+test "pdf.dl.header_footer_stay_at_page_margin" {
+    if {[auto_execok pdftotext] eq ""} { skip "pdftotext not available" }
+    # a long indented definition breaks the page: the footer of that page
+    # must not move by the indent
+    set paras {}
+    for {set i 0} {$i < 80} {incr i} {
+        lappend paras [dict create type list meta {kind ul indentLevel 0} content [list \
+            [dict create type listItem meta {kind ul term {}} \
+                content [list [dict create type text text "Line $i of a long nested list."]]]]]
+    }
+    set item [dict create type listItem \
+        meta [dict create kind dl term [list [dict create type text text "T"]]] \
+        content {} blocks [concat [list [dict create type paragraph meta {} \
+            content [list [dict create type text text "P."]]]] $paras]]
+    set ir [list [dict create type list meta {kind dl indentLevel 0} content [list $item]]]
+    set f [file join $::TMPBASE test-pdf-dlmargin.pdf]
+    docir::pdf::render $ir $f [dict create header "HdrLeftQ\tHdrRightQ" footer "FtrQ %p"]
+    set t [exec pdftotext -layout $f -]
+    set pages [split $t \x0C]
+    assert [expr {[llength $pages] >= 2}] "several pages"
+    set c1 [::_layoutCol [lindex $pages 0] HdrLeftQ]
+    set c2 [::_layoutCol [lindex $pages 1] HdrLeftQ]
+    assertEqual $c1 $c2 "header at the same column on page 1 and 2"
+    catch {file delete $f}
+}
+
+if {[llength [info commands ::pdf4tcl::pdf4tcl]] && \
+        "linkAdd" in [info class methods ::pdf4tcl::pdf4tcl -all]} {
+test "pdf.links.heading_alias_is_target" {
+    # section reference to the second of two equal headings (mdSource 0.2:
+    # meta alias)
+    set ir [list \
+        [dict create type heading content {{type text text Examples}} meta {level 1 id examples}] \
+        [dict create type heading content {{type text text Examples}} meta {level 1 id examples alias examples-1}] \
+        [dict create type paragraph meta {} content [list \
+            [dict create type link text Examples href "#examples-1"]]]]
+    set f [file join $::TMPBASE test-pdf-alias.pdf]
+    docir::pdf::render $ir $f [dict create compress 0]
+    set fh [open $f rb]; set d [read $fh]; close $fh
+    assert [regexp {/Dest /examples-1\M} $d] "link to the alias"
+    assert [regexp {/examples-1\s*\[} $d] "alias is a named destination"
+    catch {file delete $f}
+}
 }
 
 }  ;# end pdf4tcl-availability block

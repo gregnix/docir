@@ -1,5 +1,11 @@
-# docir-rendererTk-0.5.tm – DocIR → Tk Text Widget Renderer
+# docir-rendererTk-0.6.tm – DocIR → Tk Text Widget Renderer
 #
+# 0.6 (2026-10-26): a definition with blocks (listItem.blocks) renders
+#      them as blocks under the term (lists, code, inner definition lists),
+#      indented per nesting depth (tags dlBlk1..dlBlk8). Before, the
+#      contents of all blocks were run together as one text. A span with
+#      several classes ("carg in") gets one tag span_<class> per class;
+#      before, the class list became the tags "span_carg" and "in".
 # 0.5: math_block TYPESET on an embedded canvas via the backend-neutral
 #      pdf4tcllib::math engine (canvasBackend, since pdf4tcllib 0.5), with the
 #      centred-source fallback AND the mathBlock tag it needs. Supersedes an
@@ -21,7 +27,7 @@
 # Namespace: ::docir::renderer::tk
 # Tcl/Tk 8.6+ / 9.x kompatibel
 
-package provide docir::rendererTk 0.5
+package provide docir::rendererTk 0.6
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -33,6 +39,8 @@ namespace eval ::docir::renderer::tk {
     variable linkTagCounter  0
     variable currentLinkFg   "#0066cc"
     variable headingCallback {}
+    # nesting depth of definitions with blocks (dlBlk$n indent tags)
+    variable dlDepth 0
 }
 
 # ============================================================
@@ -384,17 +392,37 @@ proc docir::renderer::tk::_renderBlocks {textWidget ir options} {
                         }
                         dl {
                             # definition list: term bold, definition indented
+                            variable dlDepth
                             if {[llength $term] > 0} {
                                 $textWidget insert end "  " normal
                                 docir::renderer::tk::_insertInlines $textWidget $term listTerm
                                 $textWidget insert end "\n" normal
                             }
-                            if {[llength $desc] > 0} {
+                            # inside a definition with blocks the indent
+                            # steps on (dlBlk2 ...), dlDesc is level 1
+                            set descTag [expr {$dlDepth > 0 ? "dlBlk[expr {min($dlDepth + 1, 8)}]" : "dlDesc"}]
+                            if {[dict exists $item blocks]} {
+                                # blocks of the definition (lists, code,
+                                # inner definition lists) as blocks; dlBlk
+                                # (not dlDesc) also for depth 1: it is
+                                # created after the bullet and ipItem tags
+                                # and so wins over their margins
+                                set descTag "dlBlk[expr {min($dlDepth + 1, 8)}]"
+                                set dlStart [$textWidget index "end - 1 char"]
+                                incr dlDepth
+                                try {
+                                    docir::renderer::tk::_renderBlocks $textWidget \
+                                        [dict get $item blocks] $options
+                                } finally {
+                                    incr dlDepth -1
+                                }
+                                $textWidget tag add $descTag $dlStart "end - 1 char"
+                            } elseif {[llength $desc] > 0} {
                                 set dlStart [$textWidget index "end - 1 char"]
                                 docir::renderer::tk::_insertInlines $textWidget $desc
                                 $textWidget insert end "\n" normal
                                 # Hanging indent across all definition lines.
-                                $textWidget tag add dlDesc $dlStart "end - 1 char"
+                                $textWidget tag add $descTag $dlStart "end - 1 char"
                             }
                         }
                         default {
@@ -746,10 +774,15 @@ proc docir::renderer::tk::_insertInlines {textWidget inlines {defaultTag normal}
                 # span: shows text with class as the tag name "span_class".
                 # We do not configure a special style — the
                 # Konsument tun via $textWidget tag configure span_FOO.
+                # class may hold several classes ("carg in"): one tag
+                # span_<class> per class
                 set cls [_dictDef $inline class ""]
                 set spanTag $defaultTag
                 if {$cls ne ""} {
-                    set spanTag "span_$cls"
+                    set spanTag [lmap c [split $cls] {
+                        if {$c eq ""} continue
+                        string cat span_ $c
+                    }]
                 }
                 $textWidget insert end $text $spanTag
             }
@@ -914,5 +947,14 @@ proc docir::renderer::tk::_configureTags {w fontSize fontFamily monoFamily darkM
             -lmargin1 [expr {$base + 10}] -lmargin2 [expr {$base + 25}]
         $w tag configure bulletContL$i \
             -lmargin1 [expr {$base + 25}] -lmargin2 [expr {$base + 25}]
+    }
+
+    # Blocks of a definition, per nesting depth. Created last, deeper ones
+    # after shallower ones: the higher priority wins, so a nested block
+    # takes the indent of its own depth over that of the enclosing one and
+    # over the margins of pre, bullets and ipItem.
+    for {set i 1} {$i <= 8} {incr i} {
+        $w tag configure dlBlk$i \
+            -lmargin1 [expr {$i * 36}] -lmargin2 [expr {$i * 36}]
     }
 }

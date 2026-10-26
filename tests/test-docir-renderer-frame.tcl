@@ -159,6 +159,49 @@ if {!$hasTk} {
         assertEqual "" $txt "leere Formel erzeugt keinen Text"
         assert {[llength $wins] == 0} "leere Formel erzeugt keinen Canvas"
     }
+
+    # Definitions with blocks (rendererTk 0.6): blocks as blocks, indented
+    # per depth; spans with several classes get one tag per class
+    test "rendererTk.dl_blocks_rendered_as_blocks" {
+        set w [text .tdl1]
+        set inner [dict create type list meta {kind dl indentLevel 0} content [list \
+            [dict create type listItem meta [dict create kind dl \
+                term [list [dict create type text text InnerT]]] \
+                content [list [dict create type text text InnerD]]]]]
+        set item [dict create type listItem \
+            meta [dict create kind dl term [list [dict create type text text OuterT]]] \
+            content [list [dict create type text text "FLAT"]] \
+            blocks [list \
+                [dict create type paragraph meta {} content [list [dict create type text text ParaA]]] \
+                [dict create type pre meta {kind code} content [list [dict create type text text "codeX"]]] \
+                $inner]]
+        ::docir::renderer::tk::render $w [list [dict create type list meta {kind dl indentLevel 0} content [list $item]]]
+        set txt [$w get 1.0 end]
+        assert {[string first FLAT $txt] < 0} "blocks, not the flat content"
+        foreach x {OuterT ParaA codeX InnerT InnerD} {
+            assert {[string first $x $txt] >= 0} "$x shown"
+        }
+        set iP [$w search ParaA 1.0]
+        set iC [$w search codeX 1.0]
+        set iD [$w search InnerD 1.0]
+        assert {"dlBlk1" ni [$w tag names [$w search OuterT 1.0]]} "term not indented as block"
+        assert {"dlBlk1" in [$w tag names $iP]} "paragraph at depth 1"
+        assert {"pre" in [$w tag names $iC] && "dlBlk1" in [$w tag names $iC]} "code block, indented"
+        assert {"dlBlk2" in [$w tag names $iD]} "inner description at depth 2"
+        assert {[$w tag cget dlBlk2 -lmargin1] > [$w tag cget dlBlk1 -lmargin1]} "deeper is further in"
+        destroy $w
+    }
+
+    test "rendererTk.span_multi_class_tags" {
+        set w [text .tsp1]
+        ::docir::renderer::tk::render $w [list [dict create type paragraph meta {} content [list \
+            [dict create type span text "*interp" class "carg in" attrs {type Tcl_Interp}]]]]
+        set i [$w search "*interp" 1.0]
+        set tags [$w tag names $i]
+        destroy $w
+        assert {"span_carg" in $tags && "span_in" in $tags} "one tag per class: $tags"
+        assert {"in" ni $tags} "no bare class tag"
+    }
 }
 
 #test::runAll

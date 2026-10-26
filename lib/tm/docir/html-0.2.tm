@@ -1,4 +1,9 @@
-# docir-html-0.1.tm -- DocIR → HTML Renderer
+# docir-html-0.2.tm -- DocIR → HTML Renderer
+#
+# 0.2 (2026-10-26): definition list items with `blocks` render them inside
+#   the <dd> (paragraphs, lists, code, inner <dl>); span attributes (attrs)
+#   become data-* attributes (version="TIP500" -> data-version, also as
+#   title); heading meta alias adds further anchors to the heading.
 #
 # Converts a flat DocIR sequence (list of type/content/meta dicts)
 # in ein vollstaendiges HTML5-Dokument um. Komplementaer zu
@@ -35,7 +40,7 @@
 #   - unknown inline types are rendered as <span data-docir-type=...>
 #     gerendert; ihr Text bleibt erhalten
 
-package provide docir::html 0.1
+package provide docir::html 0.2
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -540,6 +545,10 @@ proc docir::html::_renderHeading {node level} {
     set currentSectionId $id
 
     set ind [_indent $level]
+    # further anchors (section references, mdSource 0.2)
+    foreach a [_dictDef $m alias {}] {
+        if {$a ne ""} { set inner "<span id=\"[_escapeAttr $a]\"></span>$inner" }
+    }
     if {$id ne ""} {
         return "$ind<h$lv id=\"[_escapeAttr $id]\">$inner</h$lv>\n"
     }
@@ -694,6 +703,21 @@ proc docir::html::_renderListItemInside {item parentTag itemTag level {loose 0}}
     if {$parentTag eq "dl"} {
         # term + desc
         set termHtml [_renderInlines $term]
+        # A definition with blocks: all of them inside the <dd> --
+        # paragraphs as <p>, everything else (list, code, inner <dl>) by
+        # its own renderer. Before 0.2 only content was used here.
+        if {[dict exists $item blocks]} {
+            set body ""
+            foreach b [dict get $item blocks] {
+                set bmeta  [_dictDef $b meta {}]
+                if {[dict get $b type] eq "paragraph" && [_dictDef $bmeta class ""] eq ""} {
+                    append body "$ind  <p>[_renderInlines [dict get $b content]]</p>\n"
+                } else {
+                    append body [docir::html::_renderBlock $b [expr {$level + 1}]]
+                }
+            }
+            return "$ind<dt>$termHtml</dt>\n$ind<dd>\n$body$ind</dd>\n"
+        }
         set descHtml [_renderInlines $descInlines]
         return "$ind<dt>$termHtml</dt>\n$ind<dd>$descHtml</dd>\n"
     }
@@ -1002,6 +1026,19 @@ proc docir::html::_renderInline {inline} {
             }
             if {$spanId ne ""} {
                 append attrs " id=\"[_escapeAttr $spanId]\""
+            }
+            # further attributes as data-*: type="Tcl_Interp" ->
+            # data-type, version="TIP500" -> data-version (and a title, so
+            # the version shows on hover)
+            set more [_dictDef $inline attrs {}]
+            dict for {k v} $more {
+                set dk [string tolower [regsub -all {[^A-Za-z0-9_.-]+} $k -]]
+                set dk [string trimleft $dk -]
+                if {$dk eq ""} continue
+                append attrs " data-$dk=\"[_escapeAttr $v]\""
+            }
+            if {[dict exists $more version] && ![dict exists $more title]} {
+                append attrs " title=\"[_escapeAttr [dict get $more version]]\""
             }
             return [_wrapStyle $inline "<span$attrs>$escTxt</span>"]
         }

@@ -1,5 +1,61 @@
 # DocIR — Changelog
 
+## 2026-10-26 — txt 0.3: link targets
+
+- `txt-0.3.tm`: a link takes its target from `href`, as mdSource writes
+  it; before, `[zipfs root][zipfs]` came out as "zipfs root (())" (empty
+  name and section). An empty name is no target any more.
+- Test `test-docir-txt.tcl` txt-18.
+
+## 2026-10-26 — TIP 700 format: span attributes, blocks in definitions, section links
+
+For mdstack::parser 0.9.0, which reads the format of the official Tcl
+converter (`man2markdown.tcl`, TIP 700; `n2md --tip700`). New versions:
+`mdSource-0.2.tm`, `pdf-0.6.tm`, `html-0.2.tm`, `md-0.2.tm`, `txt-0.2.tm`,
+`rendererTk-0.6.tm`.
+
+- mdSource 0.2: a span passes on all its classes (`class "carg in"`), its
+  `id` and its other attributes (`attrs`, a dict: `type`, `version`). A
+  definition list item whose definitions hold blocks (AST `defblocks`)
+  gets `blocks` -- paragraphs, lists, code, inner definition lists,
+  tables; `content` keeps the flat text as before, so content-only sinks
+  (roff, odt, tile sinks) print what they printed. A heading `alias`
+  (target of a section reference) goes to `meta alias`.
+- pdf 0.6: a definition with `blocks` sets every block under the term at
+  the indent of the description; other blocks are rendered by their own
+  renderer with margin and width narrowed (`_withIndent`), so inner
+  definition lists step in level by level. Before, only the first
+  paragraph was printed (htmlSource items lost their further paragraphs)
+  and nested blocks sat one list level in. Header and footer use the page
+  margin (`pageMargin`): a page break inside an indented block moved them
+  by the indent. `meta alias` of a heading is a further named destination.
+- html 0.2: `<dd>` holds the blocks of a definition (`<p>`, `<ol>`, `<pre>`,
+  inner `<dl>`); span attributes become `data-*` (`version` also `title`);
+  a heading alias is an empty `<span id>` in the heading.
+- md 0.2: span attribute lists are written back after Pandoc
+  (`[x]{.carg .in type="Tcl_Interp"}`); the further blocks of a definition
+  are indented 4 spaces, so mdstack (0.9.0) and Pandoc read them back
+  inside the definition. Before they followed in column 0 and left it --
+  this changes `bin/h2md` output for `<dd>` with blocks.
+- txt 0.2: a definition with blocks prints them under the term. A span
+  printed nothing: spans from mdSource carry `text`, not `content`.
+- rendererTk 0.6: a definition with blocks renders them as blocks
+  (indent tags `dlBlk1`..`dlBlk8`); before, the contents of all blocks ran
+  together as one text. A span with several classes gets one tag
+  `span_<class>` per class (before: "span_carg" and a bare "in").
+- Tests: `test-mdstack-bridge.tcl` (+9: span attributes to IR/HTML/
+  Markdown/txt, definition blocks to IR/HTML/Markdown round trip/txt,
+  section link with alias), `test-docir-pdf.tcl` (+4: blocks rendered and
+  indented, header at the page margin, alias destination),
+  `test-docir-md.tcl` (+2), `test-docir-renderer-frame.tcl` (+2),
+  `test-docir-txt.tcl` (+2, not in the runner); `test-docir-html.tcl` and
+  `html-roundtrip-test.tcl` expect the indented inner list now.
+  `test-setup.tcl` sources the current file names (it named `pdf-0.3.tm`
+  and `rendererTk-0.2.tm`, which no longer exist). Suite: 1013 tests,
+  0 failures on Tcl 8.6 and 9.0 (before: 943).
+- Delete: `lib/tm/docir/mdSource-0.1.tm`, `pdf-0.5.tm`, `html-0.1.tm`,
+  `md-0.1.tm`, `txt-0.1.tm`, `rendererTk-0.5.tm`.
+
 ## 2026-10-25 — HTML import: framed code, nested lists, link targets
 
 Found in the German manual PDF (BWidget DynamicHelp: the example ran into

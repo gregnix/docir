@@ -31,8 +31,8 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 # automatisch. (Pattern wie in test-docir-roff/html/md/svg.tcl.)
 foreach sinkMod {
     roff-0.1.tm
-    html-0.1.tm
-    md-0.1.tm
+    html-0.2.tm
+    md-0.2.tm
     svg-0.1.tm
 } {
     source -encoding utf-8 [file join $testDir .. lib tm docir $sinkMod]

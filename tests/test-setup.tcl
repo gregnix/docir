@@ -36,14 +36,14 @@ foreach mod {
     util-0.1.tm
     tilecommon-0.1.tm
     roffSource-0.1.tm
-    mdSource-0.1.tm
-    html-0.1.tm
+    mdSource-0.2.tm
+    html-0.2.tm
     svg-0.1.tm
-    md-0.1.tm
+    md-0.2.tm
     roff-0.1.tm
     tilehtml-0.1.tm
     tilemd-0.1.tm
-    txt-0.1.tm
+    txt-0.3.tm
 } {
     set p [file join $libDir docir $mod]
     if {[file exists $p]} {
@@ -53,7 +53,7 @@ foreach mod {
 # Module mit externer Dep (pdf4tcl) — catch, damit Tests ohne pdf4tcl
 # nicht hart abbrechen sondern sich selbst skippen koennen.
 foreach mod {
-    pdf-0.3.tm
+    pdf-0.6.tm
     tilepdf-0.1.tm
 } {
     set p [file join $libDir docir $mod]
@@ -63,7 +63,7 @@ foreach mod {
 }
 foreach mod {
     canvas-0.1.tm
-    rendererTk-0.2.tm
+    rendererTk-0.6.tm
 } {
     set p [file join $libDir docir $mod]
     if {[file exists $p]} {

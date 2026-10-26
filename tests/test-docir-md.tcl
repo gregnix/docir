@@ -19,7 +19,8 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 # Parser nur 50. Die 9 fehlenden standen hinter einem if und der Lauf sagte
 # trotzdem "All tests passed". Jetzt sagt er es -- und mit DOCIR_STRICT=1
 # bricht er ab.
-::test::expect 59
+# 26.10.2026: 61 (Span-Attribute, Definition mit Bloecken).
+::test::expect 61
 
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
@@ -761,6 +762,32 @@ if {![catch {package require mdstack::parser}]} {
         assert [expr {[string first {Note} $md2] >= 0}]
     }
 
+}
+
+
+# docir::md 0.2: span attribute lists, blocks of a definition indented
+test "md.span_attrs_written" {
+    set ir [list [dict create type paragraph meta {} content [list \
+        [dict create type span text "*interp" class "carg in" attrs {type Tcl_Interp}] \
+        [dict create type text text " "] \
+        [dict create type span text "x" attrs {version TIP500}]]]]
+    set md [docir::md::render $ir]
+    ::test::assertContains $md {[\*interp]{.carg .in type="Tcl_Interp"}} "classes and attribute"
+    ::test::assertContains $md {[x]{version="TIP500"}} "attribute only"
+}
+
+test "md.dl_blocks_indented" {
+    set item [dict create type listItem \
+        meta [dict create kind dl term [list [dict create type text text "Term"]]] \
+        content [list [dict create type text text "flat text"]] \
+        blocks [list \
+            [dict create type paragraph meta {} content [list [dict create type text text "First."]]] \
+            [dict create type list meta {kind ul indentLevel 0} content [list \
+                [dict create type listItem meta {kind ul term {}} content [list [dict create type text text "a"]]]]] \
+            [dict create type pre meta {kind code language tcl} content [list [dict create type text text "set x 1"]]]]]
+    set md [docir::md::render [list [dict create type list meta {kind dl} content [list $item]]]]
+    ::test::assertContains $md "**Term**\n: First.\n\n    - a\n\n    ```tcl\n    set x 1\n    ```\n" "blocks indented 4: $md"
+    assert {[string first "flat text" $md] < 0} "first paragraph from blocks, not the flat content"
 }
 
 exit [test::runAll]

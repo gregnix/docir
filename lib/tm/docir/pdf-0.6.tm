@@ -1,5 +1,18 @@
-# docir-pdf-0.5.tm -- DocIR → PDF Renderer
-# BUILD-ID: pdf-0.5 inline-math + table-delegation+pagebreak-hook 2026-09-26
+# docir-pdf-0.6.tm -- DocIR → PDF Renderer
+# BUILD-ID: pdf-0.6 definition blocks + heading aliases 2026-10-26
+#
+# 0.6 (2026-10-26):
+#   - definition list items with `blocks` (mdSource 0.2 from TIP 700
+#     pages, htmlSource from <dd>): every block is set under the term at
+#     the indent of the description -- paragraphs, lists, code, inner
+#     definition lists, tables. Before, only the first paragraph was
+#     printed there, further paragraphs were lost and nested blocks sat
+#     one list level in, not under the description.
+#   - heading meta `alias`: further jump targets of the heading (section
+#     references to a heading whose plain id an earlier heading has).
+#   - header and footer stay at the page margin while a block is set
+#     indented (state pageMargin); before, a page break inside an indented
+#     block moved them by the indent.
 # Converts a DocIR sequence into a PDF document. Uses
 # pdf4tcl (>=0.9) as the low-level backend and pdf4tcllib (>=0.3)
 # for font embedding (TTF), Unicode sanitization and
@@ -90,7 +103,7 @@
 #   - with -generateIndex 1: the index block is rendered AFTER the main body
 #       index entries have page numbers (which are known by then)
 
-package provide docir::pdf 0.5
+package provide docir::pdf 0.6
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -973,6 +986,7 @@ proc docir::pdf::_initState {pdf} {
     set st [dict create \
         pdf            $pdf \
         margin         $margin \
+        pageMargin     $margin \
         pageW          $pageW \
         pageH          $pageH \
         contentW       [expr {$pageW  - 2 * $margin}] \
@@ -1258,7 +1272,7 @@ proc docir::pdf::_writeHeader {{atEnd 0}} {
     if {$late != $atEnd} { return }
 
     set pdf      [dict get $st pdf]
-    set margin   [dict get $st margin]
+    set margin   [_dictDef $st pageMargin [dict get $st margin]]
     set pageW    [dict get $st pageW]
     set fontSize [dict get $opts fontSize]
 
@@ -1289,7 +1303,7 @@ proc docir::pdf::_writeFooter {} {
     if {$tpl eq ""} { return }
 
     set pdf      [dict get $st pdf]
-    set margin   [dict get $st margin]
+    set margin   [_dictDef $st pageMargin [dict get $st margin]]
     set pageW    [dict get $st pageW]
     set pageH    [dict get $st pageH]
     set pageNo   [dict get $st pageNo]
@@ -1592,6 +1606,9 @@ proc docir::pdf::_renderHeading {node} {
     _addDest "h-$anchorIdx" $destY
     if {[dict exists $m id] && [dict get $m id] ne ""} {
         _addDest [_destName [dict get $m id]] $destY
+    }
+    foreach a [_dictDef $m alias {}] {
+        if {$a ne ""} { _addDest [_destName $a] $destY }
     }
 
     set x [dict get $st margin]
@@ -1951,7 +1968,9 @@ proc docir::pdf::_renderList {node} {
         set itemDescInlines [dict get $item content]
         set itemExtras {}
         set itemSubBlocks {}
-        if {[dict exists $item blocks]} {
+        if {[dict exists $item blocks] && $itemKind in {tp ip op ap dl}} {
+            # term with blocks: all of them under the term (_renderListItemTermBlocks)
+        } elseif {[dict exists $item blocks]} {
             set _bl [dict get $item blocks]
             set itemDescInlines [dict get [lindex $_bl 0] content]
             foreach _b [lrange $_bl 1 end] {
@@ -1977,7 +1996,11 @@ proc docir::pdf::_renderList {node} {
                 incr ord
             }
             tp - ip - op - ap - dl {
-                _renderListItemTerm $itemTerm $itemDescInlines $indentX
+                if {[dict exists $item blocks]} {
+                    _renderListItemTermBlocks $itemTerm [dict get $item blocks] $indentX
+                } else {
+                    _renderListItemTerm $itemTerm $itemDescInlines $indentX
+                }
             }
             default {
                 # ul + unknown → bullet
@@ -2103,6 +2126,75 @@ proc docir::pdf::_renderListItemTerm {termInlines descInlines {indentX 0}} {
         }
     }
     _advanceY 2
+}
+
+# A term whose definition holds blocks (listItem.blocks): the term as in
+# _renderListItemTerm, then every block at the indent of the description.
+# Paragraphs are wrapped there like the description; any other block (list,
+# code, inner definition list, table, block quote) is rendered by its own
+# renderer with margin and width narrowed by that indent, so nested
+# definition lists step in level by level.
+proc docir::pdf::_renderListItemTermBlocks {termInlines blocks {indentX 0}} {
+    variable opts
+    variable st
+    set pdf [dict get $st pdf]
+    set fontSize [dict get $opts fontSize]
+    set lh [_lineHeight $fontSize]
+
+    set x [expr {[dict get $st margin] + $indentX}]
+    if {[llength $termInlines] > 0} {
+        set termSegs [_inlinesToSegments $termInlines "bold"]
+        set termLines [_wrapStyledSegments $termSegs \
+            [expr {[dict get $st contentW] - $indentX}] $fontSize]
+        foreach lineSegs $termLines {
+            _ensureSpace $lh
+            set y [expr {[dict get $st y] + $fontSize}]
+            _renderStyledLine $lineSegs $y $x $fontSize
+            _advanceY $lh
+        }
+    }
+
+    $pdf setFont $fontSize [::pdf4tcllib::fonts::fontSans]
+    set indent [expr {2 * [$pdf getStringWidth "X"]}]
+    set dx [expr {$indentX + $indent}]
+    set first 1
+    foreach b $blocks {
+        set bm [_dictDef $b meta {}]
+        if {[dict get $b type] eq "paragraph" && [_dictDef $bm class ""] eq ""} {
+            if {!$first} { _advanceY [expr {$lh * 0.4}] }
+            set xDesc [expr {[dict get $st margin] + $dx}]
+            set wDesc [expr {[dict get $st contentW] - $dx}]
+            set segs  [_inlinesToSegments [dict get $b content] "normal"]
+            foreach lineSegs [_wrapStyledSegments $segs $wDesc $fontSize] {
+                _ensureSpace $lh
+                set y [expr {[dict get $st y] + $fontSize}]
+                _renderStyledLine $lineSegs $y $xDesc $fontSize
+                _advanceY $lh
+            }
+        } else {
+            if {!$first && [dict get $b type] ne "list"} { _advanceY [expr {$lh * 0.4}] }
+            _withIndent $dx [list docir::pdf::_renderBlock $b]
+        }
+        set first 0
+    }
+    _advanceY 2
+}
+
+# Run script with the left margin moved right by dx and the content width
+# narrowed by as much; both are restored afterwards, also on error. The
+# page margin for header and footer (pageMargin) stays.
+proc docir::pdf::_withIndent {dx script} {
+    variable st
+    set m [dict get $st margin]
+    set w [dict get $st contentW]
+    dict set st margin   [expr {$m + $dx}]
+    dict set st contentW [expr {$w - $dx}]
+    try {
+        uplevel 1 $script
+    } finally {
+        dict set st margin   $m
+        dict set st contentW $w
+    }
 }
 
 proc docir::pdf::_renderListItem {node} {

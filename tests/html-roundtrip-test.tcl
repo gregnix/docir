@@ -83,7 +83,8 @@ check "_balance: </dl COMPACT>, offene Zellen, Ende" {
 # 2. <dd> mit verschachtelter Liste: nicht mehr eine einzige Zeile
 set h {<html><body><dl><dt>WIDGET COMMAND</dt><dd><p>Intro.</p><dl><dt id="a">a</dt><dd>Does a.</dd><dt>b</dt><dd>Does b.</dd></dl></dd></dl></body></html>}
 set md [docir::md::render [docir::htmlSource::fromHtml $h]]
-check "dd mit Unterliste: Begriffe einzeln" {[string first "\n**a**\n: Does a." $md] > 0 && [string first "\n**b**\n: Does b." $md] > 0}
+# docir::md 0.2: die innere Liste steht eingerueckt in der Definition (Pandoc)
+check "dd mit Unterliste: Begriffe einzeln" {[string first "\n    **a**\n    : Does a." $md] > 0 && [string first "\n    **b**\n    : Does b." $md] > 0}
 check "dd mit Unterliste: dt-id als meta.id" {[string match "*id a*" [docir::htmlSource::fromHtml $h]]}
 
 # BWidget (BWman): <td> nach "</TR>" ohne <tr>, <a name> ohne href
