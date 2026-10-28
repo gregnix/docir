@@ -233,6 +233,8 @@ The following repos use DocIR:
 - **mdstack** — Markdown stack tools (uses `docir::mdSource`)
 - **mdhelp** — Markdown help browser (uses `docir::mdSource` + sinks)
 
+Developed with the help of AI tools; the code is reviewed and tested by the author.
+
 ## License
 
 (to be defined)
