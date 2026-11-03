@@ -1,5 +1,5 @@
-# docir-pdf-0.6.tm -- DocIR → PDF Renderer
-# BUILD-ID: pdf-0.6 definition blocks + heading aliases 2026-10-26
+# docir-pdf-0.7.tm -- DocIR → PDF Renderer
+# BUILD-ID: pdf-0.7 code block font size 2026-11-03
 #
 # 0.6 (2026-10-26):
 #   - definition list items with `blocks` (mdSource 0.2 from TIP 700
@@ -24,6 +24,11 @@
 #         paper          a4|letter|...      (default a4)
 #         margin         Int (pt)           (default 56 ≈ 20mm)
 #         fontSize       Int                (default 11)
+#         codeFontSize   Number             (default 0.85 * fontSize: about
+#                                            84 characters per line on A4
+#                                            with the default margin; code
+#                                            blocks only, inline code keeps
+#                                            fontSize)
 #         codeWrap       0|1                (default 1; wrap long code lines to
 #                                            the code box instead of letting them
 #                                            run off the page)
@@ -103,7 +108,7 @@
 #   - with -generateIndex 1: the index block is rendered AFTER the main body
 #       index entries have page numbers (which are known by then)
 
-package provide docir::pdf 0.6
+package provide docir::pdf 0.7
 package require docir 0.1
 package require docir::diag
 package require docir::diagram
@@ -278,6 +283,7 @@ proc docir::pdf::_normalizeOptions {options} {
         paper              a4 \
         margin             56 \
         fontSize           11 \
+        codeFontSize       "" \
         title              "" \
         author             "" \
         subject            "" \
@@ -343,6 +349,11 @@ proc docir::pdf::_normalizeOptions {options} {
         }
     }
 
+    # Code blocks: 85 % of the body size unless set (2026-11-03). At 11 pt
+    # a code line held about 71 characters on A4; at 9.35 pt about 84.
+    if {[dict get $opts codeFontSize] eq ""} {
+        dict set opts codeFontSize [expr {[dict get $opts fontSize] * 0.85}]
+    }
     return $opts
 }
 
@@ -1873,6 +1884,11 @@ proc docir::pdf::_renderPre {node} {
         if {[_renderFlowBlock $txt $lang]} { return }
     }
     set lines [split $txt "\n"]
+
+    # Code blocks have their own size (option codeFontSize), smaller than
+    # the body text, so that 80 columns fit without wrapping.
+    set fontSize [dict get $opts codeFontSize]
+    set lh [_lineHeight $fontSize]
 
     # Hintergrund-Box
     _setFont $fontSize mono

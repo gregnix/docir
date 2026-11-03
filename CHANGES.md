@@ -1,5 +1,13 @@
 # DocIR — Changelog
 
+## 2026-11-03 — pdf 0.7: own font size for code blocks
+
+- `pdf-0.7.tm`: option `codeFontSize`, default 85 % of `fontSize`. Code
+  blocks were set at the body size (11 pt), about 71 characters per line
+  on A4 with the default margin; at 9.35 pt about 84, so 80-column code
+  keeps its lines. Inline code is unchanged; long lines still wrap.
+- Tests `pdf.code_font_size_default`, `pdf.code_font_size_option`.
+
 ## 2026-10-26 — txt 0.3: link targets
 
 - `txt-0.3.tm`: a link takes its target from `href`, as mdSource writes

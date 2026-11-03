@@ -24,7 +24,8 @@ source -encoding utf-8 [file join $testDir test-setup.tcl]
 # nimmt 42 Tests mit, ohne dass der Zaehler etwas davon sieht.
 # Seit 26.10.2026: 64 (Definitionen mit Bloecken, Kopf am Seitenrand,
 # Alias-Anker einer Ueberschrift).
-::test::expect 64
+# Seit 03.11.2026: 66 (eigene Schriftgroesse fuer Codebloecke).
+::test::expect 66
 
 set projectRoot [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $projectRoot
@@ -51,6 +52,18 @@ set ::TMPBASE [docir::util::tmpdir]
 
 test "pdf.module_loaded" {
     assert [string length [package present docir::pdf]] "docir-pdf provides version"
+}
+
+test "pdf.code_font_size_default" {
+    set o [docir::pdf::_normalizeOptions {}]
+    assert [expr {abs([dict get $o codeFontSize] - 11 * 0.85) < 0.001}] "code blocks 85 % of 11 pt"
+    set o [docir::pdf::_normalizeOptions {fontSize 12}]
+    assert [expr {abs([dict get $o codeFontSize] - 12 * 0.85) < 0.001}] "follows fontSize"
+}
+
+test "pdf.code_font_size_option" {
+    set o [docir::pdf::_normalizeOptions {codeFontSize 9}]
+    assert [expr {[dict get $o codeFontSize] == 9}] "explicit codeFontSize kept"
 }
 
 test "pdf.public_api_present" {

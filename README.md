@@ -229,9 +229,9 @@ See `doc/en/docir-spec.md` for the full IR specification.
 
 The following repos use DocIR:
 
-- **man-viewer** — nroff manpage browser with DocIR pipeline for export
-- **mdstack** — Markdown stack tools (uses `docir::mdSource`)
-- **mdhelp** — Markdown help browser (uses `docir::mdSource` + sinks)
+- **[man-viewer](https://github.com/gregnix/man-viewer)** — nroff manpage browser with DocIR pipeline for export
+- **[mdstack](https://github.com/gregnix/mdstack)** — Markdown stack tools (uses `docir::mdSource`)
+- **[mdhelp](https://github.com/gregnix/mdhelp)** — Markdown help browser (uses `docir::mdSource` + sinks)
 
 Developed with the help of AI tools; the code is reviewed and tested by the author.
 
