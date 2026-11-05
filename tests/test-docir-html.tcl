@@ -967,7 +967,7 @@ test "spec.html.raw_block_not_confused_with_code" {
 
 # htmlSource: frames and old tag soup (BWidget BWman pages), 2026-10-25
 test "htmlSource.table.single_cell_frame_unwrapped" {
-    package require docir::htmlSource
+    if {[catch {package require docir::htmlSource}]} { skip "docir::htmlSource braucht tdom" }
     package require docir::md
     set ir [docir::htmlSource::fromHtml "<body><p>Example.</p><TABLE BORDER=2><TR><TD><PRE>\n# create menu\nmenu .m\n. configure -menu .m\n</PRE></TD></TR></TABLE></body>"]
     set md [docir::md::render $ir]
@@ -975,7 +975,7 @@ test "htmlSource.table.single_cell_frame_unwrapped" {
     assert {[string first "| " $md] < 0} "no table: $md"
 }
 test "htmlSource.p_with_dl_is_not_one_paragraph" {
-    package require docir::htmlSource
+    if {[catch {package require docir::htmlSource}]} { skip "docir::htmlSource braucht tdom" }
     package require docir::md
     set ir [docir::htmlSource::fromHtml "<body><DL><DT>configure</DT><DD>Configures.<P><DL><DT><B>-delay</B></DT><DD>Delay in ms.</DD></DL><DL><DT><B>-state</B></DT><DD>normal or disabled.</DD></DL></DD></DL></body>"]
     set md [docir::md::render $ir]
@@ -985,7 +985,7 @@ test "htmlSource.p_with_dl_is_not_one_paragraph" {
     assert {[regexp {\n    \*\*-state\*\*\s*\n    :\s*normal or disabled\.} $md]} "-state is its own term: $md"
 }
 test "htmlSource.stray_dd_with_table" {
-    package require docir::htmlSource
+    if {[catch {package require docir::htmlSource}]} { skip "docir::htmlSource braucht tdom" }
     package require docir::md
     set ir [docir::htmlSource::fromHtml "<body><DL><DT>x</DT><DD>Text.<P><DL><DT>-a</DT><DD>A.</DD></DL><BR>Other options are:<DD><TABLE><TR><TD>-font</TD><TD>-padx</TD></TR><TR><TD>-fg</TD><TD>-pady</TD></TR></TABLE></DD></DD></DL></body>"]
     set md [docir::md::render $ir]
@@ -993,7 +993,7 @@ test "htmlSource.stray_dd_with_table" {
 }
 
 test "htmlSource.empty_anchor_before_heading_is_its_id" {
-    package require docir::htmlSource
+    if {[catch {package require docir::htmlSource}]} { skip "docir::htmlSource braucht tdom" }
     set ir [docir::htmlSource::fromHtml {<body><p>x</p><A name=Overview></A>
 <H2>Overview </H2><p><a name="Config"></a></p><h2>Configuring a Service</h2><H2 id=own>Third</H2></body>}]
     set ids {}
@@ -1001,14 +1001,14 @@ test "htmlSource.empty_anchor_before_heading_is_its_id" {
     assert {$ids eq {Overview Config own}} "heading ids: $ids"
 }
 test "htmlSource.self_link_in_heading_is_text" {
-    package require docir::htmlSource
+    if {[catch {package require docir::htmlSource}]} { skip "docir::htmlSource braucht tdom" }
     set ir [docir::htmlSource::fromHtml {<body><H2><A NAME="sect0" HREF="#toc0">NAME </A></H2></body>}]
     set h [lindex $ir 1]
     assert {[dict get [lindex [dict get $h content] 0] type] eq "text"} "heading content: $h"
     assert {[dict get $h meta id] eq "sect0"} "id from the anchor: $h"
 }
 test "htmlSource.unclosed_li_items_are_siblings" {
-    package require docir::htmlSource
+    if {[catch {package require docir::htmlSource}]} { skip "docir::htmlSource braucht tdom" }
     set ir [docir::htmlSource::fromHtml {<body><UL>
 <LI><A href="#x">1 One</A>
 <LI><A href="#y">2 Two</A>

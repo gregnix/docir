@@ -1,5 +1,12 @@
 # DocIR — Changelog
 
+## 2026-11-05 — tests: optional packages skip
+
+- `run-all-tests.tcl`: a file that stops on a missing `tdom` or
+  `mdstack::` package counts as skipped, like a missing `odf`.
+- `test-docir-html.tcl`: the six `htmlSource` tests skip without `tdom`
+  instead of failing.
+
 ## 2026-11-03 — pdf 0.7: own font size for code blocks
 
 - `pdf-0.7.tm`: option `codeFontSize`, default 85 % of `fontSize`. Code

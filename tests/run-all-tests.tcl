@@ -94,8 +94,8 @@ proc runOne {interp testPath} {
     }
     set verdict [expr {($rc != 0 || $f > 0) ? "fail" : "ok"}]
     if {$rc != 0 && !$have} { set verdict "crash" }
-    # the optional odf packages are missing: not a failure of docir
-    if {$verdict eq "crash" && [regexp {can't find package odf::|FEHLT: docir::odt} $output]} {
+    # optional packages (odf, tdom) are missing: not a failure of docir
+    if {$verdict eq "crash" && [regexp {can't find package (odf::|tdom|mdstack::)|FEHLT: docir::odt} $output]} {
         set verdict "skip"
         set p 0 ; set f 0
     }
@@ -115,7 +115,7 @@ foreach testFile $testFiles {
     switch -- $verdict {
         crash { lappend failedFiles "${testFile} (crashed)"; puts "  ✗ CRASHED:"; puts $output }
         fail  { lappend failedFiles $testFile; puts $output }
-        skip  { lappend skippedFiles $testFile; puts "  SKIP: odf packages not found (optional)" }
+        skip  { lappend skippedFiles $testFile; puts "  SKIP: optional package not found (odf, tdom, mdstack)" }
         ok    { puts "  ✓ $p/[expr {$p + $f}] tests passed" }
     }
     puts ""
@@ -135,7 +135,7 @@ if {[info exists ::env(DISPLAY)] && $::env(DISPLAY) ne ""} {
             switch -- $verdict {
                 crash { lappend failedFiles "${testFile} (crashed)"; puts "  ✗ CRASHED:"; puts $output }
                 fail  { lappend failedFiles $testFile; puts $output }
-                skip  { lappend skippedFiles $testFile; puts "  SKIP: odf packages not found (optional)" }
+                skip  { lappend skippedFiles $testFile; puts "  SKIP: optional package not found (odf, tdom, mdstack)" }
                 ok    { puts "  ✓ $p/[expr {$p + $f}] tests passed" }
             }
             puts ""
@@ -152,7 +152,7 @@ puts "  Passed: $totalPassed"
 puts "  Failed: $totalFailed"
 puts "  Total:  [expr {$totalPassed + $totalFailed}]"
 if {[llength $skippedFiles]} {
-    puts "  Skipped files (odf missing): [join $skippedFiles {, }]"
+    puts "  Skipped files (optional package missing): [join $skippedFiles {, }]"
 }
 puts ""
 
